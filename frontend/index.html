@@ -288,8 +288,21 @@ async function api(path, opts = {}) {
   opts.headers = { ...opts.headers, Authorization: `Bearer ${_tok}` };
   let r;
   try { r = await fetch(path, opts); }
-  catch { flash('Network error — is the server running?', false); return null; }
+  catch (e) {
+    console.error('Network error:', path, e);
+    flash('Network error — server may still be starting up. Retrying…', false);
+    // auto-retry once after 2 s
+    await new Promise(res => setTimeout(res, 2000));
+    try { r = await fetch(path, opts); }
+    catch (e2) { flash('Server unreachable. Is Docker running?', false); return null; }
+  }
   if (r.status === 401) { logout(); return null; }
+  if (!r.ok) {
+    let detail = `HTTP ${r.status}`;
+    try { const j = await r.clone().json(); detail = j.detail || JSON.stringify(j); } catch {}
+    console.error('API error:', path, detail);
+    return null;
+  }
   const ct = r.headers.get('content-type') || '';
   if (!ct.includes('json')) return null;
   return r.json();
@@ -322,12 +335,21 @@ function buildNav() {
     return `<div class="nav-item" id="nav-${it.id}" onclick="navigate('${it.id}')">
       <span class="nav-icon">${it.icon}</span>${it.label}
     </div>`;
-  }).join('');
+  }).join('') + `
+    <div style="flex:1"></div>
+    <div class="nav-sep"></div>
+    <div class="nav-item" onclick="document.getElementById('chpw-modal').classList.add('open');document.getElementById('chpw-old').value='';document.getElementById('chpw-new').value='';document.getElementById('chpw-err').style.display='none'">
+      <span class="nav-icon">🔑</span>Change password
+    </div>
+    <div class="nav-item" onclick="logout()" style="color:#f87171">
+      <span class="nav-icon">🚪</span>Sign out
+    </div>`;
 
   // Topbar
   document.getElementById('topbar-name').textContent = ME.name;
-  document.getElementById('topbar-avatar').textContent = (ME.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
-  document.getElementById('topbar-avatar').title = `${ME.name} — sign out`;
+  const initials = (ME.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('topbar-avatar').textContent = initials;
+  document.getElementById('topbar-avatar').title = ME.name;
 }
 
 function setActive(id) {
@@ -388,7 +410,20 @@ async function refreshGCalStatus() {
 async function screenDashboard() {
   setTitle('Dashboard');
   const d = await api('/api/dashboard');
-  if (!d) return;
+  if (!d) {
+    document.getElementById('content').innerHTML = `
+      <div class="card" style="text-align:center;padding:48px 32px">
+        <div style="font-size:32px;margin-bottom:12px">⚠</div>
+        <p style="font-weight:600;margin-bottom:8px">Dashboard couldn't load</p>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:20px">
+          The server may be restarting. Wait a moment then refresh.
+        </p>
+        <button class="btn btn-primary" onclick="screenDashboard()">Retry</button>
+        &nbsp;
+        <button class="btn btn-ghost" onclick="logout()">Sign out</button>
+      </div>`;
+    return;
+  }
 
   const totalCands = (d.gender_split||[]).reduce((s,g)=>s+parseInt(g.n||0),0);
   const femaleN = (d.gender_split||[]).find(g=>g.gender==='female')?.n || 0;
@@ -508,7 +543,7 @@ async function screenDashboard() {
 async function screenRequisitions() {
   setTitle('Requisitions');
   const rows = await api('/api/requisitions/full');
-  if (!rows) return;
+  if (!rows) { document.getElementById('content').innerHTML=`<div class="card" style="text-align:center;padding:40px"><p style="color:var(--muted)">Failed to load. <span style="color:var(--accent);cursor:pointer" onclick="screenRequisitions()">Retry</span></p></div>`; return; }
 
   const canCreate = ['recruiter','ta_manager','admin'].includes(ME.role);
   const statusCounts = {open:0, on_hold:0, closed:0, draft:0};
