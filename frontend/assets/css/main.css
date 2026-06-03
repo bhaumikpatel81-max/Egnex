@@ -82,6 +82,7 @@ a { text-decoration: none; color: inherit; }
   font-size: 13.5px;
   position: relative;
   transition: color 0.12s, background 0.12s;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -177,6 +178,7 @@ a { text-decoration: none; color: inherit; }
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  -webkit-user-select: none;
   user-select: none;
   letter-spacing: 0.03em;
 }
@@ -209,16 +211,17 @@ a { text-decoration: none; color: inherit; }
 .login-header {
   background: #fff;
   border-bottom: 3px solid var(--orange);
-  padding: 36px 40px 28px;
+  padding: 40px 40px 30px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .login-logo {
-  height: 54px;
+  height: 90px;
   width: auto;
+  mix-blend-mode: multiply;
 }
 
 .login-tagline {
@@ -504,6 +507,7 @@ tr.row-link:hover td { background: #f9fafb; }
   background: #fff;
   color: var(--text-2);
   transition: all 0.12s;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -569,6 +573,7 @@ tr.row-link:hover td { background: #f9fafb; }
   margin-bottom: 7px;
   cursor: grab;
   transition: box-shadow 0.12s;
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -642,6 +647,7 @@ tr.row-link:hover td { background: #f9fafb; }
   color: var(--text-2);
   transition: all 0.12s;
   white-space: nowrap;
+  -webkit-user-select: none;
   user-select: none;
 }
 
