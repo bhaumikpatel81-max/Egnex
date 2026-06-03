@@ -1,0 +1,38 @@
+services:
+  database:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: oneclickhire
+      POSTGRES_USER: ochuser
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./database:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ochuser -d oneclickhire"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .                      # project root — gives Dockerfile access to frontend/
+      dockerfile: backend/Dockerfile
+    profiles: [prod]
+    env_file: .env.prod
+    environment:
+      DB_HOST: database
+      DB_PORT: "5432"
+      DB_NAME: oneclickhire
+      DB_USER: ochuser
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+    # The portal allocates a host port and injects it as ${PORT}.
+    # Exactly one service publishes it; the app's internal port is 8080.
+    ports:
+      - "${PORT:-8080}:8080"
+    depends_on:
+      database:
+        condition: service_healthy
+
+volumes:
+  pgdata:
