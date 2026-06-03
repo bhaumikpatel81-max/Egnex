@@ -4,12 +4,12 @@ JWT + bcrypt utilities shared across auth and admin routers.
 import os
 from datetime import datetime, timedelta
 
+import bcrypt as _bcrypt
+
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _bearer = HTTPBearer(auto_error=False)
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "egnex-dev-secret-change-in-prod")
@@ -18,11 +18,14 @@ TOKEN_HOURS = 8
 
 
 def hash_password(plain: str) -> str:
-    return _pwd.hash(plain)
+    return _bcrypt.hashpw(plain.encode(), _bcrypt.gensalt(rounds=10)).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd.verify(plain, hashed)
+    try:
+        return _bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
 
 
 def create_token(user: dict) -> str:

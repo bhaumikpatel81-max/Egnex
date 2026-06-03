@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: oneclickhire
+      POSTGRES_USER: ochuser
+      POSTGRES_PASSWORD: localdev
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+      - ./database:/docker-entrypoint-initdb.d:ro   # runs 01_schema, 02_seed, 03_auth_migration on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ochuser -d oneclickhire"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: oneclickhire
+      DB_USER: ochuser
+      DB_PASSWORD: localdev
+      PORT: "8080"
+      FRONTEND_DIR: /app/frontend
+      JWT_SECRET: egnex-local-dev-secret
+      # Google OAuth placeholders — only needed for calendar scheduling
+      GOOGLE_CLIENT_ID: placeholder
+      GOOGLE_CLIENT_SECRET: placeholder
+      GOOGLE_REDIRECT_URI: http://localhost:8080/api/google/callback
+      OAUTHLIB_INSECURE_TRANSPORT: "1"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Mount source so changes reflect without full rebuild
+    volumes:
+      - ./backend/app:/app/app
+      - ./frontend:/app/frontend
+    # run as root in dev so --reload file watcher has no permission issues
+    user: root
+    command: ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"]
+
+volumes:
+  pgdata_dev:
