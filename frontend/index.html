@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Egnex —  Empowering Generation to Next</title>
+<title>Egnex — One Click Hire</title>
 <style>
   :root {
     --ink: #1a1d24; --paper: #f4f1ea; --card: #ffffff;
@@ -17,19 +17,38 @@
   }
   header {
     background: #000000; color: var(--paper);
-    padding: 16px 32px; display: flex; align-items: center; gap: 24px;
+    padding: 14px 32px; display: flex; align-items: center; gap: 20px;
     border-bottom: 4px solid var(--accent);
   }
-  header .logo { height: 64px; width: auto; display: block; }
+  header .logo { height: 52px; width: auto; display: block; }
   header .tag { font-size: 12px; color: #c9b896; letter-spacing: 2px; text-transform: uppercase; }
+  header .spacer { flex: 1; }
+  header .user-info { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #c9b896; }
+  .role-badge {
+    display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600;
+  }
+  .role-badge.admin      { background: #f15a22; color: #fff; }
+  .role-badge.ta_manager { background: #b08423; color: #fff; }
+  .role-badge.recruiter  { background: #1d6e56; color: #fff; }
+  .role-badge.other      { background: #555;    color: #fff; }
+  .btn-hdr {
+    background: transparent; color: #c9b896; border: 1px solid #555;
+    padding: 5px 12px; border-radius: 3px; font-family: inherit;
+    font-size: 12px; cursor: pointer;
+  }
+  .btn-hdr:hover { background: #333; }
   .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 32px 80px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
   .card {
     background: var(--card); border: 1px solid var(--line);
     border-radius: 4px; padding: 22px;
   }
-  .card h2 { font-size: 17px; margin-bottom: 14px; padding-bottom: 8px;
-    border-bottom: 2px solid var(--ink); font-weight: 600; }
+  .card h2 {
+    font-size: 17px; margin-bottom: 14px; padding-bottom: 8px;
+    border-bottom: 2px solid var(--ink); font-weight: 600;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
   label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
     color: var(--muted); margin: 10px 0 4px; }
   input, select, textarea {
@@ -47,16 +66,24 @@
   button.ghost:hover { background: var(--ink); color: #fff; }
   button.danger { background: transparent; color: #c0392b; border: 1px solid #c0392b; padding: 5px 12px; margin: 0; font-size: 12px; }
   button.danger:hover { background: #c0392b; color: #fff; }
+  button.success { background: transparent; color: var(--accent2); border: 1px solid var(--accent2); padding: 5px 12px; margin: 0; font-size: 12px; }
+  button.success:hover { background: var(--accent2); color: #fff; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
   th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
     color: var(--muted); border-bottom: 2px solid var(--ink); padding: 6px 8px; }
-  td { padding: 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   .score { font-weight: 700; }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
     text-transform: uppercase; letter-spacing: 0.5px; }
-  .pill.passed { background: #d8ecdf; color: var(--accent2); }
-  .pill.interviewing { background: #f3e4c3; color: var(--gold); }
-  .pill.screening { background: #e8e4da; color: var(--muted); }
+  .pill.passed      { background: #d8ecdf; color: var(--accent2); }
+  .pill.interviewing{ background: #f3e4c3; color: var(--gold); }
+  .pill.screening   { background: #e8e4da; color: var(--muted); }
+  .pill.active      { background: #d8ecdf; color: var(--accent2); }
+  .pill.inactive    { background: #e8e4da; color: var(--muted); }
+  .pill.admin       { background: #fde8e4; color: #8b2a1a; }
+  .pill.ta_manager  { background: #f3e4c3; color: var(--gold); }
+  .pill.recruiter   { background: #d8ecdf; color: var(--accent2); }
+  .pill.other       { background: #e8e4da; color: var(--muted); }
   .full { grid-column: 1 / -1; }
   .stagebar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
   .stage { flex: 1; min-width: 90px; text-align: center; padding: 8px 4px; border-radius: 3px;
@@ -69,38 +96,126 @@
   .tab { padding: 6px 14px; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; font-size: 13px; background: #fbfaf7; }
   .tab.active { background: var(--ink); color: #fff; }
   pre { background: #2a2d34; color: #d8ecdf; padding: 12px; border-radius: 3px; font-size: 12px; overflow:auto; font-family: "SF Mono", Menlo, monospace; }
-  /* Google Calendar card */
   .gcal-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
   .gcal-row button { margin-top: 0; }
-  .gcal-badge {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 13px; padding: 6px 12px; border-radius: 3px;
-  }
+  .gcal-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 6px 12px; border-radius: 3px; }
   .gcal-badge.linked   { background: #d8ecdf; color: var(--accent2); }
   .gcal-badge.unlinked { background: #f0ece4; color: var(--muted); }
   .gcal-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .gcal-dot.green { background: var(--accent2); }
   .gcal-dot.grey  { background: var(--muted); }
-  /* Utility */
   .hidden { display: none; }
-  /* Flash banner */
-  .banner {
-    position: fixed; top: 0; left: 0; right: 0;
-    padding: 12px 24px; color: #fff; font-size: 14px;
-    z-index: 999; text-align: center; letter-spacing: 0.3px;
-  }
+  .banner { position: fixed; top: 0; left: 0; right: 0; padding: 12px 24px; color: #fff; font-size: 14px; z-index: 999; text-align: center; letter-spacing: 0.3px; }
   .banner-ok  { background: var(--accent2); }
   .banner-err { background: var(--accent); }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  /* Admin */
+  .add-form { display: none; background: #fbfaf7; border: 1px solid var(--line); border-radius: 3px; padding: 18px; margin-top: 16px; }
+  .add-form.open { display: block; }
+  .add-form h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form-grid .span2 { grid-column: 1/-1; }
+  .inline-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  /* Modal */
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 500; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 28px; width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,.15); }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
+  .modal-err { color: #8b2a1a; font-size: 13px; margin-top: 8px; }
+  .modal-btns { display: flex; gap: 10px; margin-top: 18px; }
+  .modal-btns button { margin-top: 0; flex: 1; }
+  .btn-cancel { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .btn-cancel:hover { background: var(--line); color: var(--ink); }
 </style>
 </head>
 <body>
+
 <header>
-  <img src="/assets/egnex-logo-dark.png" alt="Egnex — Empowering Generation to Next" class="logo">
+  <img src="/assets/egnex-logo.png" alt="Egnex — One Click Hire" class="logo">
   <span class="tag">Amnex Talent Acquisition</span>
+  <div class="spacer"></div>
+  <div class="user-info">
+    <span id="hdr-name"></span>
+    <span id="hdr-role" class="role-badge"></span>
+    <span id="hdr-chpw" style="font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;" onclick="openChpwModal()">Change password</span>
+    <button class="btn-hdr" onclick="logout()">Sign out</button>
+  </div>
 </header>
+
 <div class="wrap">
 
+  <!-- ══ Admin: Team Management ════════════════════════════════════════════ -->
+  <div class="card full" id="admin-panel" style="display:none;margin-bottom:24px;">
+    <h2>
+      Team management
+      <button class="ghost" style="margin-left:auto;" onclick="toggleAddForm()">+ Add user</button>
+    </h2>
+
+    <div class="add-form" id="add-form">
+      <h3>New user</h3>
+      <div class="form-grid">
+        <div><label for="nu-name">Full name</label><input id="nu-name" type="text" placeholder="Priya Sharma"></div>
+        <div><label for="nu-email">Work email</label><input id="nu-email" type="email" placeholder="priya@amnex.com"></div>
+        <div>
+          <label for="nu-role">Role</label>
+          <select id="nu-role">
+            <option value="recruiter">Recruiter</option>
+            <option value="ta_manager">TA Manager</option>
+            <option value="hiring_manager">Hiring Manager</option>
+            <option value="bu_head">BU Head</option>
+            <option value="director">Director</option>
+            <option value="interviewer">Interviewer</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div><label for="nu-pw">Initial password</label><input id="nu-pw" type="password" placeholder="min 6 characters"></div>
+        <div class="span2" style="display:flex;gap:10px;margin-top:6px;">
+          <button type="button" onclick="createUser()" style="margin-top:0;">Create user</button>
+          <button type="button" class="ghost" onclick="toggleAddForm()" style="margin-top:0;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <table id="team-tbl">
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <p class="hint" id="team-empty" style="display:none;">No users found.</p>
+  </div>
+
+  <!-- ══ Reset Password Modal ══════════════════════════════════════════════ -->
+  <div class="modal-bg" id="reset-modal" onclick="if(event.target===this)closeResetModal()">
+    <div class="modal">
+      <h3>Reset password</h3>
+      <p id="reset-for" style="font-size:13px;color:var(--muted);margin-bottom:6px;"></p>
+      <label for="reset-pw">New password</label>
+      <input id="reset-pw" type="password" placeholder="min 6 characters">
+      <div class="modal-btns">
+        <button class="btn-cancel" onclick="closeResetModal()">Cancel</button>
+        <button onclick="submitReset()">Set password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Change Own Password Modal ════════════════════════════════════════ -->
+  <div class="modal-bg" id="chpw-modal" onclick="if(event.target===this)closeChpwModal()">
+    <div class="modal">
+      <h3>Change your password</h3>
+      <label for="chpw-old">Current password</label>
+      <input id="chpw-old" type="password" placeholder="••••••••">
+      <label for="chpw-new">New password</label>
+      <input id="chpw-new" type="password" placeholder="min 6 characters">
+      <p class="modal-err" id="chpw-err" style="display:none;"></p>
+      <div class="modal-btns">
+        <button class="btn-cancel" onclick="closeChpwModal()">Cancel</button>
+        <button onclick="submitChpw()">Update</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Pipeline ══════════════════════════════════════════════════════════ -->
   <div class="stagebar">
     <div class="stage auto">Application in</div>
     <div class="stage auto">Auto-screen</div>
@@ -113,40 +228,37 @@
 
   <div class="grid">
 
-    <!-- ── Submit ── -->
     <div class="card">
       <h2>Submit an application</h2>
       <label for="req">Requisition</label>
       <select id="req" title="Requisition"></select>
-      <label for="name">Candidate name</label>
-      <input id="name" type="text" placeholder="e.g. Asha Rao" title="Candidate name">
-      <label for="email">Email</label>
-      <input id="email" type="email" placeholder="name@example.com" title="Candidate email">
+      <label for="cand-name">Candidate name</label>
+      <input id="cand-name" type="text" placeholder="e.g. Asha Rao">
+      <label for="cand-email">Email</label>
+      <input id="cand-email" type="email" placeholder="name@example.com">
       <label for="gender">Gender (diversity tracking)</label>
-      <select id="gender" title="Gender">
+      <select id="gender">
         <option value="female">Female</option>
         <option value="male">Male</option>
         <option value="undisclosed">Undisclosed</option>
       </select>
       <label for="years">Years of experience</label>
-      <input id="years" type="number" value="4" title="Years of experience">
+      <input id="years" type="number" value="4">
       <label for="resume">Resume text (paste / type)</label>
-      <textarea id="resume" placeholder="Python, PostgreSQL, REST API, GCP ..." title="Resume text"></textarea>
+      <textarea id="resume" placeholder="Python, PostgreSQL, REST API, GCP ..."></textarea>
       <button type="button" onclick="submitApp()">Submit &amp; auto-screen</button>
-      <p class="hint">The system scores the application instantly. It never auto-rejects.</p>
+      <p class="hint">The system scores instantly. It never auto-rejects.</p>
     </div>
 
-    <!-- ── Screening result ── -->
     <div class="card">
       <h2>Last screening result</h2>
       <div id="screenResult"><p class="hint">Submit an application to see the score breakdown.</p></div>
     </div>
 
-    <!-- ── Google Calendar ── -->
     <div class="card">
       <h2>Google Calendar</h2>
       <label for="gcal-recruiter">Scheduling as (recruiter)</label>
-      <select id="gcal-recruiter" title="Scheduling as recruiter" onchange="onRecruiterChange()">
+      <select id="gcal-recruiter" onchange="onRecruiterChange()">
         <option value="">— select recruiter —</option>
       </select>
       <div class="gcal-row">
@@ -157,16 +269,16 @@
         <button type="button" id="gcal-connect-btn" class="hidden" onclick="connectGCal()">Connect Google Calendar</button>
         <button type="button" id="gcal-disconnect-btn" class="danger hidden" onclick="disconnectGCal()">Disconnect</button>
       </div>
-      <p class="hint hint-spaced">Each recruiter connects their own Google account. Interviews land on <em>their</em> personal calendar with a real Meet link — never a shared inbox.</p>
+      <p class="hint hint-spaced">Each recruiter connects their own Google account for interview scheduling.</p>
     </div>
 
-    <!-- ── Ranked top chart ── -->
     <div class="card full">
-      <h2>Ranked top chart
+      <h2>
+        Ranked top chart
         <button type="button" class="ghost" onclick="loadChart()">Refresh</button>
         <button type="button" class="ghost" onclick="runAllBots()">Run bot round on all</button>
       </h2>
-      <p class="hint">Recruiter reviews the chart and advances who they choose. This is the human gate.</p>
+      <p class="hint">Recruiter reviews the chart and advances who they choose. Human gate.</p>
       <table id="chart">
         <thead>
           <tr>
@@ -179,15 +291,14 @@
       </table>
     </div>
 
-    <!-- ── Reports ── -->
     <div class="card full">
       <h2>Reports</h2>
       <div class="tabs">
-        <div class="tab active" onclick="loadReport('gender', this)">Gender split</div>
-        <div class="tab" onclick="loadReport('bu', this)">Business unit</div>
-        <div class="tab" onclick="loadReport('roll', this)">On/Off-roll</div>
-        <div class="tab" onclick="loadReport('positions', this)">Positions by FY</div>
-        <div class="tab" onclick="loadReport('budget', this)">Budget vs offered</div>
+        <div class="tab active" onclick="loadReport('gender',this)">Gender split</div>
+        <div class="tab" onclick="loadReport('bu',this)">Business unit</div>
+        <div class="tab" onclick="loadReport('roll',this)">On/Off-roll</div>
+        <div class="tab" onclick="loadReport('positions',this)">Positions by FY</div>
+        <div class="tab" onclick="loadReport('budget',this)">Budget vs offered</div>
       </div>
       <pre id="report">Loading…</pre>
     </div>
@@ -196,9 +307,37 @@
 </div>
 
 <script>
+// ── Auth bootstrap ──────────────────────────────────────────────────────────
+
+const _tok = localStorage.getItem('egnex_token');
+if (!_tok) { window.location.replace('/login'); throw 'unauth'; }
+
+function _parseJwt(t) {
+  try { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
+  catch { return null; }
+}
+const _me = _parseJwt(_tok);
+if (!_me) { localStorage.removeItem('egnex_token'); window.location.replace('/login'); throw 'bad_token'; }
+
+// Populate header
+document.getElementById('hdr-name').textContent = _me.name;
+const _roleEl = document.getElementById('hdr-role');
+_roleEl.textContent = (_me.role||'').replace(/_/g,' ');
+_roleEl.className = 'role-badge ' + (['admin','ta_manager','recruiter'].includes(_me.role) ? _me.role : 'other');
+
+function logout() {
+  localStorage.removeItem('egnex_token');
+  window.location.replace('/login');
+}
+
+// ── API helper ──────────────────────────────────────────────────────────────
+
 const API = "";
-async function api(path, opts) {
-  const r = await fetch(API + path, opts);
+async function api(path, opts={}) {
+  opts.headers = {...(opts.headers||{}), 'Authorization': `Bearer ${_tok}`};
+  let r;
+  try { r = await fetch(API + path, opts); } catch { showBanner('Network error — is the server running?', false); return null; }
+  if (r.status === 401) { logout(); return null; }
   return r.json();
 }
 
@@ -212,174 +351,214 @@ function showBanner(msg, ok) {
   setTimeout(() => b.remove(), 5000);
 }
 
-// ── Post-OAuth redirect detection ──────────────────────────────────────────
+// ── Post-OAuth redirect ─────────────────────────────────────────────────────
 
-const _p = new URLSearchParams(window.location.search);
-if (_p.get('connected') === '1') {
-  history.replaceState({}, '', '/');
-  showBanner('Google Calendar connected successfully.', true);
-}
-if (_p.get('gcal_error')) {
-  history.replaceState({}, '', '/');
-  showBanner('Google Calendar connection failed: ' + _p.get('gcal_error'), false);
-}
+const _qs = new URLSearchParams(window.location.search);
+if (_qs.get('connected')==='1') { history.replaceState({},'','/'); showBanner('Google Calendar connected.', true); }
+if (_qs.get('gcal_error'))      { history.replaceState({},'','/'); showBanner('GCal error: '+_qs.get('gcal_error'), false); }
 
-// ── Recruiter / Google Calendar state ──────────────────────────────────────
+// ── Google Calendar ─────────────────────────────────────────────────────────
 
-let gcalRecruiterId = localStorage.getItem('egnex_recruiter_id') || null;
+let gcalRid = localStorage.getItem('egnex_recruiter_id') || null;
 
 async function loadUsers() {
-  const users = await api('/api/users');
+  const us = await api('/api/users');
+  if (!us) return;
   const sel = document.getElementById('gcal-recruiter');
   sel.innerHTML = '<option value="">— select recruiter —</option>' +
-    users.map(u =>
-      `<option value="${u.id}"${u.id === gcalRecruiterId ? ' selected' : ''}>${u.full_name} (${u.role})</option>`
-    ).join('');
-  if (gcalRecruiterId) checkGCalStatus();
+    us.map(u=>`<option value="${u.id}"${u.id===gcalRid?' selected':''}>${u.full_name} (${u.role})</option>`).join('');
+  if (gcalRid) checkGCalStatus();
 }
 
 function onRecruiterChange() {
-  const sel = document.getElementById('gcal-recruiter');
-  gcalRecruiterId = sel.value || null;
-  if (gcalRecruiterId) {
-    localStorage.setItem('egnex_recruiter_id', gcalRecruiterId);
-  } else {
-    localStorage.removeItem('egnex_recruiter_id');
-  }
+  gcalRid = document.getElementById('gcal-recruiter').value || null;
+  gcalRid ? localStorage.setItem('egnex_recruiter_id',gcalRid) : localStorage.removeItem('egnex_recruiter_id');
   checkGCalStatus();
 }
 
 async function checkGCalStatus() {
-  const badge         = document.getElementById('gcal-badge');
-  const badgeTxt      = document.getElementById('gcal-badge-text');
-  const dot           = badge.querySelector('.gcal-dot');
-  const connectBtn    = document.getElementById('gcal-connect-btn');
-  const disconnectBtn = document.getElementById('gcal-disconnect-btn');
-
-  if (!gcalRecruiterId) {
-    badge.className = 'gcal-badge unlinked';
-    dot.className   = 'gcal-dot grey';
-    badgeTxt.textContent = 'Select a recruiter above';
-    connectBtn.classList.add('hidden');
-    disconnectBtn.classList.add('hidden');
-    return;
+  const badge=document.getElementById('gcal-badge'), txt=document.getElementById('gcal-badge-text'),
+        dot=badge.querySelector('.gcal-dot'),
+        con=document.getElementById('gcal-connect-btn'), dis=document.getElementById('gcal-disconnect-btn');
+  if (!gcalRid) {
+    badge.className='gcal-badge unlinked'; dot.className='gcal-dot grey';
+    txt.textContent='Select a recruiter above'; con.classList.add('hidden'); dis.classList.add('hidden'); return;
   }
-
-  const data = await api(`/api/google/status?recruiter_id=${gcalRecruiterId}`);
-  if (data.linked) {
-    badge.className = 'gcal-badge linked';
-    dot.className   = 'gcal-dot green';
-    badgeTxt.textContent = `Connected as ${data.google_email}`;
-    connectBtn.classList.add('hidden');
-    disconnectBtn.classList.remove('hidden');
+  const d = await api(`/api/google/status?recruiter_id=${gcalRid}`); if (!d) return;
+  if (d.linked) {
+    badge.className='gcal-badge linked'; dot.className='gcal-dot green';
+    txt.textContent=`Connected as ${d.google_email}`; con.classList.add('hidden'); dis.classList.remove('hidden');
   } else {
-    badge.className = 'gcal-badge unlinked';
-    dot.className   = 'gcal-dot grey';
-    badgeTxt.textContent = 'Not connected — schedule will be blocked until linked';
-    connectBtn.classList.remove('hidden');
-    disconnectBtn.classList.add('hidden');
+    badge.className='gcal-badge unlinked'; dot.className='gcal-dot grey';
+    txt.textContent='Not connected — schedule blocked until linked'; con.classList.remove('hidden'); dis.classList.add('hidden');
   }
 }
+function connectGCal() { if(!gcalRid){alert('Select a recruiter first.');return;} window.location.href=`/api/google/connect?recruiter_id=${gcalRid}`; }
+async function disconnectGCal() { if(!gcalRid)return; await api(`/api/google/disconnect?recruiter_id=${gcalRid}`,{method:'POST'}); checkGCalStatus(); }
 
-function connectGCal() {
-  if (!gcalRecruiterId) { alert('Select a recruiter first.'); return; }
-  window.location.href = `/api/google/connect?recruiter_id=${gcalRecruiterId}`;
-}
-
-async function disconnectGCal() {
-  if (!gcalRecruiterId) return;
-  await api(`/api/google/disconnect?recruiter_id=${gcalRecruiterId}`, {method: 'POST'});
-  checkGCalStatus();
-}
-
-// ── Pipeline actions ────────────────────────────────────────────────────────
+// ── Pipeline ────────────────────────────────────────────────────────────────
 
 async function loadReqs() {
-  const reqs = await api("/api/requisitions");
-  const sel = document.getElementById("req");
-  sel.innerHTML = reqs.map(r =>
-    `<option value="${r.id}">${r.title} — ${r.business_unit} (${r.band})</option>`
-  ).join("");
+  const rs = await api("/api/requisitions"); if (!rs) return;
+  document.getElementById("req").innerHTML = rs.map(r=>`<option value="${r.id}">${r.title} — ${r.business_unit} (${r.band})</option>`).join("");
 }
 
 async function submitApp() {
   const body = {
     requisition_id:   document.getElementById("req").value,
-    full_name:        document.getElementById("name").value || "Unnamed",
-    email:            document.getElementById("email").value || "x@x.com",
+    full_name:        document.getElementById("cand-name").value||"Unnamed",
+    email:            document.getElementById("cand-email").value||"x@x.com",
     gender:           document.getElementById("gender").value,
-    years_experience: parseFloat(document.getElementById("years").value) || null,
+    years_experience: parseFloat(document.getElementById("years").value)||null,
     resume_text:      document.getElementById("resume").value,
   };
-  const res = await api("/api/apply", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-  const b = res.breakdown || {};
-  document.getElementById("screenResult").innerHTML = `
+  const res = await api("/api/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  if (!res) return;
+  const b=res.breakdown||{};
+  document.getElementById("screenResult").innerHTML=`
     <p class="score" style="font-size:30px;color:var(--accent)">${res.match_score}<span style="font-size:14px;color:var(--muted)"> / 100</span></p>
-    <p>Skills matched: <b>${b.skills_matched_count ?? "-"} / ${b.skills_total ?? "-"}</b></p>
-    <p>Matched: ${(b.matched_skills||[]).join(", ") || "—"}</p>
-    <p>Missing: ${(b.missing_skills||[]).join(", ") || "—"}</p>
-    <p class="hint">Experience score ${b.experience_score}, AI score ${b.ai_score}</p>`;
+    <p>Skills matched: <b>${b.skills_matched_count??"-"} / ${b.skills_total??"-"}</b></p>
+    <p>Matched: ${(b.matched_skills||[]).join(", ")||"—"}</p>
+    <p>Missing: ${(b.missing_skills||[]).join(", ")||"—"}</p>
+    <p class="hint">Experience ${b.experience_score}, AI ${b.ai_score}</p>`;
   loadChart();
 }
 
 async function loadChart() {
-  const req = document.getElementById("req").value;
-  const rows = await api(`/api/requisitions/${req}/chart`);
-  document.querySelector("#chart tbody").innerHTML = rows.map(r => `
+  const req=document.getElementById("req").value; if(!req)return;
+  const rows=await api(`/api/requisitions/${req}/chart`); if(!rows)return;
+  document.querySelector("#chart tbody").innerHTML=rows.map(r=>`
     <tr>
       <td>${r.full_name}</td><td>${r.gender}</td>
-      <td class="score">${r.match_score ?? "—"}</td>
-      <td>${r.bot_score ?? "—"}</td>
-      <td class="score">${r.combined_score ?? "—"}</td>
+      <td class="score">${r.match_score??"—"}</td><td>${r.bot_score??"—"}</td>
+      <td class="score">${r.combined_score??"—"}</td>
       <td><span class="pill ${r.status.includes('interview')?'interviewing':r.status.includes('passed')?'passed':'screening'}">${r.status}</span></td>
-      <td><button type="button" class="ghost" onclick="advanceApp('${r.id}')">Advance</button></td>
+      <td><button class="ghost" onclick="advanceApp('${r.id}')">Advance</button></td>
     </tr>`).join("");
 }
 
 async function runAllBots() {
-  const req = document.getElementById("req").value;
-  const rows = await api(`/api/requisitions/${req}/chart`);
-  for (const r of rows) await api(`/api/applications/${r.id}/bot-round`, {method:"POST"});
+  const req=document.getElementById("req").value;
+  const rows=await api(`/api/requisitions/${req}/chart`); if(!rows)return;
+  for(const r of rows) await api(`/api/applications/${r.id}/bot-round`,{method:"POST"});
   loadChart();
 }
 
 async function advanceApp(id) {
-  if (!gcalRecruiterId) {
-    alert('Select a recruiter in the Google Calendar card first — scheduling requires a linked Google account.');
-    return;
-  }
-  await api(`/api/applications/${id}/advance`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({to_status:"interviewing", note:"advanced from chart"})
-  });
-  const sched = await api("/api/schedule", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      application_id: id,
-      recruiter_id:   gcalRecruiterId,
-      panel_emails:   ["panel@amnex.com"],
-      start_in_hours: 24,
-    })
-  });
-  if (sched.detail) {
-    showBanner('Scheduling: ' + sched.detail, false);
-  } else if (sched.meet_link) {
-    showBanner('Interview scheduled. Meet link: ' + sched.meet_link, true);
-  }
-  if (sched.conflicts && sched.conflicts.length) {
-    showBanner('Note: ' + sched.conflicts.join(', ') + ' may have a calendar conflict.', false);
-  }
+  if(!gcalRid){alert('Select a recruiter in the Google Calendar card first.');return;}
+  await api(`/api/applications/${id}/advance`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to_status:"interviewing",note:"advanced from chart"})});
+  const s=await api("/api/schedule",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({application_id:id,recruiter_id:gcalRid,panel_emails:["panel@amnex.com"],start_in_hours:24})});
+  if(!s)return;
+  if(s.detail) showBanner('Scheduling: '+s.detail,false);
+  else if(s.meet_link) showBanner('Interview scheduled. Meet: '+s.meet_link,true);
+  if(s.conflicts?.length) showBanner('Note: '+s.conflicts.join(', ')+' may conflict.',false);
   loadChart();
 }
 
-async function loadReport(name, el) {
-  document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-  if (el) el.classList.add("active");
-  const data = await api(`/api/reports/${name}`);
-  document.getElementById("report").textContent = JSON.stringify(data, null, 2);
+async function loadReport(name,el) {
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  if(el)el.classList.add("active");
+  const d=await api(`/api/reports/${name}`);
+  if(d)document.getElementById("report").textContent=JSON.stringify(d,null,2);
+}
+
+// ── Admin: Team Management ──────────────────────────────────────────────────
+
+const _ROLES = ['admin','ta_manager','recruiter','hiring_manager','bu_head','director','interviewer'];
+let _resetId = null;
+
+function toggleAddForm() { document.getElementById('add-form').classList.toggle('open'); }
+
+async function loadTeam() {
+  const us = await api('/api/admin/users'); if(!us) return;
+  const tbody = document.querySelector('#team-tbl tbody');
+  document.getElementById('team-empty').style.display = us.length ? 'none' : '';
+  tbody.innerHTML = us.map(u => {
+    const isSelf = u.id === _me.sub;
+    const statusPill = u.is_active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>';
+    const roleSelect = `<select style="width:auto;padding:4px 8px;font-size:12px;" onchange="changeRole('${u.id}',this.value)">${_ROLES.map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r.replace(/_/g,' ')}</option>`).join('')}</select>`;
+    const deact = u.is_active && !isSelf ? `<button class="danger" onclick="deactivateUser('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Deactivate</button>` : '';
+    const act   = !u.is_active ? `<button class="success" onclick="activateUser('${u.id}')">Activate</button>` : '';
+    return `<tr>
+      <td>${u.full_name}${isSelf?' <span style="font-size:11px;color:var(--muted)">(you)</span>':''}</td>
+      <td style="font-size:13px;">${u.email}</td>
+      <td>${roleSelect}</td>
+      <td>${statusPill}</td>
+      <td><div class="inline-actions"><button class="ghost" onclick="openResetModal('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Reset pwd</button>${deact}${act}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+async function createUser() {
+  const name=document.getElementById('nu-name').value.trim(),
+        email=document.getElementById('nu-email').value.trim(),
+        role=document.getElementById('nu-role').value,
+        pw=document.getElementById('nu-pw').value;
+  if(!name||!email||!pw){showBanner('Fill in all fields.',false);return;}
+  const res=await api('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({full_name:name,email,role,password:pw})});
+  if(!res)return;
+  if(res.detail||res.error){showBanner(res.detail||res.error,false);return;}
+  showBanner(`User ${name} created.`,true);
+  ['nu-name','nu-email','nu-pw'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('add-form').classList.remove('open');
+  loadTeam(); loadUsers();
+}
+
+async function changeRole(uid,role) {
+  const res=await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});
+  if(!res){loadTeam();return;}
+  if(res.detail){showBanner(res.detail,false);loadTeam();return;}
+  showBanner('Role updated.',true); loadUsers();
+}
+
+async function deactivateUser(uid,name) {
+  if(!confirm(`Deactivate ${name}? They will lose access immediately.`))return;
+  const res=await api(`/api/admin/users/${uid}`,{method:'DELETE'});
+  if(!res)return;
+  showBanner(`${name} deactivated.`,true); loadTeam(); loadUsers();
+}
+
+async function activateUser(uid) {
+  const res=await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:true})});
+  if(!res)return;
+  showBanner('User reactivated.',true); loadTeam(); loadUsers();
+}
+
+// ── Reset password modal ────────────────────────────────────────────────────
+
+function openResetModal(uid,name){_resetId=uid;document.getElementById('reset-for').textContent=name;document.getElementById('reset-pw').value='';document.getElementById('reset-modal').classList.add('open');}
+function closeResetModal(){_resetId=null;document.getElementById('reset-modal').classList.remove('open');}
+
+async function submitReset() {
+  const pw=document.getElementById('reset-pw').value;
+  if(!pw||pw.length<6){showBanner('Minimum 6 characters.',false);return;}
+  const res=await api(`/api/admin/users/${_resetId}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:pw})});
+  if(!res)return;
+  if(res.detail){showBanner(res.detail,false);return;}
+  showBanner('Password reset successfully.',true); closeResetModal();
+}
+
+// ── Change own password modal ───────────────────────────────────────────────
+
+function openChpwModal(){document.getElementById('chpw-old').value='';document.getElementById('chpw-new').value='';document.getElementById('chpw-err').style.display='none';document.getElementById('chpw-modal').classList.add('open');}
+function closeChpwModal(){document.getElementById('chpw-modal').classList.remove('open');}
+
+async function submitChpw() {
+  const op=document.getElementById('chpw-old').value, np=document.getElementById('chpw-new').value;
+  const errEl=document.getElementById('chpw-err'); errEl.style.display='none';
+  if(!op||!np){errEl.textContent='Fill in both fields.';errEl.style.display='block';return;}
+  const res=await api('/api/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:op,new_password:np})});
+  if(!res)return;
+  if(res.detail||res.error){errEl.textContent=res.detail||res.error;errEl.style.display='block';return;}
+  showBanner('Password changed. Signing you out…',true); closeChpwModal(); setTimeout(logout,1800);
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────
+
+if (_me.role === 'admin') {
+  document.getElementById('admin-panel').style.display = '';
+  loadTeam();
+}
 
 loadReqs().then(loadChart).then(() => loadReport('gender'));
 loadUsers();

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Egnex — Sign In</title>
+<style>
+  :root {
+    --ink: #1a1d24; --paper: #f4f1ea; --card: #ffffff;
+    --line: #d8d3c7; --accent: #f15a22; --muted: #6b6760;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    background: var(--paper); color: var(--ink);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .box {
+    background: var(--card); width: 100%; max-width: 400px;
+    border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .box-top {
+    padding: 32px 32px 24px; text-align: center;
+    border-bottom: 3px solid var(--accent);
+  }
+  .logo { height: 72px; width: auto; margin-bottom: 10px; }
+  .tagline { font-size: 11px; color: var(--muted); letter-spacing: 3px; text-transform: uppercase; }
+  .box-body { padding: 28px 32px 32px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 16px; }
+  .error-box {
+    background: #fde8e4; border: 1px solid #f5b8ae; color: #8b2a1a;
+    font-size: 13px; padding: 10px 14px; border-radius: 3px; margin-bottom: 14px;
+  }
+  label {
+    display: block; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--muted); margin: 14px 0 4px;
+  }
+  input {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 3px; font-family: inherit; font-size: 14px;
+    background: #fbfaf7; outline: none; transition: border-color 0.15s;
+  }
+  input:focus { border-color: var(--accent); }
+  .btn {
+    width: 100%; margin-top: 22px; padding: 12px; background: var(--accent);
+    color: #fff; border: none; border-radius: 3px; font-family: inherit;
+    font-size: 15px; cursor: pointer; letter-spacing: 0.3px; transition: background 0.15s;
+  }
+  .btn:hover { background: #c94918; }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .hint { font-size: 12px; color: var(--muted); text-align: center; margin-top: 16px; font-style: italic; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="box-top">
+    <img src="/assets/egnex-logo.png" alt="Egnex" class="logo">
+    <div class="tagline">One Click Hire</div>
+  </div>
+  <div class="box-body">
+    <h1>Sign in</h1>
+    <div id="err" class="error-box" style="display:none"></div>
+    <label for="email">Work email</label>
+    <input id="email" type="email" autocomplete="username" placeholder="you@amnex.com">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••">
+    <button class="btn" id="btn" onclick="doLogin()">Sign in</button>
+    <p class="hint">Your role is detected automatically after sign in.</p>
+  </div>
+</div>
+
+<script>
+// Already logged in? Go straight to dashboard.
+if (localStorage.getItem('egnex_token')) window.location.replace('/');
+
+document.getElementById('email').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('pw').focus();
+});
+document.getElementById('pw').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+async function doLogin() {
+  const email = document.getElementById('email').value.trim();
+  const pw    = document.getElementById('pw').value;
+  const err   = document.getElementById('err');
+  const btn   = document.getElementById('btn');
+
+  err.style.display = 'none';
+  if (!email || !pw) {
+    err.textContent = 'Please enter your email and password.';
+    err.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  try {
+    const res  = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pw }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      err.textContent = data.detail || 'Sign in failed.';
+      err.style.display = 'block';
+      return;
+    }
+    localStorage.setItem('egnex_token', data.token);
+    window.location.replace('/');
+  } catch {
+    err.textContent = 'Could not reach the server. Is the backend running?';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Sign in';
+  }
+}
+</script>
+</body>
+</html>

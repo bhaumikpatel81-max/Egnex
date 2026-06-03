@@ -18,13 +18,16 @@ import psycopg2
 from .db import query, query_one
 from .services import pipeline, connectors, notetaker
 from .routers.google_oauth import router as _google_oauth_router
+from .routers.auth import router as _auth_router
+from .routers.admin_users import router as _admin_router
+from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
+app.include_router(_auth_router)
+app.include_router(_admin_router)
 app.include_router(_google_oauth_router)
 
 # Resolve the frontend directory.
-# In Docker: FRONTEND_DIR=/app/frontend is set by the Dockerfile.
-# In local dev (no env var): fall back to the path relative to this file.
 _FRONTEND_DIR = os.environ.get(
     "FRONTEND_DIR",
     os.path.normpath(
@@ -35,10 +38,28 @@ _ASSETS_DIR = os.path.join(_FRONTEND_DIR, "assets")
 if os.path.isdir(_ASSETS_DIR):
     app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
+# Paths that do NOT require a JWT
+_PUBLIC = {"/", "/login", "/api/health", "/api/auth/login"}
+_PUBLIC_PREFIXES = ("/assets/",)
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path in _PUBLIC or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+        return await call_next(request)
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+    try:
+        request.state.user = _decode(auth[7:])
+    except Exception:
+        return JSONResponse(status_code=401, content={"detail": "Invalid or expired token"})
+    return await call_next(request)
+
 
 @app.exception_handler(psycopg2.Error)
 def db_error_handler(request: Request, exc: psycopg2.Error):
-    # Turn database integrity/validation errors into a clean 400 instead of 500
     return JSONResponse(status_code=400,
                         content={"error": "database constraint or bad reference",
                                  "detail": str(exc).splitlines()[0]})
@@ -116,7 +137,6 @@ def apply(payload: ApplyIn):
 
 @app.post("/api/applications/{application_id}/bot-round")
 def bot_round(application_id: str):
-    """Run the assistive AI bot interview and compute the combined score."""
     return pipeline.run_bot_round(application_id)
 
 
@@ -128,13 +148,11 @@ class AdvanceIn(BaseModel):
 
 @app.post("/api/applications/{application_id}/advance")
 def advance(application_id: str, payload: AdvanceIn):
-    """Human gate: recruiter moves a candidate forward or out."""
     return pipeline.advance(application_id, payload.to_status, payload.actor_id, payload.note)
 
 
 @app.get("/api/requisitions/{requisition_id}/chart")
 def chart(requisition_id: str):
-    """The ranked top chart the recruiter uses to decide who advances."""
     return pipeline.top_chart(requisition_id)
 
 
@@ -182,7 +200,7 @@ def schedule(payload: ScheduleIn):
     return meeting
 
 
-# ---------------- notetaker (recording + notes) ----------------
+# ---------------- notetaker ----------------
 class ConsentIn(BaseModel):
     interview_id: str
     candidate_id: str
@@ -194,7 +212,6 @@ class ConsentIn(BaseModel):
 
 @app.post("/api/consent/request")
 def consent_request(payload: ConsentIn):
-    """Show the candidate the recording notice and create a pending consent."""
     return notetaker.request_consent(payload.interview_id, payload.candidate_id,
                                      payload.consent_text, payload.region)
 
@@ -206,7 +223,6 @@ class ConsentResponseIn(BaseModel):
 
 @app.post("/api/consent/respond")
 def consent_respond(payload: ConsentResponseIn):
-    """Candidate accepts or declines recording."""
     return notetaker.record_consent_response(payload.interview_id, payload.granted)
 
 
@@ -218,9 +234,6 @@ class NotesIn(BaseModel):
 
 @app.post("/api/interviews/notes")
 def interview_notes(payload: NotesIn):
-    """Record (consent-gated) -> transcribe -> summarise -> share.
-    Works for human rounds and the AI bot round. Returns blocked if the
-    candidate has not granted consent."""
     return notetaker.process_interview(payload.interview_id, payload.job_description,
                                       payload.share_with)
 
@@ -228,7 +241,6 @@ def interview_notes(payload: NotesIn):
 # ---------------- reports ----------------
 @app.get("/api/reports/{view_name}")
 def report(view_name: str):
-    """Expose the reporting views built in 03_reports.sql."""
     allowed = {
         "tat": "v_req_time_to_fill",
         "recruiter-load": "v_recruiter_load",
@@ -245,6 +257,11 @@ def report(view_name: str):
 
 # ---------------- frontend ----------------
 if os.path.isdir(_FRONTEND_DIR):
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page():
+        with open(os.path.join(_FRONTEND_DIR, "login.html")) as f:
+            return f.read()
+
     @app.get("/", response_class=HTMLResponse)
     def index():
         with open(os.path.join(_FRONTEND_DIR, "index.html")) as f:
