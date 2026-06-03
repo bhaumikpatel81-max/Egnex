@@ -199,7 +199,7 @@ a { text-decoration: none; color: inherit; }
 }
 
 .login-card {
-  width: 380px;
+  width: 420px;
   background: var(--card-bg);
   border-radius: 12px;
   overflow: hidden;
@@ -209,15 +209,15 @@ a { text-decoration: none; color: inherit; }
 .login-header {
   background: #fff;
   border-bottom: 3px solid var(--orange);
-  padding: 28px 32px 22px;
+  padding: 36px 40px 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .login-logo {
-  height: 38px;
+  height: 54px;
   width: auto;
 }
 
