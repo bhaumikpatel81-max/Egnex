@@ -6,10 +6,11 @@ prerequisites. Serves a JSON API plus a simple bundled frontend so the whole
 pipeline can be demonstrated end to end.
 """
 import os
+import uuid as _uuid
 import json
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -17,15 +18,23 @@ import psycopg2
 
 from .db import query, query_one
 from .services import pipeline, connectors, notetaker
+from .services.resume_parser import extract_text as _parse_resume
 from .routers.google_oauth import router as _google_oauth_router
 from .routers.auth import router as _auth_router
 from .routers.admin_users import router as _admin_router
+from .routers.pipeline_api import router as _pipeline_router
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
 app.include_router(_auth_router)
 app.include_router(_admin_router)
 app.include_router(_google_oauth_router)
+app.include_router(_pipeline_router)
+
+_UPLOADS_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
+)
+os.makedirs(_UPLOADS_DIR, exist_ok=True)
 
 # Resolve the frontend directory.
 _FRONTEND_DIR = os.environ.get(
@@ -101,7 +110,9 @@ def business_units():
 def requisitions():
     return query(
         """SELECT r.id, r.title, r.status, r.roll_type, r.fiscal_year,
-                  r.budgeted_ctc, b.code AS band, bu.name AS business_unit
+                  r.budgeted_ctc, b.code AS band, bu.name AS business_unit,
+                  (SELECT COUNT(*) FROM application  WHERE requisition_id = r.id) AS in_pipeline,
+                  (SELECT COUNT(*) FROM round_config WHERE requisition_id = r.id) AS levels
            FROM requisition r
            JOIN band b ON b.id = r.band_id
            JOIN business_unit bu ON bu.id = r.bu_id
@@ -133,6 +144,54 @@ def apply(payload: ApplyIn):
     )
     return {"application_id": app_row["id"], "match_score": app_row["match_score"],
             "breakdown": app_row["score_breakdown"]}
+
+
+_ALLOWED_RESUME_TYPES = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png"}
+
+
+@app.post("/api/apply/upload")
+async def apply_upload(
+    requisition_id: str = Form(...),
+    full_name: str = Form(...),
+    email: str = Form(...),
+    gender: str = Form("undisclosed"),
+    years_experience: float = Form(None),
+    source: str = Form("career_site"),
+    file: UploadFile = File(...),
+):
+    """File-upload path: extract text from PDF/Word, then auto-screen."""
+    suffix = os.path.splitext(file.filename or "")[1].lower()
+    if suffix not in _ALLOWED_RESUME_TYPES:
+        raise HTTPException(
+            400, f"Unsupported file type '{suffix or 'none'}'. Upload a PDF or Word document."
+        )
+
+    file_bytes = await file.read()
+
+    # Extract resume text
+    resume_text, warning = _parse_resume(file_bytes, file.filename or "")
+
+    # Save locally (swap this block for GCP Storage upload when credentials are available)
+    saved_name = f"{_uuid.uuid4()}{suffix}"
+    saved_path = os.path.join(_UPLOADS_DIR, saved_name)
+    with open(saved_path, "wb") as fout:
+        fout.write(file_bytes)
+
+    cand = query_one(
+        """INSERT INTO candidate (full_name, email, gender, source, resume_url)
+           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+        [full_name, email.lower(), gender, source, saved_path],
+    )
+    app_row = pipeline.intake_and_screen(
+        requisition_id, cand["id"], resume_text, years_experience
+    )
+    return {
+        "application_id": app_row["id"],
+        "match_score": app_row["match_score"],
+        "breakdown": app_row["score_breakdown"],
+        "resume_preview": resume_text[:400] if resume_text else "",
+        "warning": warning,
+    }
 
 
 @app.post("/api/applications/{application_id}/bot-round")

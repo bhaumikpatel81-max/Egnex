@@ -5,563 +5,1108 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Egnex — One Click Hire</title>
 <style>
-  :root {
-    --ink: #1a1d24; --paper: #f4f1ea; --card: #ffffff;
-    --line: #d8d3c7; --accent: #f15a22; --accent2: #1d6e56;
-    --muted: #6b6760; --gold: #b08423;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    background: var(--paper); color: var(--ink); line-height: 1.5;
-  }
-  header {
-    background: #000000; color: var(--paper);
-    padding: 14px 32px; display: flex; align-items: center; gap: 20px;
-    border-bottom: 4px solid var(--accent);
-  }
-  header .logo { height: 52px; width: auto; display: block; }
-  header .tag { font-size: 12px; color: #c9b896; letter-spacing: 2px; text-transform: uppercase; }
-  header .spacer { flex: 1; }
-  header .user-info { display: flex; align-items: center; gap: 12px; font-size: 13px; color: #c9b896; }
-  .role-badge {
-    display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 10px;
-    text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600;
-  }
-  .role-badge.admin      { background: #f15a22; color: #fff; }
-  .role-badge.ta_manager { background: #b08423; color: #fff; }
-  .role-badge.recruiter  { background: #1d6e56; color: #fff; }
-  .role-badge.other      { background: #555;    color: #fff; }
-  .btn-hdr {
-    background: transparent; color: #c9b896; border: 1px solid #555;
-    padding: 5px 12px; border-radius: 3px; font-family: inherit;
-    font-size: 12px; cursor: pointer;
-  }
-  .btn-hdr:hover { background: #333; }
-  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 32px 80px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-  .card {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 4px; padding: 22px;
-  }
-  .card h2 {
-    font-size: 17px; margin-bottom: 14px; padding-bottom: 8px;
-    border-bottom: 2px solid var(--ink); font-weight: 600;
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  }
-  label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
-    color: var(--muted); margin: 10px 0 4px; }
-  input, select, textarea {
-    width: 100%; padding: 8px 10px; border: 1px solid var(--line);
-    border-radius: 3px; font-family: inherit; font-size: 14px; background: #fbfaf7;
-  }
-  textarea { resize: vertical; min-height: 54px; }
-  button {
-    background: var(--accent); color: #fff; border: none; padding: 10px 18px;
-    border-radius: 3px; font-family: inherit; font-size: 14px; cursor: pointer;
-    margin-top: 14px; letter-spacing: 0.5px;
-  }
-  button:hover { background: #9c3a23; }
-  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); padding: 5px 12px; margin: 0; font-size: 12px; }
-  button.ghost:hover { background: var(--ink); color: #fff; }
-  button.danger { background: transparent; color: #c0392b; border: 1px solid #c0392b; padding: 5px 12px; margin: 0; font-size: 12px; }
-  button.danger:hover { background: #c0392b; color: #fff; }
-  button.success { background: transparent; color: var(--accent2); border: 1px solid var(--accent2); padding: 5px 12px; margin: 0; font-size: 12px; }
-  button.success:hover { background: var(--accent2); color: #fff; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
-  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
-    color: var(--muted); border-bottom: 2px solid var(--ink); padding: 6px 8px; }
-  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-  .score { font-weight: 700; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
-    text-transform: uppercase; letter-spacing: 0.5px; }
-  .pill.passed      { background: #d8ecdf; color: var(--accent2); }
-  .pill.interviewing{ background: #f3e4c3; color: var(--gold); }
-  .pill.screening   { background: #e8e4da; color: var(--muted); }
-  .pill.active      { background: #d8ecdf; color: var(--accent2); }
-  .pill.inactive    { background: #e8e4da; color: var(--muted); }
-  .pill.admin       { background: #fde8e4; color: #8b2a1a; }
-  .pill.ta_manager  { background: #f3e4c3; color: var(--gold); }
-  .pill.recruiter   { background: #d8ecdf; color: var(--accent2); }
-  .pill.other       { background: #e8e4da; color: var(--muted); }
-  .full { grid-column: 1 / -1; }
-  .stagebar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
-  .stage { flex: 1; min-width: 90px; text-align: center; padding: 8px 4px; border-radius: 3px;
-    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid var(--line); }
-  .stage.auto { background: #d8ecdf; color: var(--accent2); }
-  .stage.gate { background: #f3e4c3; color: var(--gold); border-color: var(--gold); }
-  .hint { font-size: 13px; color: var(--muted); font-style: italic; margin-top: 6px; }
-  .hint-spaced { margin-top: 10px; }
-  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
-  .tab { padding: 6px 14px; border: 1px solid var(--line); border-radius: 3px; cursor: pointer; font-size: 13px; background: #fbfaf7; }
-  .tab.active { background: var(--ink); color: #fff; }
-  pre { background: #2a2d34; color: #d8ecdf; padding: 12px; border-radius: 3px; font-size: 12px; overflow:auto; font-family: "SF Mono", Menlo, monospace; }
-  .gcal-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
-  .gcal-row button { margin-top: 0; }
-  .gcal-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 6px 12px; border-radius: 3px; }
-  .gcal-badge.linked   { background: #d8ecdf; color: var(--accent2); }
-  .gcal-badge.unlinked { background: #f0ece4; color: var(--muted); }
-  .gcal-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .gcal-dot.green { background: var(--accent2); }
-  .gcal-dot.grey  { background: var(--muted); }
-  .hidden { display: none; }
-  .banner { position: fixed; top: 0; left: 0; right: 0; padding: 12px 24px; color: #fff; font-size: 14px; z-index: 999; text-align: center; letter-spacing: 0.3px; }
-  .banner-ok  { background: var(--accent2); }
-  .banner-err { background: var(--accent); }
-  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-  /* Admin */
-  .add-form { display: none; background: #fbfaf7; border: 1px solid var(--line); border-radius: 3px; padding: 18px; margin-top: 16px; }
-  .add-form.open { display: block; }
-  .add-form h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
-  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .form-grid .span2 { grid-column: 1/-1; }
-  .inline-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-  /* Modal */
-  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 500; align-items: center; justify-content: center; }
-  .modal-bg.open { display: flex; }
-  .modal { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 28px; width: 100%; max-width: 380px; box-shadow: 0 4px 24px rgba(0,0,0,.15); }
-  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
-  .modal-err { color: #8b2a1a; font-size: 13px; margin-top: 8px; }
-  .modal-btns { display: flex; gap: 10px; margin-top: 18px; }
-  .modal-btns button { margin-top: 0; flex: 1; }
-  .btn-cancel { background: transparent; color: var(--muted); border: 1px solid var(--line); }
-  .btn-cancel:hover { background: var(--line); color: var(--ink); }
+:root {
+  --accent:#f15a22; --sidebar:#0c0d10; --page:#faf9f6;
+  --card:#ffffff;   --green:#1d6e56;   --border:#e5e3df;
+  --text:#1a1d24;   --muted:#6b6760;   --gold:#b08423;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--page);color:var(--text);display:flex;height:100vh;overflow:hidden;font-size:14px}
+
+/* ── Sidebar ── */
+#sidebar{width:200px;min-width:200px;background:var(--sidebar);display:flex;flex-direction:column;overflow-y:auto}
+#sidebar .logo-area{padding:20px 16px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+#sidebar .logo-area img{height:36px;width:auto;display:block}
+#sidebar nav{padding:8px 0;flex:1}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:#888;cursor:pointer;border-left:3px solid transparent;font-size:13px;transition:background .12s,color .12s;white-space:nowrap}
+.nav-item:hover{background:rgba(255,255,255,.05);color:#ccc}
+.nav-item.active{border-left-color:var(--accent);background:rgba(241,90,34,.12);color:#fff;font-weight:500}
+.nav-icon{font-size:15px;opacity:.7;width:18px;text-align:center}
+.nav-sep{height:1px;background:rgba(255,255,255,.06);margin:6px 16px}
+
+/* ── Main area ── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#topbar{height:56px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 28px;gap:16px;flex-shrink:0}
+#topbar .screen-title{font-weight:600;font-size:16px;flex:1}
+#topbar .gcal-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.gcal-dot{width:7px;height:7px;border-radius:50%;background:#ccc}
+.gcal-dot.on{background:var(--green)}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;cursor:pointer}
+.user-menu{position:relative;display:flex;align-items:center;gap:8px}
+.user-menu .name{font-size:13px;color:var(--muted)}
+#content{flex:1;overflow-y:auto;padding:28px 32px;background:var(--page)}
+
+/* ── Cards ── */
+.card{background:#fff;border:1px solid var(--border);border-radius:6px;padding:20px}
+.card-title{font-size:15px;font-weight:600;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)}
+
+/* ── Pipeline stage cards ── */
+.stage-grid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+.stage-card{background:#fff;border:1px solid var(--border);border-radius:6px;padding:14px 10px;text-align:center;flex:1;min-width:72px}
+.stage-card .n{font-size:26px;font-weight:700;line-height:1.1}
+.stage-card .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-top:3px;line-height:1.3}
+.stage-card.joined .n{color:var(--green)}
+.stage-card.ath{border-left:3px solid var(--accent)}
+.stage-card.ath .n{color:var(--accent);font-size:22px}
+
+/* ── Table ── */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--border)}
+td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#faf8f5}
+.clickable-row{cursor:pointer}
+
+/* ── Pills / badges ── */
+.pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:500}
+.pill.open{background:#dff0eb;color:var(--green)}
+.pill.closed,.pill.cancelled{background:#f0ece4;color:var(--muted)}
+.pill.on_hold{background:#f3e9d0;color:var(--gold)}
+.pill.draft{background:#ede9e2;color:#888}
+.pill.applied,.pill.screening{background:#ede9e2;color:#888}
+.pill.screen_passed{background:#dff0eb;color:var(--green)}
+.pill.interviewing{background:#fdeedd;color:var(--gold)}
+.pill.selected{background:#dff0eb;color:var(--green);font-weight:700}
+.pill.offer_stage,.pill.offered{background:#e6f0fb;color:#2563eb}
+.pill.joined{background:#dff0eb;color:var(--green)}
+.pill.rejected,.pill.screen_rejected,.pill.dropped{background:#fde8e4;color:#8b2a1a}
+.role-pill{padding:2px 8px;border-radius:10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:500}
+.role-pill.recruiter{background:#dff0eb;color:var(--green)}
+.role-pill.ta_manager{background:#f3e9d0;color:var(--gold)}
+.role-pill.admin{background:#fde8e4;color:#8b2a1a}
+.role-pill.hiring_manager{background:#e6f0fb;color:#2563eb}
+.role-pill.other{background:#ede9e2;color:#888}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:4px;font-family:inherit;font-size:13px;cursor:pointer;font-weight:500;transition:background .12s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:#d14d1e}
+.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--border)}
+.btn-danger{background:transparent;color:#c0392b;border:1px solid #c0392b}
+.btn-danger:hover{background:#c0392b;color:#fff}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ── Forms ── */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:13px;background:#fff;outline:none;transition:border-color .12s}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--accent)}
+.form-group textarea{min-height:60px;resize:vertical}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-row.three{grid-template-columns:1fr 1fr 1fr}
+
+/* ── Kanban ── */
+.kanban{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;min-height:400px}
+.kb-col{min-width:200px;max-width:220px;flex-shrink:0;display:flex;flex-direction:column}
+.kb-col-head{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;padding:6px 4px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--border);margin-bottom:8px}
+.kb-col-head span.cnt{background:var(--border);border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600}
+.kb-col-body{flex:1;min-height:80px;border-radius:4px;padding:4px;transition:background .12s}
+.kb-col-body.drag-over{background:rgba(241,90,34,.06);border:1px dashed var(--accent)}
+.kb-card{background:#fff;border:1px solid var(--border);border-radius:5px;padding:10px 12px;margin-bottom:8px;cursor:grab;transition:box-shadow .12s;-webkit-user-select:none;user-select:none}
+.kb-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.kb-card:active{cursor:grabbing}
+.kb-card.dragging{opacity:.4;-webkit-user-select:none;user-select:none}
+.kb-card .name{font-weight:600;font-size:13px;margin-bottom:3px}
+.kb-card .score{font-size:12px;color:var(--muted)}
+.kb-card .gender{font-size:11px;color:var(--muted)}
+
+/* ── Diversity bar ── */
+.div-bar-wrap{margin:10px 0 4px}
+.div-bar{display:flex;height:22px;border-radius:3px;overflow:hidden;background:var(--border)}
+.div-bar .seg{display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:500;transition:width .3s}
+.div-bar .seg.female{background:var(--accent)}
+.div-bar .seg.male{background:#2563eb}
+.div-bar .seg.unk{background:var(--muted)}
+.div-legend{display:flex;gap:16px;margin-top:6px}
+.div-legend span{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* ── Misc ── */
+.page-header{display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap}
+.page-header h1{font-size:20px;font-weight:600;flex:1}
+.empty{text-align:center;padding:40px;color:var(--muted);font-size:14px}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.flash{position:fixed;top:0;left:0;right:0;padding:12px 24px;color:#fff;font-size:14px;z-index:9999;text-align:center}
+.flash-ok{background:var(--green)}
+.flash-err{background:var(--accent)}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:500;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border:1px solid var(--border);border-radius:6px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.12)}
+.modal h2{font-size:17px;font-weight:600;margin-bottom:18px}
+.modal-btns{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}
+.tabs{display:flex;gap:4px;margin-bottom:16px}
+.tab{padding:6px 14px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;background:#fff}
+.tab.active{background:var(--text);color:#fff;border-color:var(--text)}
+.inline-btns{display:flex;gap:6px;flex-wrap:wrap}
+.score-big{font-size:28px;font-weight:700;color:var(--accent)}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.section{margin-bottom:28px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:768px){.two-col{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 
-<header>
-  <img src="/assets/egnex-logo.png" alt="Egnex — One Click Hire" class="logo">
-  <span class="tag">Amnex Talent Acquisition</span>
-  <div class="spacer"></div>
-  <div class="user-info">
-    <span id="hdr-name"></span>
-    <span id="hdr-role" class="role-badge"></span>
-    <span id="hdr-chpw" style="font-size:12px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;" onclick="openChpwModal()">Change password</span>
-    <button class="btn-hdr" onclick="logout()">Sign out</button>
+<!-- SIDEBAR -->
+<div id="sidebar">
+  <div class="logo-area">
+    <img src="/assets/egnex-logo.png" alt="Egnex">
   </div>
-</header>
+  <nav id="sidenav"></nav>
+</div>
 
-<div class="wrap">
-
-  <!-- ══ Admin: Team Management ════════════════════════════════════════════ -->
-  <div class="card full" id="admin-panel" style="display:none;margin-bottom:24px;">
-    <h2>
-      Team management
-      <button class="ghost" style="margin-left:auto;" onclick="toggleAddForm()">+ Add user</button>
-    </h2>
-
-    <div class="add-form" id="add-form">
-      <h3>New user</h3>
-      <div class="form-grid">
-        <div><label for="nu-name">Full name</label><input id="nu-name" type="text" placeholder="Priya Sharma"></div>
-        <div><label for="nu-email">Work email</label><input id="nu-email" type="email" placeholder="priya@amnex.com"></div>
-        <div>
-          <label for="nu-role">Role</label>
-          <select id="nu-role">
-            <option value="recruiter">Recruiter</option>
-            <option value="ta_manager">TA Manager</option>
-            <option value="hiring_manager">Hiring Manager</option>
-            <option value="bu_head">BU Head</option>
-            <option value="director">Director</option>
-            <option value="interviewer">Interviewer</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <div><label for="nu-pw">Initial password</label><input id="nu-pw" type="password" placeholder="min 6 characters"></div>
-        <div class="span2" style="display:flex;gap:10px;margin-top:6px;">
-          <button type="button" onclick="createUser()" style="margin-top:0;">Create user</button>
-          <button type="button" class="ghost" onclick="toggleAddForm()" style="margin-top:0;">Cancel</button>
-        </div>
-      </div>
+<!-- MAIN -->
+<div id="main">
+  <div id="topbar">
+    <div class="screen-title" id="topbar-title">Dashboard</div>
+    <div class="gcal-status" id="gcal-indicator">
+      <span class="gcal-dot" id="gcal-dot"></span>
+      <span id="gcal-text">Calendar</span>
     </div>
-
-    <table id="team-tbl">
-      <thead>
-        <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <p class="hint" id="team-empty" style="display:none;">No users found.</p>
-  </div>
-
-  <!-- ══ Reset Password Modal ══════════════════════════════════════════════ -->
-  <div class="modal-bg" id="reset-modal" onclick="if(event.target===this)closeResetModal()">
-    <div class="modal">
-      <h3>Reset password</h3>
-      <p id="reset-for" style="font-size:13px;color:var(--muted);margin-bottom:6px;"></p>
-      <label for="reset-pw">New password</label>
-      <input id="reset-pw" type="password" placeholder="min 6 characters">
-      <div class="modal-btns">
-        <button class="btn-cancel" onclick="closeResetModal()">Cancel</button>
-        <button onclick="submitReset()">Set password</button>
-      </div>
+    <div class="user-menu">
+      <span class="name" id="topbar-name"></span>
+      <div class="avatar" id="topbar-avatar" title="Sign out" onclick="logout()"></div>
     </div>
   </div>
+  <div id="content"><p class="empty">Loading…</p></div>
+</div>
 
-  <!-- ══ Change Own Password Modal ════════════════════════════════════════ -->
-  <div class="modal-bg" id="chpw-modal" onclick="if(event.target===this)closeChpwModal()">
-    <div class="modal">
-      <h3>Change your password</h3>
-      <label for="chpw-old">Current password</label>
-      <input id="chpw-old" type="password" placeholder="••••••••">
-      <label for="chpw-new">New password</label>
-      <input id="chpw-new" type="password" placeholder="min 6 characters">
-      <p class="modal-err" id="chpw-err" style="display:none;"></p>
-      <div class="modal-btns">
-        <button class="btn-cancel" onclick="closeChpwModal()">Cancel</button>
-        <button onclick="submitChpw()">Update</button>
+<!-- NEW REQUISITION MODAL -->
+<div class="modal-bg" id="req-modal" onclick="if(event.target===this)closeReqModal()">
+  <div class="modal">
+    <h2>New requisition</h2>
+    <div class="form-row">
+      <div class="form-group"><label>Job title</label><input id="rf-title" placeholder="e.g. Backend Engineer"></div>
+      <div class="form-group"><label>Fiscal year</label><input id="rf-fy" placeholder="FY25-26"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Business unit</label><select id="rf-bu"></select></div>
+      <div class="form-group"><label>Band</label><select id="rf-band"></select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Roll type</label>
+        <select id="rf-roll"><option value="on_roll">On-roll</option><option value="off_roll">Off-roll</option></select>
       </div>
+      <div class="form-group"><label>Openings</label><input id="rf-openings" type="number" value="1" min="1"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Min experience (years)</label><input id="rf-exp" type="number" placeholder="3"></div>
+      <div class="form-group"><label>Budgeted CTC (₹)</label><input id="rf-ctc" type="number" placeholder="1800000"></div>
+    </div>
+    <div class="form-group"><label>Key skills (comma separated)</label><input id="rf-skills" placeholder="Python, PostgreSQL, GCP"></div>
+    <div class="form-group"><label>Job description</label><textarea id="rf-jd" rows="3" placeholder="Role overview…"></textarea></div>
+
+    <div style="margin-bottom:10px">
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px">Panel levels</div>
+      <div id="rounds-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+      <button class="btn btn-ghost btn-sm" type="button" onclick="addRound()">+ Add level</button>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeReqModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitReq()">Create requisition</button>
     </div>
   </div>
+</div>
 
-  <!-- ══ Pipeline ══════════════════════════════════════════════════════════ -->
-  <div class="stagebar">
-    <div class="stage auto">Application in</div>
-    <div class="stage auto">Auto-screen</div>
-    <div class="stage gate">Gate · review</div>
-    <div class="stage auto">Bot interview</div>
-    <div class="stage gate">Gate · advance</div>
-    <div class="stage auto">Auto-schedule</div>
-    <div class="stage gate">Gate · offer</div>
+<!-- APPLY MODAL -->
+<div class="modal-bg" id="apply-modal" onclick="if(event.target===this)closeApplyModal()">
+  <div class="modal">
+    <h2>Submit application</h2>
+    <div class="form-group"><label>Requisition</label><select id="am-req"></select></div>
+    <div class="form-row">
+      <div class="form-group"><label>Candidate name</label><input id="am-name" placeholder="Priya Sharma"></div>
+      <div class="form-group"><label>Email</label><input id="am-email" type="email" placeholder="priya@example.com"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Gender</label>
+        <select id="am-gender"><option value="female">Female</option><option value="male">Male</option><option value="undisclosed">Undisclosed</option></select>
+      </div>
+      <div class="form-group"><label>Years of experience</label><input id="am-years" type="number" placeholder="4"></div>
+    </div>
+    <div class="tabs">
+      <div class="tab active" id="am-tab-file" onclick="setApplyMode('file')">Upload resume</div>
+      <div class="tab" id="am-tab-text" onclick="setApplyMode('text')">Paste text</div>
+    </div>
+    <div id="am-file-area" class="form-group">
+      <label>Resume file (PDF or Word)</label>
+      <input id="am-file" type="file" accept=".pdf,.docx,.doc" style="padding:6px;cursor:pointer">
+    </div>
+    <div id="am-text-area" class="form-group" style="display:none">
+      <label>Resume text</label>
+      <textarea id="am-text" rows="4" placeholder="Python, PostgreSQL, REST API…"></textarea>
+    </div>
+    <div id="am-result" style="display:none;margin-top:12px;padding:14px;background:#faf9f6;border-radius:4px;border:1px solid var(--border)"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeApplyModal()">Close</button>
+      <button class="btn btn-primary" id="am-submit-btn" onclick="submitApply()">Submit &amp; screen</button>
+    </div>
   </div>
+</div>
 
-  <div class="grid">
-
-    <div class="card">
-      <h2>Submit an application</h2>
-      <label for="req">Requisition</label>
-      <select id="req" title="Requisition"></select>
-      <label for="cand-name">Candidate name</label>
-      <input id="cand-name" type="text" placeholder="e.g. Asha Rao">
-      <label for="cand-email">Email</label>
-      <input id="cand-email" type="email" placeholder="name@example.com">
-      <label for="gender">Gender (diversity tracking)</label>
-      <select id="gender">
-        <option value="female">Female</option>
-        <option value="male">Male</option>
-        <option value="undisclosed">Undisclosed</option>
-      </select>
-      <label for="years">Years of experience</label>
-      <input id="years" type="number" value="4">
-      <label for="resume">Resume text (paste / type)</label>
-      <textarea id="resume" placeholder="Python, PostgreSQL, REST API, GCP ..."></textarea>
-      <button type="button" onclick="submitApp()">Submit &amp; auto-screen</button>
-      <p class="hint">The system scores instantly. It never auto-rejects.</p>
+<!-- CHANGE PASSWORD MODAL -->
+<div class="modal-bg" id="chpw-modal" onclick="if(event.target===this)document.getElementById('chpw-modal').classList.remove('open')">
+  <div class="modal" style="max-width:360px">
+    <h2>Change password</h2>
+    <div class="form-group"><label>Current password</label><input id="chpw-old" type="password"></div>
+    <div class="form-group"><label>New password</label><input id="chpw-new" type="password"></div>
+    <p id="chpw-err" style="color:#c0392b;font-size:13px;margin-top:6px;display:none"></p>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="document.getElementById('chpw-modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" onclick="doChpw()">Update</button>
     </div>
+  </div>
+</div>
 
-    <div class="card">
-      <h2>Last screening result</h2>
-      <div id="screenResult"><p class="hint">Submit an application to see the score breakdown.</p></div>
+<!-- RESET PW MODAL (admin) -->
+<div class="modal-bg" id="reset-modal" onclick="if(event.target===this)closeResetModal()">
+  <div class="modal" style="max-width:340px">
+    <h2>Reset password</h2>
+    <p id="reset-for" style="font-size:13px;color:var(--muted);margin-bottom:10px"></p>
+    <div class="form-group"><label>New password</label><input id="reset-pw" type="password"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeResetModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="doReset()">Set password</button>
     </div>
-
-    <div class="card">
-      <h2>Google Calendar</h2>
-      <label for="gcal-recruiter">Scheduling as (recruiter)</label>
-      <select id="gcal-recruiter" onchange="onRecruiterChange()">
-        <option value="">— select recruiter —</option>
-      </select>
-      <div class="gcal-row">
-        <div id="gcal-badge" class="gcal-badge unlinked">
-          <span class="gcal-dot grey"></span>
-          <span id="gcal-badge-text">Select a recruiter above</span>
-        </div>
-        <button type="button" id="gcal-connect-btn" class="hidden" onclick="connectGCal()">Connect Google Calendar</button>
-        <button type="button" id="gcal-disconnect-btn" class="danger hidden" onclick="disconnectGCal()">Disconnect</button>
-      </div>
-      <p class="hint hint-spaced">Each recruiter connects their own Google account for interview scheduling.</p>
-    </div>
-
-    <div class="card full">
-      <h2>
-        Ranked top chart
-        <button type="button" class="ghost" onclick="loadChart()">Refresh</button>
-        <button type="button" class="ghost" onclick="runAllBots()">Run bot round on all</button>
-      </h2>
-      <p class="hint">Recruiter reviews the chart and advances who they choose. Human gate.</p>
-      <table id="chart">
-        <thead>
-          <tr>
-            <th>Candidate</th><th>Gender</th><th>Match</th>
-            <th>Bot</th><th>Combined</th><th>Status</th>
-            <th><span class="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="card full">
-      <h2>Reports</h2>
-      <div class="tabs">
-        <div class="tab active" onclick="loadReport('gender',this)">Gender split</div>
-        <div class="tab" onclick="loadReport('bu',this)">Business unit</div>
-        <div class="tab" onclick="loadReport('roll',this)">On/Off-roll</div>
-        <div class="tab" onclick="loadReport('positions',this)">Positions by FY</div>
-        <div class="tab" onclick="loadReport('budget',this)">Budget vs offered</div>
-      </div>
-      <pre id="report">Loading…</pre>
-    </div>
-
   </div>
 </div>
 
 <script>
-// ── Auth bootstrap ──────────────────────────────────────────────────────────
-
+// ── Auth bootstrap ────────────────────────────────────────────────────────────
 const _tok = localStorage.getItem('egnex_token');
-if (!_tok) { window.location.replace('/login'); throw 'unauth'; }
-
-function _parseJwt(t) {
+if (!_tok) { window.location.replace('/login'); throw ''; }
+function _jwt(t) {
   try { return JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
   catch { return null; }
 }
-const _me = _parseJwt(_tok);
-if (!_me) { localStorage.removeItem('egnex_token'); window.location.replace('/login'); throw 'bad_token'; }
+const ME = _jwt(_tok);
+if (!ME) { localStorage.removeItem('egnex_token'); window.location.replace('/login'); throw ''; }
 
-// Populate header
-document.getElementById('hdr-name').textContent = _me.name;
-const _roleEl = document.getElementById('hdr-role');
-_roleEl.textContent = (_me.role||'').replace(/_/g,' ');
-_roleEl.className = 'role-badge ' + (['admin','ta_manager','recruiter'].includes(_me.role) ? _me.role : 'other');
-
-function logout() {
-  localStorage.removeItem('egnex_token');
-  window.location.replace('/login');
-}
-
-// ── API helper ──────────────────────────────────────────────────────────────
-
-const API = "";
-async function api(path, opts={}) {
-  opts.headers = {...(opts.headers||{}), 'Authorization': `Bearer ${_tok}`};
+// ── API helper ────────────────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  opts.headers = { ...opts.headers, Authorization: `Bearer ${_tok}` };
   let r;
-  try { r = await fetch(API + path, opts); } catch { showBanner('Network error — is the server running?', false); return null; }
+  try { r = await fetch(path, opts); }
+  catch { flash('Network error — is the server running?', false); return null; }
   if (r.status === 401) { logout(); return null; }
+  const ct = r.headers.get('content-type') || '';
+  if (!ct.includes('json')) return null;
   return r.json();
 }
 
-// ── Flash banner ────────────────────────────────────────────────────────────
-
-function showBanner(msg, ok) {
-  const b = document.createElement('div');
-  b.className = `banner ${ok ? 'banner-ok' : 'banner-err'}`;
-  b.textContent = msg;
-  document.body.appendChild(b);
-  setTimeout(() => b.remove(), 5000);
+function flash(msg, ok = true) {
+  const el = document.createElement('div');
+  el.className = `flash ${ok ? 'flash-ok' : 'flash-err'}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
 }
 
-// ── Post-OAuth redirect ─────────────────────────────────────────────────────
+function logout() { localStorage.removeItem('egnex_token'); window.location.replace('/login'); }
 
-const _qs = new URLSearchParams(window.location.search);
-if (_qs.get('connected')==='1') { history.replaceState({},'','/'); showBanner('Google Calendar connected.', true); }
-if (_qs.get('gcal_error'))      { history.replaceState({},'','/'); showBanner('GCal error: '+_qs.get('gcal_error'), false); }
+// ── Shell ─────────────────────────────────────────────────────────────────────
+const NAV_DEF = {
+  recruiter:      [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'requisitions',icon:'📋',label:'Requisitions'},{id:'candidates',icon:'👤',label:'Candidates'},{id:'interviews',icon:'📅',label:'Interviews'},{id:'reports',icon:'📊',label:'Reports'}],
+  ta_manager:     [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'requisitions',icon:'📋',label:'Requisitions'},{id:'candidates',icon:'👤',label:'Candidates'},{id:'interviews',icon:'📅',label:'Interviews'},{id:'reports',icon:'📊',label:'Reports'},{id:'sep'},{id:'team',icon:'👥',label:'Team'},{id:'analytics',icon:'📈',label:'Analytics'}],
+  admin:          [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'requisitions',icon:'📋',label:'Requisitions'},{id:'candidates',icon:'👤',label:'Candidates'},{id:'interviews',icon:'📅',label:'Interviews'},{id:'reports',icon:'📊',label:'Reports'},{id:'sep'},{id:'team',icon:'👥',label:'Team'}],
+  hiring_manager: [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'profiles',icon:'✅',label:'Profiles to review'},{id:'interviews',icon:'📅',label:'Interviews'}],
+};
 
-// ── Google Calendar ─────────────────────────────────────────────────────────
+function buildNav() {
+  const role = ME.role || 'recruiter';
+  const items = NAV_DEF[role] || NAV_DEF.recruiter;
+  const nav = document.getElementById('sidenav');
+  nav.innerHTML = items.map(it => {
+    if (it.id === 'sep') return '<div class="nav-sep"></div>';
+    return `<div class="nav-item" id="nav-${it.id}" onclick="navigate('${it.id}')">
+      <span class="nav-icon">${it.icon}</span>${it.label}
+    </div>`;
+  }).join('');
 
-let gcalRid = localStorage.getItem('egnex_recruiter_id') || null;
-
-async function loadUsers() {
-  const us = await api('/api/users');
-  if (!us) return;
-  const sel = document.getElementById('gcal-recruiter');
-  sel.innerHTML = '<option value="">— select recruiter —</option>' +
-    us.map(u=>`<option value="${u.id}"${u.id===gcalRid?' selected':''}>${u.full_name} (${u.role})</option>`).join('');
-  if (gcalRid) checkGCalStatus();
+  // Topbar
+  document.getElementById('topbar-name').textContent = ME.name;
+  document.getElementById('topbar-avatar').textContent = (ME.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('topbar-avatar').title = `${ME.name} — sign out`;
 }
 
-function onRecruiterChange() {
-  gcalRid = document.getElementById('gcal-recruiter').value || null;
-  gcalRid ? localStorage.setItem('egnex_recruiter_id',gcalRid) : localStorage.removeItem('egnex_recruiter_id');
-  checkGCalStatus();
+function setActive(id) {
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`nav-${id}`);
+  if (el) el.classList.add('active');
 }
 
-async function checkGCalStatus() {
-  const badge=document.getElementById('gcal-badge'), txt=document.getElementById('gcal-badge-text'),
-        dot=badge.querySelector('.gcal-dot'),
-        con=document.getElementById('gcal-connect-btn'), dis=document.getElementById('gcal-disconnect-btn');
-  if (!gcalRid) {
-    badge.className='gcal-badge unlinked'; dot.className='gcal-dot grey';
-    txt.textContent='Select a recruiter above'; con.classList.add('hidden'); dis.classList.add('hidden'); return;
+function setTitle(t) { document.getElementById('topbar-title').textContent = t; }
+
+// ── Router ────────────────────────────────────────────────────────────────────
+const SCREENS = {
+  dashboard:    screenDashboard,
+  requisitions: screenRequisitions,
+  candidates:   screenCandidates,
+  interviews:   screenInterviews,
+  reports:      screenReports,
+  team:         screenTeam,
+  analytics:    screenAnalytics,
+  profiles:     screenProfiles,
+};
+
+function navigate(id, param) {
+  const hash = param ? `#${id}/${param}` : `#${id}`;
+  history.pushState({}, '', hash);
+  runRoute(id, param);
+}
+
+function runRoute(id, param) {
+  setActive(id);
+  const content = document.getElementById('content');
+  content.innerHTML = '<p class="empty">Loading…</p>';
+  if (id === 'kanban' && param) { setTitle('Kanban board'); screenKanban(param); return; }
+  const fn = SCREENS[id];
+  if (fn) fn();
+  else content.innerHTML = '<p class="empty">Screen not found.</p>';
+}
+
+window.addEventListener('popstate', () => {
+  const [, id, param] = (location.hash || '#dashboard').split(/[#\/]/);
+  runRoute(id || 'dashboard', param);
+});
+
+// ── GCal status in topbar ─────────────────────────────────────────────────────
+let _gcalRid = localStorage.getItem('egnex_recruiter_id') || ME.sub;
+
+async function refreshGCalStatus() {
+  if (!_gcalRid) return;
+  const d = await api(`/api/google/status?recruiter_id=${_gcalRid}`);
+  if (!d) return;
+  const dot = document.getElementById('gcal-dot');
+  const txt = document.getElementById('gcal-text');
+  if (d.linked) { dot.className = 'gcal-dot on'; txt.textContent = `Calendar: ${d.google_email}`; }
+  else          { dot.className = 'gcal-dot';    txt.textContent = 'Calendar: not linked'; }
+}
+
+// ── SCREEN: Dashboard ─────────────────────────────────────────────────────────
+async function screenDashboard() {
+  setTitle('Dashboard');
+  const d = await api('/api/dashboard');
+  if (!d) return;
+
+  const totalCands = (d.gender_split||[]).reduce((s,g)=>s+parseInt(g.n||0),0);
+  const femaleN = (d.gender_split||[]).find(g=>g.gender==='female')?.n || 0;
+  const maleN   = (d.gender_split||[]).find(g=>g.gender==='male')?.n || 0;
+  const unkN    = (d.gender_split||[]).find(g=>g.gender==='undisclosed')?.n || 0;
+  const fp = totalCands ? Math.round(femaleN/totalCands*100) : 0;
+  const mp = totalCands ? Math.round(maleN/totalCands*100)   : 0;
+  const up = 100 - fp - mp;
+
+  const stages = [
+    {key:'open_reqs',        label:'Open Requisitions'},
+    {key:'apps_received',    label:'Applications Received'},
+    {key:'under_screening',  label:'Under Screening'},
+    {key:'screening_cleared',label:'Screening Cleared'},
+    {key:'ai_interview',     label:'AI Interview'},
+    {key:'panel_interview',  label:'Panel Interview'},
+    {key:'selected',         label:'Selected'},
+    {key:'offer_stage',      label:'Offer Stage'},
+    {key:'joined',           label:'Joined', cls:'joined'},
+  ];
+
+  const stageHtml = stages.map(s =>
+    `<div class="stage-card ${s.cls||''}">
+      <div class="n">${d[s.key]??0}</div>
+      <div class="lbl">${s.label}</div>
+    </div>`
+  ).join('');
+
+  const athHtml = `<div class="stage-card ath">
+    <div class="n">${d.avg_days_to_hire ?? '—'}<span style="font-size:13px;color:var(--muted)"> days</span></div>
+    <div class="lbl">Avg time to hire</div>
+  </div>`;
+
+  const reqRows = (d.recent_reqs||[]).map(r => `
+    <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
+      <td>${r.title}</td>
+      <td>${r.business_unit}</td>
+      <td>${r.band}</td>
+      <td><span class="pill ${r.status}">${r.status.replace('_',' ')}</span></td>
+      <td>${r.in_pipeline}</td>
+      <td>${r.levels}</td>
+    </tr>`).join('');
+
+  let recruiterLoadHtml = '';
+  if (d.recruiter_load) {
+    recruiterLoadHtml = `
+    <div class="section">
+      <div class="card">
+        <div class="card-title">Recruiter load</div>
+        <table>
+          <thead><tr><th>Recruiter</th><th>Open reqs</th><th>Total applications</th></tr></thead>
+          <tbody>${(d.recruiter_load).map(r=>`<tr><td>${r.full_name}</td><td>${r.open_reqs??0}</td><td>${r.total_applications??0}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
   }
-  const d = await api(`/api/google/status?recruiter_id=${gcalRid}`); if (!d) return;
-  if (d.linked) {
-    badge.className='gcal-badge linked'; dot.className='gcal-dot green';
-    txt.textContent=`Connected as ${d.google_email}`; con.classList.add('hidden'); dis.classList.remove('hidden');
-  } else {
-    badge.className='gcal-badge unlinked'; dot.className='gcal-dot grey';
-    txt.textContent='Not connected — schedule blocked until linked'; con.classList.remove('hidden'); dis.classList.add('hidden');
+
+  let profilesHtml = '';
+  if (d.profiles_to_review) {
+    profilesHtml = `
+    <div class="section">
+      <div class="card">
+        <div class="card-title">Profiles awaiting your review</div>
+        ${(d.profiles_to_review||[]).length === 0 ? '<p class="empty">No profiles pending review.</p>' :
+          `<table>
+            <thead><tr><th>Candidate</th><th>Requisition</th><th>Score</th><th></th></tr></thead>
+            <tbody>${d.profiles_to_review.map(p=>`
+              <tr>
+                <td>${p.full_name}</td>
+                <td>${p.req_title}</td>
+                <td>${p.combined_score??p.match_score??'—'}</td>
+                <td><button class="btn btn-primary btn-sm" onclick="navigate('profiles')">Review</button></td>
+              </tr>`).join('')}</tbody>
+          </table>`}
+      </div>
+    </div>`;
   }
+
+  document.getElementById('content').innerHTML = `
+    <div class="section">
+      <div class="stage-grid">${stageHtml}${athHtml}</div>
+    </div>
+
+    <div class="two-col">
+      <div class="section">
+        <div class="card">
+          <div class="card-title">${ME.role==='hiring_manager'?'My requisitions':'${ME.role==='ta_manager'||ME.role==='admin'?'All requisitions':'My requisitions'}'}</div>
+          ${reqRows ? `<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>In pipeline</th><th>Levels</th></tr></thead><tbody>${reqRows}</tbody></table>` : '<p class="empty">No requisitions yet.</p>'}
+        </div>
+      </div>
+      <div class="section">
+        <div class="card">
+          <div class="card-title">Diversity (gender)</div>
+          <div class="div-bar-wrap">
+            <div class="div-bar">
+              ${fp>0?`<div class="seg female" style="width:${fp}%">${fp>8?fp+'%':''}</div>`:''}
+              ${mp>0?`<div class="seg male" style="width:${mp}%">${mp>8?mp+'%':''}</div>`:''}
+              ${up>0?`<div class="seg unk" style="width:${up}%">${up>8?up+'%':''}</div>`:''}
+            </div>
+          </div>
+          <div class="div-legend">
+            <span><span class="dot" style="background:var(--accent)"></span>Female ${femaleN}</span>
+            <span><span class="dot" style="background:#2563eb"></span>Male ${maleN}</span>
+            <span><span class="dot" style="background:var(--muted)"></span>Undisclosed ${unkN}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    ${recruiterLoadHtml}
+    ${profilesHtml}`;
+  // fix label quoting issue
+  document.querySelector('#content .card-title') && null;
 }
-function connectGCal() { if(!gcalRid){alert('Select a recruiter first.');return;} window.location.href=`/api/google/connect?recruiter_id=${gcalRid}`; }
-async function disconnectGCal() { if(!gcalRid)return; await api(`/api/google/disconnect?recruiter_id=${gcalRid}`,{method:'POST'}); checkGCalStatus(); }
 
-// ── Pipeline ────────────────────────────────────────────────────────────────
+// ── SCREEN: Requisitions ──────────────────────────────────────────────────────
+async function screenRequisitions() {
+  setTitle('Requisitions');
+  const rows = await api('/api/requisitions/full');
+  if (!rows) return;
 
-async function loadReqs() {
-  const rs = await api("/api/requisitions"); if (!rs) return;
-  document.getElementById("req").innerHTML = rs.map(r=>`<option value="${r.id}">${r.title} — ${r.business_unit} (${r.band})</option>`).join("");
+  const canCreate = ['recruiter','ta_manager','admin'].includes(ME.role);
+  const statusCounts = {open:0, on_hold:0, closed:0, draft:0};
+  rows.forEach(r => { if (statusCounts[r.status]!==undefined) statusCounts[r.status]++; });
+
+  const tableRows = rows.map(r => `
+    <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
+      <td><strong>${r.title}</strong></td>
+      <td>${r.business_unit}</td>
+      <td>${r.band}</td>
+      <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+      <td>${r.in_pipeline}</td>
+      <td>${r.levels} level${r.levels!==1?'s':''}</td>
+    </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header">
+      <h1>Requisitions</h1>
+      ${canCreate ? '<button class="btn btn-primary" onclick="openReqModal()">+ New requisition</button>' : ''}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+      <span class="pill open">Open ${statusCounts.open}</span>
+      <span class="pill on_hold">On hold ${statusCounts.on_hold}</span>
+      <span class="pill closed">Closed ${statusCounts.closed}</span>
+      <span class="pill draft">Draft ${statusCounts.draft}</span>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      ${tableRows
+        ? `<table><thead><tr><th>Role</th><th>Business unit</th><th>Band</th><th>Status</th><th>In pipeline</th><th>Levels</th></tr></thead><tbody>${tableRows}</tbody></table>`
+        : '<p class="empty">No requisitions yet. Create the first one.</p>'}
+    </div>`;
 }
 
-async function submitApp() {
-  const body = {
-    requisition_id:   document.getElementById("req").value,
-    full_name:        document.getElementById("cand-name").value||"Unnamed",
-    email:            document.getElementById("cand-email").value||"x@x.com",
-    gender:           document.getElementById("gender").value,
-    years_experience: parseFloat(document.getElementById("years").value)||null,
-    resume_text:      document.getElementById("resume").value,
-  };
-  const res = await api("/api/apply",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-  if (!res) return;
-  const b=res.breakdown||{};
-  document.getElementById("screenResult").innerHTML=`
-    <p class="score" style="font-size:30px;color:var(--accent)">${res.match_score}<span style="font-size:14px;color:var(--muted)"> / 100</span></p>
-    <p>Skills matched: <b>${b.skills_matched_count??"-"} / ${b.skills_total??"-"}</b></p>
-    <p>Matched: ${(b.matched_skills||[]).join(", ")||"—"}</p>
-    <p>Missing: ${(b.missing_skills||[]).join(", ")||"—"}</p>
-    <p class="hint">Experience ${b.experience_score}, AI ${b.ai_score}</p>`;
-  loadChart();
+// ── SCREEN: Kanban ────────────────────────────────────────────────────────────
+let _kanbanReqId = null;
+
+async function screenKanban(reqId) {
+  _kanbanReqId = reqId;
+  setActive('requisitions');
+
+  const [detail, kb] = await Promise.all([
+    api(`/api/requisitions/${reqId}/detail`),
+    api(`/api/requisitions/${reqId}/kanban`),
+  ]);
+  if (!kb) return;
+
+  const title = detail?.title || 'Requisition';
+  setTitle(title);
+
+  // Build column definitions
+  const fixedLeft = [
+    { status: 'applied',      label: 'Applications' },
+    { status: 'screening',    label: 'Screening' },
+    { status: 'screen_passed',label: 'Screening cleared' },
+  ];
+  const panelCols = (kb.rounds||[])
+    .filter(r => !r.is_auto)
+    .map(r => ({ status: 'interviewing', label: r.name, round_seq: r.sequence }));
+  const fixedRight = [
+    { status: 'selected',    label: 'Selected' },
+    { status: 'offer_stage', label: 'Offer stage' },
+    { status: 'joined',      label: 'Joined' },
+  ];
+  const cols = [...fixedLeft, ...panelCols, ...fixedRight];
+
+  // Group candidates into columns
+  function cardsFor(col) {
+    return (kb.candidates||[]).filter(c => {
+      if (c.status !== col.status) return false;
+      if (col.round_seq !== undefined && c.current_round !== col.round_seq) return false;
+      if (col.status === 'interviewing' && col.round_seq === undefined) return false;
+      return true;
+    });
+  }
+
+  const colsHtml = cols.map((col, i) => {
+    const cards = cardsFor(col);
+    const cardHtml = cards.map(c => `
+      <div class="kb-card" draggable="true"
+        data-app-id="${c.app_id}" data-status="${c.status}"
+        ondragstart="kbDragStart(event)" ondragend="kbDragEnd(event)">
+        <div class="name">${c.full_name}</div>
+        <div class="score">Score: ${c.score!=null?Math.round(c.score):'—'}</div>
+        <div class="gender">${c.gender||'—'}</div>
+      </div>`).join('');
+    return `
+      <div class="kb-col">
+        <div class="kb-col-head">
+          <span>${col.label}</span>
+          <span class="cnt">${cards.length}</span>
+        </div>
+        <div class="kb-col-body" data-col-index="${i}" data-status="${col.status}"
+          ondragover="kbDragOver(event)" ondrop="kbDrop(event,this,'${col.status}',${col.round_seq||0})"
+          ondragleave="kbDragLeave(event)">
+          ${cardHtml}
+        </div>
+      </div>`;
+  }).join('');
+
+  const canApply = ['recruiter','ta_manager','admin'].includes(ME.role);
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header">
+      <h1>${title}</h1>
+      <button class="btn btn-ghost btn-sm" onclick="navigate('requisitions')">← All requisitions</button>
+      ${canApply ? `<button class="btn btn-primary" onclick="openApplyModal('${reqId}')">+ Submit application</button>` : ''}
+    </div>
+    <div class="kanban">${colsHtml}</div>`;
 }
 
-async function loadChart() {
-  const req=document.getElementById("req").value; if(!req)return;
-  const rows=await api(`/api/requisitions/${req}/chart`); if(!rows)return;
-  document.querySelector("#chart tbody").innerHTML=rows.map(r=>`
+// ── Kanban drag-and-drop ──────────────────────────────────────────────────────
+let _dragAppId = null;
+
+function kbDragStart(e) {
+  _dragAppId = e.currentTarget.dataset.appId;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+function kbDragEnd(e) { e.currentTarget.classList.remove('dragging'); }
+function kbDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function kbDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
+async function kbDrop(e, col, toStatus, roundSeq) {
+  e.preventDefault();
+  col.classList.remove('drag-over');
+  if (!_dragAppId) return;
+  const appId = _dragAppId; _dragAppId = null;
+  const res = await api(`/api/applications/${appId}/advance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ to_status: toStatus, actor_id: ME.sub, note: `moved to ${toStatus}` }),
+  });
+  if (res) { flash(`Moved to ${toStatus}`); screenKanban(_kanbanReqId); }
+}
+
+// ── SCREEN: Candidates ────────────────────────────────────────────────────────
+async function screenCandidates() {
+  setTitle('Candidates');
+  const rows = await api('/api/candidates');
+  if (!rows) return;
+  const tableRows = rows.map(r => `
     <tr>
-      <td>${r.full_name}</td><td>${r.gender}</td>
-      <td class="score">${r.match_score??"—"}</td><td>${r.bot_score??"—"}</td>
-      <td class="score">${r.combined_score??"—"}</td>
-      <td><span class="pill ${r.status.includes('interview')?'interviewing':r.status.includes('passed')?'passed':'screening'}">${r.status}</span></td>
-      <td><button class="ghost" onclick="advanceApp('${r.id}')">Advance</button></td>
-    </tr>`).join("");
+      <td>${r.full_name}</td>
+      <td style="font-size:12px;color:var(--muted)">${r.email}</td>
+      <td>${r.gender||'—'}</td>
+      <td>${r.requisition}</td>
+      <td>${r.match_score!=null?Math.round(r.match_score):'—'}</td>
+      <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
+      <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+    </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>Candidates</h1></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      ${tableRows
+        ? `<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Match</th><th>Combined</th><th>Stage</th></tr></thead><tbody>${tableRows}</tbody></table>`
+        : '<p class="empty">No candidates yet.</p>'}
+    </div>`;
 }
 
-async function runAllBots() {
-  const req=document.getElementById("req").value;
-  const rows=await api(`/api/requisitions/${req}/chart`); if(!rows)return;
-  for(const r of rows) await api(`/api/applications/${r.id}/bot-round`,{method:"POST"});
-  loadChart();
+// ── SCREEN: Interviews ────────────────────────────────────────────────────────
+async function screenInterviews() {
+  setTitle('Interviews');
+  const rows = await api('/api/interviews');
+  if (!rows) return;
+
+  const tableRows = rows.map(r => `
+    <tr>
+      <td>${r.candidate_name}</td>
+      <td>${r.requisition}</td>
+      <td>${r.round_name}</td>
+      <td>${r.scheduled_at ? new Date(r.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '—'}</td>
+      <td><span class="pill ${r.status}">${r.status}</span></td>
+      <td>${r.meet_link ? `<a href="${r.meet_link}" target="_blank" style="color:var(--accent)">Join</a>` : '—'}</td>
+    </tr>`).join('');
+
+  // GCal connect card
+  const gcalStatus = await api(`/api/google/status?recruiter_id=${ME.sub}`);
+  const gcalLinked  = gcalStatus?.linked;
+  const gcalEmail   = gcalStatus?.google_email;
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>Interviews</h1></div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Google Calendar</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Connect your Google account to schedule interviews and auto-create Meet links.</p>
+        ${gcalLinked
+          ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+               <span class="gcal-dot on"></span>
+               <span style="font-size:13px">Connected as <strong>${gcalEmail}</strong></span>
+             </div>
+             <button class="btn btn-danger btn-sm" onclick="disconnectGCal()">Disconnect</button>`
+          : `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+               <span class="gcal-dot"></span>
+               <span style="font-size:13px;color:var(--muted)">Not connected — scheduling blocked</span>
+             </div>
+             <button class="btn btn-primary btn-sm" onclick="connectGCal()">Connect Google Calendar</button>`}
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      ${tableRows
+        ? `<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th></tr></thead><tbody>${tableRows}</tbody></table>`
+        : '<p class="empty">No interviews scheduled yet.</p>'}
+    </div>`;
 }
 
-async function advanceApp(id) {
-  if(!gcalRid){alert('Select a recruiter in the Google Calendar card first.');return;}
-  await api(`/api/applications/${id}/advance`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({to_status:"interviewing",note:"advanced from chart"})});
-  const s=await api("/api/schedule",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({application_id:id,recruiter_id:gcalRid,panel_emails:["panel@amnex.com"],start_in_hours:24})});
-  if(!s)return;
-  if(s.detail) showBanner('Scheduling: '+s.detail,false);
-  else if(s.meet_link) showBanner('Interview scheduled. Meet: '+s.meet_link,true);
-  if(s.conflicts?.length) showBanner('Note: '+s.conflicts.join(', ')+' may conflict.',false);
-  loadChart();
+function connectGCal()    { window.location.href = `/api/google/connect?recruiter_id=${ME.sub}`; }
+async function disconnectGCal() {
+  await api(`/api/google/disconnect?recruiter_id=${ME.sub}`, { method: 'POST' });
+  flash('Calendar disconnected');
+  screenInterviews();
 }
 
-async function loadReport(name,el) {
-  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-  if(el)el.classList.add("active");
-  const d=await api(`/api/reports/${name}`);
-  if(d)document.getElementById("report").textContent=JSON.stringify(d,null,2);
+// ── SCREEN: Reports ───────────────────────────────────────────────────────────
+const REPORT_DEFS = [
+  { key:'gender',    label:'Gender split',      cols:['requisition_id','title','gender','status','candidate_count'] },
+  { key:'bu',        label:'Business unit',     cols:['group_company','business_unit','requisitions','open_reqs','joined_count'] },
+  { key:'roll',      label:'On/Off-roll',       cols:['roll_type','fiscal_year','requisitions','total_openings'] },
+  { key:'positions', label:'Positions by FY',   cols:['fiscal_year','total_requisitions','total_openings','open_requisitions','closed_requisitions'] },
+  { key:'budget',    label:'Budget vs offered', cols:['title','fiscal_year','budgeted_ctc','avg_offered_ctc','offers_made'] },
+  { key:'tat',       label:'Time to fill',      cols:['title','status','opened_at','first_offer_at','days_to_first_offer'] },
+  { key:'recruiter-load', label:'Recruiter load', cols:['full_name','open_reqs','total_applications'] },
+];
+
+let _activeReport = 'gender';
+
+async function screenReports() {
+  setTitle('Reports');
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>Reports</h1></div>
+    <div class="tabs" id="report-tabs">
+      ${REPORT_DEFS.map(r=>`<div class="tab${r.key===_activeReport?' active':''}" onclick="loadReport('${r.key}')">${r.label}</div>`).join('')}
+    </div>
+    <div id="report-body"><p class="empty">Loading…</p></div>`;
+  loadReport(_activeReport);
 }
 
-// ── Admin: Team Management ──────────────────────────────────────────────────
+async function loadReport(key) {
+  _activeReport = key;
+  document.querySelectorAll('#report-tabs .tab').forEach(t => {
+    t.classList.toggle('active', t.textContent === REPORT_DEFS.find(r=>r.key===key)?.label);
+  });
+  const def = REPORT_DEFS.find(r=>r.key===key);
+  const data = await api(`/api/reports/${key}`);
+  if (!data) return;
+  const body = document.getElementById('report-body');
+  if (!data.length) { body.innerHTML = '<p class="empty">No data yet.</p>'; return; }
+  const keys = def?.cols || Object.keys(data[0]);
+  const thead = keys.map(k=>`<th>${k.replace(/_/g,' ')}</th>`).join('');
+  const tbody = data.map(row=>`<tr>${keys.map(k=>`<td>${row[k]!=null?row[k]:'—'}</td>`).join('')}</tr>`).join('');
+  body.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></div>`;
+}
 
-const _ROLES = ['admin','ta_manager','recruiter','hiring_manager','bu_head','director','interviewer'];
-let _resetId = null;
+// ── SCREEN: Team (admin/ta_manager) ──────────────────────────────────────────
+const ALL_ROLES = ['admin','ta_manager','recruiter','hiring_manager','bu_head','director','interviewer'];
+let _resetUid = null;
 
-function toggleAddForm() { document.getElementById('add-form').classList.toggle('open'); }
+async function screenTeam() {
+  setTitle('Team management');
+  const users = await api('/api/admin/users');
+  if (!users) return;
 
-async function loadTeam() {
-  const us = await api('/api/admin/users'); if(!us) return;
-  const tbody = document.querySelector('#team-tbl tbody');
-  document.getElementById('team-empty').style.display = us.length ? 'none' : '';
-  tbody.innerHTML = us.map(u => {
-    const isSelf = u.id === _me.sub;
-    const statusPill = u.is_active ? '<span class="pill active">Active</span>' : '<span class="pill inactive">Inactive</span>';
-    const roleSelect = `<select style="width:auto;padding:4px 8px;font-size:12px;" onchange="changeRole('${u.id}',this.value)">${_ROLES.map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r.replace(/_/g,' ')}</option>`).join('')}</select>`;
-    const deact = u.is_active && !isSelf ? `<button class="danger" onclick="deactivateUser('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Deactivate</button>` : '';
-    const act   = !u.is_active ? `<button class="success" onclick="activateUser('${u.id}')">Activate</button>` : '';
+  const rows = users.map(u => {
+    const isSelf = u.id === ME.sub;
+    const sel = `<select style="padding:4px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px;" onchange="changeRole('${u.id}',this.value)">${ALL_ROLES.map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r.replace(/_/g,' ')}</option>`).join('')}</select>`;
+    const act = u.is_active && !isSelf
+      ? `<button class="btn btn-danger btn-sm" onclick="deactivateUser('${u.id}','${u.full_name.replace(/'/g,"\\\'")}')">Deactivate</button>`
+      : (!u.is_active ? `<button class="btn btn-ghost btn-sm" onclick="activateUser('${u.id}')">Activate</button>` : '');
     return `<tr>
       <td>${u.full_name}${isSelf?' <span style="font-size:11px;color:var(--muted)">(you)</span>':''}</td>
-      <td style="font-size:13px;">${u.email}</td>
-      <td>${roleSelect}</td>
-      <td>${statusPill}</td>
-      <td><div class="inline-actions"><button class="ghost" onclick="openResetModal('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Reset pwd</button>${deact}${act}</div></td>
+      <td style="font-size:12px">${u.email}</td>
+      <td>${sel}</td>
+      <td><span class="pill ${u.is_active?'open':'closed'}">${u.is_active?'Active':'Inactive'}</span></td>
+      <td><div class="inline-btns">
+        <button class="btn btn-ghost btn-sm" onclick="openResetModal('${u.id}','${u.full_name.replace(/'/g,"\\\'")}')">Reset pwd</button>
+        ${act}
+      </div></td>
     </tr>`;
   }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header">
+      <h1>Team management</h1>
+      <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
+    </div>
+    <div class="card" id="add-user-card" style="display:none;margin-bottom:16px">
+      <div style="font-weight:600;margin-bottom:12px">New user</div>
+      <div class="form-row">
+        <div class="form-group"><label>Full name</label><input id="nu-name" placeholder="Priya Sharma"></div>
+        <div class="form-group"><label>Work email</label><input id="nu-email" type="email" placeholder="priya@amnex.com"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Role</label>
+          <select id="nu-role">${ALL_ROLES.map(r=>`<option value="${r}">${r.replace(/_/g,' ')}</option>`).join('')}</select>
+        </div>
+        <div class="form-group"><label>Initial password</label><input id="nu-pw" type="password" placeholder="min 6 characters"></div>
+      </div>
+      <div class="inline-btns">
+        <button class="btn btn-primary" onclick="createUser()">Create user</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('add-user-card').style.display='none'">Cancel</button>
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+function openAddUser() {
+  document.getElementById('add-user-card').style.display = 'block';
+  ['nu-name','nu-email','nu-pw'].forEach(id=>document.getElementById(id).value='');
 }
 
 async function createUser() {
-  const name=document.getElementById('nu-name').value.trim(),
-        email=document.getElementById('nu-email').value.trim(),
-        role=document.getElementById('nu-role').value,
-        pw=document.getElementById('nu-pw').value;
-  if(!name||!email||!pw){showBanner('Fill in all fields.',false);return;}
+  const name=document.getElementById('nu-name').value.trim(), email=document.getElementById('nu-email').value.trim();
+  const role=document.getElementById('nu-role').value, pw=document.getElementById('nu-pw').value;
+  if(!name||!email||!pw){flash('Fill in all fields.',false);return;}
   const res=await api('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({full_name:name,email,role,password:pw})});
-  if(!res)return;
-  if(res.detail||res.error){showBanner(res.detail||res.error,false);return;}
-  showBanner(`User ${name} created.`,true);
-  ['nu-name','nu-email','nu-pw'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('add-form').classList.remove('open');
-  loadTeam(); loadUsers();
+  if(!res||res.detail||res.error){flash(res?.detail||res?.error||'Error',false);return;}
+  flash(`User ${name} created.`); screenTeam();
 }
 
 async function changeRole(uid,role) {
   const res=await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});
-  if(!res){loadTeam();return;}
-  if(res.detail){showBanner(res.detail,false);loadTeam();return;}
-  showBanner('Role updated.',true); loadUsers();
+  if(!res||res.detail){flash(res?.detail||'Error',false);screenTeam();return;}
+  flash('Role updated.');
 }
 
 async function deactivateUser(uid,name) {
-  if(!confirm(`Deactivate ${name}? They will lose access immediately.`))return;
-  const res=await api(`/api/admin/users/${uid}`,{method:'DELETE'});
-  if(!res)return;
-  showBanner(`${name} deactivated.`,true); loadTeam(); loadUsers();
+  if(!confirm(`Deactivate ${name}?`))return;
+  await api(`/api/admin/users/${uid}`,{method:'DELETE'});
+  flash(`${name} deactivated.`); screenTeam();
 }
 
 async function activateUser(uid) {
-  const res=await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:true})});
-  if(!res)return;
-  showBanner('User reactivated.',true); loadTeam(); loadUsers();
+  await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:true})});
+  flash('User reactivated.'); screenTeam();
 }
 
-// ── Reset password modal ────────────────────────────────────────────────────
-
-function openResetModal(uid,name){_resetId=uid;document.getElementById('reset-for').textContent=name;document.getElementById('reset-pw').value='';document.getElementById('reset-modal').classList.add('open');}
-function closeResetModal(){_resetId=null;document.getElementById('reset-modal').classList.remove('open');}
-
-async function submitReset() {
+function openResetModal(uid,name) {
+  _resetUid=uid; document.getElementById('reset-for').textContent=name;
+  document.getElementById('reset-pw').value='';
+  document.getElementById('reset-modal').classList.add('open');
+}
+function closeResetModal() { document.getElementById('reset-modal').classList.remove('open'); }
+async function doReset() {
   const pw=document.getElementById('reset-pw').value;
-  if(!pw||pw.length<6){showBanner('Minimum 6 characters.',false);return;}
-  const res=await api(`/api/admin/users/${_resetId}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:pw})});
-  if(!res)return;
-  if(res.detail){showBanner(res.detail,false);return;}
-  showBanner('Password reset successfully.',true); closeResetModal();
+  if(!pw||pw.length<6){flash('Minimum 6 characters.',false);return;}
+  const res=await api(`/api/admin/users/${_resetUid}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:pw})});
+  if(res?.ok){flash('Password reset.');closeResetModal();}else{flash(res?.detail||'Error',false);}
 }
 
-// ── Change own password modal ───────────────────────────────────────────────
+// ── SCREEN: Analytics ────────────────────────────────────────────────────────
+function screenAnalytics() {
+  setTitle('Analytics');
+  screenReports(); // reuse the reports screen for now
+}
 
-function openChpwModal(){document.getElementById('chpw-old').value='';document.getElementById('chpw-new').value='';document.getElementById('chpw-err').style.display='none';document.getElementById('chpw-modal').classList.add('open');}
-function closeChpwModal(){document.getElementById('chpw-modal').classList.remove('open');}
+// ── SCREEN: Profiles to review (hiring_manager) ───────────────────────────────
+async function screenProfiles() {
+  setTitle('Profiles to review');
+  const rows = await api('/api/profiles-to-review');
+  if (!rows) return;
 
-async function submitChpw() {
+  if (!rows.length) {
+    document.getElementById('content').innerHTML = `
+      <div class="page-header"><h1>Profiles to review</h1></div>
+      <div class="card"><p class="empty">No profiles pending your review.</p>
+      <p class="hint" style="text-align:center;margin-top:8px">Profiles appear here when a requisition lists you as hiring manager and a candidate reaches "Selected" stage.</p>
+      </div>`;
+    return;
+  }
+
+  const cards = rows.map(r => `
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:600;margin-bottom:4px">${r.full_name}</div>
+          <div style="font-size:13px;color:var(--muted)">${r.email} · ${r.gender||'—'}</div>
+          <div style="font-size:13px;margin-top:6px">Requisition: <strong>${r.req_title}</strong></div>
+          <div style="margin-top:8px">
+            <span style="font-size:20px;font-weight:700;color:var(--accent)">${r.combined_score!=null?Math.round(r.combined_score):r.match_score!=null?Math.round(r.match_score):'—'}</span>
+            <span style="font-size:12px;color:var(--muted)"> / 100 score</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:180px">
+          <input id="hm-comment-${r.id}" placeholder="Optional comment…" style="padding:7px 10px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%">
+          <button class="btn btn-primary btn-sm" onclick="hmFeedback('${r.id}',true)">✓ Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="hmFeedback('${r.id}',false)">✗ Not approved</button>
+        </div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>Profiles to review</h1></div>
+    ${cards}`;
+}
+
+async function hmFeedback(appId, approved) {
+  const comment = document.getElementById(`hm-comment-${appId}`)?.value.trim();
+  const res = await api(`/api/applications/${appId}/hm-feedback`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approved, comment }),
+  });
+  if (res) { flash(approved ? 'Approved.' : 'Feedback submitted.'); screenProfiles(); }
+}
+
+// ── New Requisition form ──────────────────────────────────────────────────────
+let _roundCount = 0;
+
+async function openReqModal() {
+  _roundCount = 0;
+  document.getElementById('rounds-list').innerHTML = '';
+  ['rf-title','rf-fy','rf-skills','rf-jd'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('rf-openings').value='1';
+  ['rf-exp','rf-ctc'].forEach(id=>document.getElementById(id).value='');
+
+  const [bus, bands] = await Promise.all([api('/api/business-units'), api('/api/bands')]);
+  document.getElementById('rf-bu').innerHTML   = (bus  ||[]).map(b=>`<option value="${b.id}">${b.name} (${b.company})</option>`).join('');
+  document.getElementById('rf-band').innerHTML = (bands||[]).filter(b=>b.is_active).map(b=>`<option value="${b.id}">${b.code} — ${b.description}</option>`).join('');
+
+  // Default: AI screening + 2 panel levels
+  addRound('AI screening interview', 'bot_interview', true);
+  addRound('Technical panel', 'panel', false);
+
+  document.getElementById('req-modal').classList.add('open');
+}
+
+function closeReqModal() { document.getElementById('req-modal').classList.remove('open'); }
+
+function addRound(name='', type='panel', isAuto=false) {
+  _roundCount++;
+  const seq = _roundCount;
+  const el = document.createElement('div');
+  el.style.cssText='display:flex;gap:8px;align-items:center';
+  el.innerHTML = `
+    <span style="font-size:12px;color:var(--muted);min-width:20px">${seq}.</span>
+    <input data-round="name" placeholder="Round name e.g. Level 1 Panel" value="${name}" style="flex:2;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+    <select data-round="type" style="padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+      <option value="panel"${type==='panel'?' selected':''}>Panel</option>
+      <option value="bot_interview"${type==='bot_interview'?' selected':''}>AI / Bot</option>
+      <option value="hr"${type==='hr'?' selected':''}>HR</option>
+      <option value="assessment"${type==='assessment'?' selected':''}>Assessment</option>
+    </select>
+    <select data-round="auto" style="padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+      <option value="false"${!isAuto?' selected':''}>Manual</option>
+      <option value="true"${isAuto?' selected':''}>Auto</option>
+    </select>
+    <button type="button" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px" onclick="this.parentElement.remove()">×</button>`;
+  el.dataset.seq = seq;
+  document.getElementById('rounds-list').appendChild(el);
+}
+
+async function submitReq() {
+  const title = document.getElementById('rf-title').value.trim();
+  if (!title) { flash('Job title is required.', false); return; }
+  const skillsRaw = document.getElementById('rf-skills').value;
+  const skills = skillsRaw.split(',').map(s=>s.trim()).filter(Boolean);
+
+  // Collect rounds
+  const roundEls = document.querySelectorAll('#rounds-list > div');
+  const rounds = [];
+  roundEls.forEach((el, i) => {
+    const name = el.querySelector('[data-round="name"]')?.value.trim();
+    if (!name) return;
+    rounds.push({
+      sequence: i+1,
+      name,
+      round_type: el.querySelector('[data-round="type"]')?.value || 'panel',
+      is_auto:    el.querySelector('[data-round="auto"]')?.value === 'true',
+    });
+  });
+
+  const body = {
+    title,
+    bu_id:          document.getElementById('rf-bu').value,
+    band_id:        document.getElementById('rf-band').value,
+    roll_type:      document.getElementById('rf-roll').value,
+    openings:       parseInt(document.getElementById('rf-openings').value)||1,
+    fiscal_year:    document.getElementById('rf-fy').value.trim()||null,
+    min_experience: parseFloat(document.getElementById('rf-exp').value)||null,
+    budgeted_ctc:   parseFloat(document.getElementById('rf-ctc').value)||null,
+    key_skills:     skills,
+    job_description:document.getElementById('rf-jd').value.trim()||null,
+    rounds,
+  };
+
+  const res = await api('/api/requisitions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res || res.detail || res.error) { flash(res?.detail||res?.error||'Error creating requisition', false); return; }
+  flash(`Requisition "${title}" created.`);
+  closeReqModal();
+  screenRequisitions();
+}
+
+// ── Apply modal ───────────────────────────────────────────────────────────────
+let _applyMode = 'file';
+
+async function openApplyModal(reqId) {
+  document.getElementById('am-result').style.display='none';
+  document.getElementById('am-result').innerHTML='';
+  ['am-name','am-email','am-years'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('am-file').value='';
+  document.getElementById('am-text').value='';
+
+  const reqs = await api('/api/requisitions');
+  document.getElementById('am-req').innerHTML = (reqs||[]).map(r=>
+    `<option value="${r.id}"${r.id===reqId?' selected':''}>${r.title} — ${r.business_unit}</option>`
+  ).join('');
+  setApplyMode('file');
+  document.getElementById('apply-modal').classList.add('open');
+}
+
+function closeApplyModal() { document.getElementById('apply-modal').classList.remove('open'); }
+
+function setApplyMode(mode) {
+  _applyMode = mode;
+  document.getElementById('am-tab-file').classList.toggle('active', mode==='file');
+  document.getElementById('am-tab-text').classList.toggle('active', mode==='text');
+  document.getElementById('am-file-area').style.display = mode==='file'?'':'none';
+  document.getElementById('am-text-area').style.display = mode==='text'?'':'none';
+}
+
+async function submitApply() {
+  const btn=document.getElementById('am-submit-btn');
+  btn.disabled=true; btn.textContent='Screening…';
+  const resEl=document.getElementById('am-result');
+  resEl.style.display='none';
+
+  try {
+    const reqId=document.getElementById('am-req').value;
+    const name=document.getElementById('am-name').value||'Unnamed';
+    const email=document.getElementById('am-email').value||'x@x.com';
+    const gender=document.getElementById('am-gender').value;
+    const years=document.getElementById('am-years').value;
+
+    let res;
+    if (_applyMode === 'file') {
+      const file=document.getElementById('am-file').files[0];
+      if(!file){flash('Select a file first.',false);return;}
+      const fd=new FormData();
+      fd.append('requisition_id',reqId); fd.append('full_name',name);
+      fd.append('email',email); fd.append('gender',gender);
+      if(years) fd.append('years_experience',years);
+      fd.append('file',file);
+      res = await api('/api/apply/upload',{method:'POST',body:fd});
+    } else {
+      res = await api('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requisition_id:reqId,full_name:name,email,gender,years_experience:parseFloat(years)||null,resume_text:document.getElementById('am-text').value})});
+    }
+    if (!res) return;
+    if (res.detail||res.error){flash(res.detail||res.error,false);return;}
+    const b=res.breakdown||{};
+    resEl.innerHTML=`
+      <span class="score-big">${res.match_score}</span><span style="font-size:13px;color:var(--muted)"> / 100</span>
+      <div style="margin-top:8px;font-size:13px">
+        Skills matched: <strong>${b.skills_matched_count??'—'} / ${b.skills_total??'—'}</strong><br>
+        Matched: ${(b.matched_skills||[]).join(', ')||'—'}<br>
+        Missing: ${(b.missing_skills||[]).join(', ')||'—'}
+      </div>
+      ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ ${res.warning}</p>`:''}
+      ${res.resume_preview?`<details style="margin-top:8px;font-size:12px"><summary style="cursor:pointer;color:var(--muted)">Resume preview</summary><pre style="white-space:pre-wrap;font-size:11px;margin-top:4px;background:#f4f1ea;padding:8px;border-radius:3px">${res.resume_preview.replace(/</g,'&lt;')}…</pre></details>`:''}`;
+    resEl.style.display='block';
+  } finally {
+    btn.disabled=false; btn.textContent='Submit & screen';
+  }
+}
+
+// ── Change own password ───────────────────────────────────────────────────────
+document.getElementById('topbar-avatar').addEventListener('contextmenu', e => {
+  e.preventDefault();
+  document.getElementById('chpw-modal').classList.add('open');
+  document.getElementById('chpw-old').value=''; document.getElementById('chpw-new').value='';
+  document.getElementById('chpw-err').style.display='none';
+});
+
+async function doChpw() {
   const op=document.getElementById('chpw-old').value, np=document.getElementById('chpw-new').value;
-  const errEl=document.getElementById('chpw-err'); errEl.style.display='none';
+  const errEl=document.getElementById('chpw-err');
+  errEl.style.display='none';
   if(!op||!np){errEl.textContent='Fill in both fields.';errEl.style.display='block';return;}
   const res=await api('/api/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:op,new_password:np})});
-  if(!res)return;
-  if(res.detail||res.error){errEl.textContent=res.detail||res.error;errEl.style.display='block';return;}
-  showBanner('Password changed. Signing you out…',true); closeChpwModal(); setTimeout(logout,1800);
+  if(res?.ok){flash('Password changed. Signing you out…'); document.getElementById('chpw-modal').classList.remove('open'); setTimeout(logout,2000);}
+  else{errEl.textContent=res?.detail||'Error';errEl.style.display='block';}
 }
 
-// ── Init ────────────────────────────────────────────────────────────────────
+// ── Post-OAuth redirect check ─────────────────────────────────────────────────
+const _qs = new URLSearchParams(window.location.search);
+if (_qs.get('connected')==='1') { history.replaceState({},'','/'); flash('Google Calendar connected.'); }
+if (_qs.get('gcal_error'))      { history.replaceState({},'','/'); flash('GCal error: '+_qs.get('gcal_error'), false); }
 
-if (_me.role === 'admin') {
-  document.getElementById('admin-panel').style.display = '';
-  loadTeam();
-}
+// ── Boot ──────────────────────────────────────────────────────────────────────
+buildNav();
+refreshGCalStatus();
 
-loadReqs().then(loadChart).then(() => loadReport('gender'));
-loadUsers();
+const [, _initId, _initParam] = (location.hash || '#dashboard').split(/[#\/]/);
+runRoute(_initId || 'dashboard', _initParam);
 </script>
 </body>
 </html>

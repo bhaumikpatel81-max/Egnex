@@ -18,6 +18,71 @@ The backend is Python with FastAPI, chosen because the resume-screening and AI-b
 
 The repository follows the deployment pipeline's required structure: a `docker-compose.prod.yml` at the root, with `backend/`, `frontend/`, and `database/` folders. Services bind to `0.0.0.0` and read the host port from the `PORT` environment variable rather than hard-coding it. Each container runs as a non-root user with a healthcheck, and no secrets are committed to git, per the deployment prerequisites.
 
+## Folder structure
+
+Every file in the repository, annotated with its purpose.
+
+```text
+egnex/
+│
+├── docker-compose.prod.yml         # Production orchestration — wires database + backend, reads .env.prod
+├── docker-compose.dev.yml          # Development orchestration — hot-reload, root user for file watcher
+├── .env.prod                       # Production env-var template (DB password, Google OAuth keys, JWT secret)
+├── .gitignore                      # Excludes .env files, __pycache__, node_modules, OS noise
+├── README.md                       # Non-technical user guide (how to run, how to use)
+├── ARCHITECTURE.md                 # This file — tech design, folder map, phase roadmap
+├── DESIGN_SPEC.md                  # Frontend rebuild spec — multi-screen ATS layout (future phase)
+├── HANDOFF.md                      # Step-by-step build guide for non-technical owner
+│
+├── backend/
+│   ├── Dockerfile                  # python:3.12-slim, non-root appuser, healthcheck on /api/health
+│   ├── requirements.txt            # All Python dependencies with pinned versions
+│   └── app/
+│       ├── __init__.py             # Empty — marks app/ as a Python package
+│       ├── main.py                 # FastAPI app entry point — routes, middleware, static file serving
+│       ├── db.py                   # PostgreSQL connection layer (query / query_one helpers)
+│       ├── auth_utils.py           # JWT creation/verification + bcrypt password hashing
+│       │
+│       ├── routers/                # Route handlers — each file owns one domain
+│       │   ├── __init__.py
+│       │   ├── auth.py             # POST /api/auth/login, GET /api/auth/me, POST /api/auth/change-password
+│       │   ├── admin_users.py      # CRUD for users — admin-only (create, edit, deactivate, reset password)
+│       │   └── google_oauth.py     # Google OAuth flow — connect, callback, status, disconnect
+│       │
+│       └── services/               # Business logic — isolated from HTTP layer
+│           ├── __init__.py
+│           ├── pipeline.py         # Application state machine — intake, scoring, advancement, stage_event logging
+│           ├── screening.py        # Resume scoring — keyword match (50%) + experience (30%) + AI stub (20%)
+│           ├── connectors.py       # External integrations — Google Calendar (live), Gmail / Bot / Darwin (stubs)
+│           └── notetaker.py        # Recording consent gate + recording / transcription / summarisation pipeline
+│
+├── frontend/
+│   ├── index.html                  # Main dashboard — all UI in one file (prototype, single-page vanilla JS)
+│   ├── login.html                  # Login screen — email + password form, redirects to dashboard on success
+│   └── assets/
+│       └── egnex-logo.png          # Brand logo (fire-orange)
+│
+└── database/
+    ├── 01_schema.sql               # Core tables — org structure, users, requisitions, candidates, interviews, offers, audit
+    ├── 02_seed.sql                 # Real Amnex data — 6 companies, 8 BUs, 13 bands, sample users, approval chains
+    ├── 03_auth_migration.sql       # Adds password_hash + reset_token columns to app_user
+    ├── 03_reports.sql              # 7 reporting views — TAT, recruiter load, gender, positions, budget, BU, roll
+    ├── 04_notetaker.sql            # Recording consent, meeting_recording, meeting_transcript, meeting_notes tables
+    └── 05_google_oauth.sql         # recruiter_google_token table — stores per-recruiter OAuth access/refresh tokens
+```
+
+### What each layer does
+
+| Layer | Role |
+| --- | --- |
+| `database/` | Source of truth — all tables, seed data, reporting views. Run once in order (01 → 02 → 03 → 04 → 05). |
+| `backend/app/db.py` | Thin wrapper around psycopg2. All SQL lives in the routers and services, not here. |
+| `backend/app/auth_utils.py` | Stateless — creates and verifies JWTs; hashes and checks passwords. No DB calls. |
+| `backend/app/routers/` | HTTP boundary — validates inputs, calls services, returns JSON. No business logic. |
+| `backend/app/services/` | All logic — scoring, state transitions, external API calls. Never touches HTTP objects. |
+| `backend/app/main.py` | Assembles the app — mounts routers, adds JWT middleware, serves the frontend HTML. |
+| `frontend/` | Browser UI — fetches the backend API, stores JWT in localStorage, renders views. No build step. |
+
 ## What Phase 1 delivers
 
 Phase 1 is the foundation: the complete database. Three SQL files in the `database/` folder, all tested against PostgreSQL 16 and confirmed to run without errors.
