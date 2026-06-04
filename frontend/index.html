@@ -4,43 +4,34 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Egnex — One Click Hire</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-:root {
-  --accent:#f15a22; --sidebar:#0c0d10; --page:#faf9f6;
-  --card:#ffffff;   --green:#1d6e56;   --border:#e5e3df;
-  --text:#1a1d24;   --muted:#6b6760;   --gold:#b08423;
-}
+:root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--page);color:var(--text);display:flex;height:100vh;overflow:hidden;font-size:14px}
-
-/* ── Sidebar ── */
 #sidebar{width:200px;min-width:200px;background:var(--sidebar);display:flex;flex-direction:column;overflow-y:auto}
-#sidebar .logo-area{padding:20px 16px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+#sidebar .logo-area{padding:20px 16px 14px;border-bottom:1px solid rgba(255,255,255,.07)}
 #sidebar .logo-area img{height:36px;width:auto;display:block}
-#sidebar nav{padding:8px 0;flex:1}
+#sidebar nav{padding:8px 0;flex:1;display:flex;flex-direction:column}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:#c0bfbd;cursor:pointer;border-left:3px solid transparent;font-size:13px;transition:background .12s,color .12s;white-space:nowrap}
 .nav-item:hover{background:rgba(255,255,255,.08);color:#fff}
 .nav-item.active{border-left-color:var(--accent);background:rgba(241,90,34,.15);color:#fff;font-weight:500}
-.nav-icon{font-size:15px;opacity:.7;width:18px;text-align:center}
-.nav-sep{height:1px;background:rgba(255,255,255,.06);margin:6px 16px}
-
-/* ── Main area ── */
+.nav-item.danger{color:#f87171}
+.nav-spacer{flex:1}
+.nav-sep{height:1px;background:rgba(255,255,255,.07);margin:6px 16px}
+.nav-icon{font-size:14px;width:18px;text-align:center;flex-shrink:0}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 #topbar{height:56px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 28px;gap:16px;flex-shrink:0}
 #topbar .screen-title{font-weight:600;font-size:16px;flex:1}
-#topbar .gcal-status{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
-.gcal-dot{width:7px;height:7px;border-radius:50%;background:#ccc}
+#gcal-indicator{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.gcal-dot{width:7px;height:7px;border-radius:50%;background:#ccc;flex-shrink:0}
 .gcal-dot.on{background:var(--green)}
+.user-chip{display:flex;align-items:center;gap:8px}
+.user-chip .uname{font-size:13px;color:var(--muted)}
 .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;cursor:pointer}
-.user-menu{position:relative;display:flex;align-items:center;gap:8px}
-.user-menu .name{font-size:13px;color:var(--muted)}
 #content{flex:1;overflow-y:auto;padding:28px 32px;background:var(--page)}
-
-/* ── Cards ── */
 .card{background:#fff;border:1px solid var(--border);border-radius:6px;padding:20px}
-.card-title{font-size:15px;font-weight:600;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid var(--border)}
-
-/* ── Pipeline stage cards ── */
+.card-title{font-size:14px;font-weight:600;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);color:var(--text)}
 .stage-grid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
 .stage-card{background:#fff;border:1px solid var(--border);border-radius:6px;padding:14px 10px;text-align:center;flex:1;min-width:72px}
 .stage-card .n{font-size:26px;font-weight:700;line-height:1.1}
@@ -48,137 +39,181 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--page);color
 .stage-card.joined .n{color:var(--green)}
 .stage-card.ath{border-left:3px solid var(--accent)}
 .stage-card.ath .n{color:var(--accent);font-size:22px}
-
-/* ── Table ── */
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);padding:8px 10px;border-bottom:2px solid var(--border)}
 td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#faf8f5}
 .clickable-row{cursor:pointer}
-
-/* ── Pills / badges ── */
 .pill{display:inline-block;padding:2px 9px;border-radius:10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:500}
-.pill.open{background:#dff0eb;color:var(--green)}
-.pill.closed,.pill.cancelled{background:#f0ece4;color:var(--muted)}
-.pill.on_hold{background:#f3e9d0;color:var(--gold)}
-.pill.draft{background:#ede9e2;color:#888}
+.pill.open,.pill.active{background:#dff0eb;color:var(--green)}
+.pill.closed,.pill.cancelled,.pill.inactive{background:#f0ece4;color:var(--muted)}
+.pill.on_hold,.pill.draft{background:#f3e9d0;color:var(--gold)}
 .pill.applied,.pill.screening{background:#ede9e2;color:#888}
 .pill.screen_passed{background:#dff0eb;color:var(--green)}
 .pill.interviewing{background:#fdeedd;color:var(--gold)}
-.pill.selected{background:#dff0eb;color:var(--green);font-weight:700}
+.pill.selected,.pill.joined{background:#dff0eb;color:var(--green);font-weight:700}
 .pill.offer_stage,.pill.offered{background:#e6f0fb;color:#2563eb}
-.pill.joined{background:#dff0eb;color:var(--green)}
 .pill.rejected,.pill.screen_rejected,.pill.dropped{background:#fde8e4;color:#8b2a1a}
-.role-pill{padding:2px 8px;border-radius:10px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:500}
-.role-pill.recruiter{background:#dff0eb;color:var(--green)}
-.role-pill.ta_manager{background:#f3e9d0;color:var(--gold)}
-.role-pill.admin{background:#fde8e4;color:#8b2a1a}
-.role-pill.hiring_manager{background:#e6f0fb;color:#2563eb}
-.role-pill.other{background:#ede9e2;color:#888}
-
-/* ── Buttons ── */
+.pill.p1{background:#fff3cd;color:#856404;border:1px solid #ffc107}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:4px;font-family:inherit;font-size:13px;cursor:pointer;font-weight:500;transition:background .12s}
-.btn-primary{background:var(--accent);color:#fff}
-.btn-primary:hover{background:#d14d1e}
-.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border)}
-.btn-ghost:hover{background:var(--border)}
-.btn-danger{background:transparent;color:#c0392b;border:1px solid #c0392b}
-.btn-danger:hover{background:#c0392b;color:#fff}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#d14d1e}
+.btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border)}.btn-ghost:hover{background:var(--border)}
+.btn-danger{background:transparent;color:#c0392b;border:1px solid #c0392b}.btn-danger:hover{background:#c0392b;color:#fff}
+.btn-green{background:var(--green);color:#fff}.btn-green:hover{background:#155a47}
 .btn-sm{padding:4px 10px;font-size:12px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
-
-/* ── Forms ── */
 .form-group{margin-bottom:14px}
 .form-group label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px}
 .form-group input,.form-group select,.form-group textarea{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:13px;background:#fff;outline:none;transition:border-color .12s}
 .form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--accent)}
 .form-group textarea{min-height:60px;resize:vertical}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.form-row.three{grid-template-columns:1fr 1fr 1fr}
-
-/* ── Kanban ── */
 .kanban{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;min-height:400px}
 .kb-col{min-width:200px;max-width:220px;flex-shrink:0;display:flex;flex-direction:column}
 .kb-col-head{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;padding:6px 4px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--border);margin-bottom:8px}
-.kb-col-head span.cnt{background:var(--border);border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600}
+.kb-col-head .cnt{background:var(--border);border-radius:10px;padding:1px 7px;font-size:11px}
 .kb-col-body{flex:1;min-height:80px;border-radius:4px;padding:4px;transition:background .12s}
 .kb-col-body.drag-over{background:rgba(241,90,34,.06);border:1px dashed var(--accent)}
-.kb-card{background:#fff;border:1px solid var(--border);border-radius:5px;padding:10px 12px;margin-bottom:8px;cursor:grab;transition:box-shadow .12s;-webkit-user-select:none;user-select:none}
+.kb-card{background:#fff;border:1px solid var(--border);border-radius:5px;padding:10px 12px;margin-bottom:8px;cursor:grab;-webkit-user-select:none;user-select:none;transition:box-shadow .12s}
 .kb-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
-.kb-card:active{cursor:grabbing}
-.kb-card.dragging{opacity:.4;-webkit-user-select:none;user-select:none}
-.kb-card .name{font-weight:600;font-size:13px;margin-bottom:3px}
-.kb-card .score{font-size:12px;color:var(--muted)}
-.kb-card .gender{font-size:11px;color:var(--muted)}
-
-/* ── Diversity bar ── */
-.div-bar-wrap{margin:10px 0 4px}
+.kb-card.dragging{opacity:.4}
+.kb-card .cname{font-weight:600;font-size:13px;margin-bottom:2px}
+.kb-card .cscore{font-size:12px;color:var(--muted)}
 .div-bar{display:flex;height:22px;border-radius:3px;overflow:hidden;background:var(--border)}
-.div-bar .seg{display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:500;transition:width .3s}
-.div-bar .seg.female{background:var(--accent)}
-.div-bar .seg.male{background:#2563eb}
-.div-bar .seg.unk{background:var(--muted)}
+.div-bar .seg{display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;font-weight:500}
+.div-bar .seg.female{background:var(--accent)}.div-bar .seg.male{background:#2563eb}.div-bar .seg.unk{background:var(--muted)}
 .div-legend{display:flex;gap:16px;margin-top:6px}
 .div-legend span{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
 .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-
-/* ── Misc ── */
 .page-header{display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap}
 .page-header h1{font-size:20px;font-weight:600;flex:1}
 .empty{text-align:center;padding:40px;color:var(--muted);font-size:14px}
-.hint{font-size:12px;color:var(--muted);margin-top:4px}
 .flash{position:fixed;top:0;left:0;right:0;padding:12px 24px;color:#fff;font-size:14px;z-index:9999;text-align:center}
-.flash-ok{background:var(--green)}
-.flash-err{background:var(--accent)}
+.flash-ok{background:var(--green)}.flash-err{background:var(--accent)}
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:500;align-items:center;justify-content:center}
 .modal-bg.open{display:flex}
 .modal{background:#fff;border:1px solid var(--border);border-radius:6px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.12)}
 .modal h2{font-size:17px;font-weight:600;margin-bottom:18px}
 .modal-btns{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}
-.tabs{display:flex;gap:4px;margin-bottom:16px}
-.tab{padding:6px 14px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;background:#fff}
-.tab.active{background:var(--text);color:#fff;border-color:var(--text)}
-.inline-btns{display:flex;gap:6px;flex-wrap:wrap}
-.score-big{font-size:28px;font-weight:700;color:var(--accent)}
-.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
-.section{margin-bottom:28px}
+.tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:6px 14px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;background:#fff;transition:background .1s}
+.tab.active,.tab:hover{background:var(--text);color:#fff;border-color:var(--text)}
+.period-bar{display:flex;gap:4px;margin-bottom:20px}
+.period-btn{padding:6px 14px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;background:#fff}
+.period-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chart-wrap{position:relative;height:240px;margin-top:8px}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat-box{background:#fff;border:1px solid var(--border);border-radius:6px;padding:16px;text-align:center}
+.stat-box .sv{font-size:28px;font-weight:700;color:var(--accent)}
+.stat-box .sl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:4px}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-@media(max-width:768px){.two-col{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}}
+.inline-btns{display:flex;gap:6px;flex-wrap:wrap}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge-green{background:#dff0eb;color:var(--green)}.badge-orange{background:#fdeedd;color:var(--gold)}.badge-red{background:#fde8e4;color:#8b2a1a}
+@media(max-width:768px){.form-row,.two-col,.chart-grid,.stat-row{grid-template-columns:1fr}}
+/* NexAI */
+.nexai-orb-wrap{display:flex;flex-direction:column;align-items:center;margin:8px 0 4px}
+#nexai-orb{display:block;border-radius:50%;background:transparent}
+.nexai-state-label{font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-top:6px;font-weight:600;height:16px}
+.nexai-state-label.speaking{color:var(--accent)}
+.nexai-state-label.listening{color:var(--green)}
+.nexai-state-label.idle{color:var(--muted)}
+.nexai-state-label.done{color:#2563eb}
+.nexai-question-box{background:#0c0d10;color:#fff;border-radius:6px;padding:16px 18px;margin-bottom:12px;font-size:14px;min-height:50px;line-height:1.6}
+.nexai-transcript{background:#f4f1ea;border-radius:4px;padding:12px;font-size:12px;max-height:140px;overflow-y:auto;margin-bottom:10px}
+/* Avatar video (GPU path — hidden when orb is active) */
+#nexai-avatar-video{width:180px;height:180px;object-fit:cover;border-radius:50%;display:none;margin:0 auto}
+/* Proctoring */
+#rec-badge{display:none;position:fixed;top:64px;right:20px;z-index:1000;background:#c0392b;color:#fff;padding:5px 12px;border-radius:4px;font-size:12px;font-weight:700;letter-spacing:.5px;animation:recpulse 2s ease-in-out infinite}
+@keyframes recpulse{0%,100%{opacity:1}50%{opacity:.6}}
+.consent-notice{background:#fff8e1;border:1px solid #ffe082;border-radius:4px;padding:14px;margin-bottom:14px;font-size:13px;line-height:1.6}
+.consent-notice ul{margin:8px 0 8px 18px}
+.consent-notice .out-of-scope{background:#f5f5f5;border-left:3px solid #ccc;padding:8px 12px;margin-top:10px;font-size:12px;color:var(--muted)}
+.flag-timeline{margin-top:10px}
+.flag-item{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:4px;margin-bottom:4px;font-size:12px}
+.flag-item.multi_face,.flag-item.phone_detected{background:#fde8e4}
+.flag-item.no_face,.flag-item.face_away{background:#fff3cd}
+.flag-ts{font-weight:600;min-width:60px;font-family:monospace}
 </style>
 </head>
 <body>
 
-<!-- SIDEBAR -->
-<div id="sidebar">
-  <div class="logo-area">
-    <img src="/assets/egnex-logo.png" alt="Egnex">
+<!-- B1: Persistent recording badge (shown during proctored sessions) -->
+<div id="rec-badge">● REC</div>
+
+<!-- B1: Proctoring consent modal -->
+<div class="modal-bg" id="proctor-consent-modal">
+  <div class="modal" style="max-width:560px">
+    <h2>Recording consent — NexAI Interview</h2>
+    <div class="consent-notice">
+      <p><strong>Before this interview begins, please read carefully.</strong></p>
+      <p style="margin-top:8px">If you proceed with proctoring enabled, this session will:</p>
+      <ul>
+        <li>Record your webcam video continuously throughout the interview</li>
+        <li>Record your screen (you will be asked to grant permission)</li>
+        <li>Capture your microphone audio</li>
+        <li>Take a photograph of you at the start for identity purposes</li>
+        <li>Run AI behaviour analysis on the recording (multi-face detection, phone detection)</li>
+      </ul>
+      <p style="margin-top:8px">All recordings are stored on Amnex's GCP, with a retention period set by the legal team. AI flags are reviewed by a human recruiter — they are <strong>never used to auto-reject</strong>.</p>
+      <div class="out-of-scope">
+        <strong>What we do NOT monitor (out of scope — specialist vendor or native app required):</strong><br>
+        • Lockdown browser (tab/copy blocking) — needs an installed native application<br>
+        • Secondary device or hidden phone detection via audio/Wi-Fi — needs native + hardware<br>
+        • Virtual machine blocking — needs native system access<br>
+        • Government-ID biometric face matching — specialist paid identity service<br>
+        • Keystroke-dynamics identity — low reliability, skipped
+      </div>
+    </div>
+    <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-bottom:14px">
+      <input type="checkbox" id="consent-check" style="width:auto;margin-top:2px" onchange="document.getElementById('consent-accept-btn').disabled=!this.checked">
+      <span>I have read the above notice and consent to this session being recorded and analysed.</span>
+    </label>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="declineProctoring()">Decline — interview without proctoring</button>
+      <button class="btn btn-primary" id="consent-accept-btn" disabled onclick="acceptProctoring()">Accept &amp; start interview</button>
+    </div>
   </div>
+</div>
+
+<!-- A3: Face selector (shown only when GPU avatar provider is active) -->
+<div class="modal-bg" id="face-select-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal" style="max-width:360px">
+    <h2>Choose interviewer avatar</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Select the AI-generated face that will speak the interview questions.</p>
+    <div id="face-options" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="document.getElementById('face-select-modal').classList.remove('open')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmFaceSelect()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div id="sidebar">
+  <div class="logo-area"><img src="/assets/egnex-logo.png" alt="Egnex"></div>
   <nav id="sidenav"></nav>
 </div>
 
-<!-- MAIN -->
 <div id="main">
   <div id="topbar">
     <div class="screen-title" id="topbar-title">Dashboard</div>
-    <div class="gcal-status" id="gcal-indicator">
-      <span class="gcal-dot" id="gcal-dot"></span>
-      <span id="gcal-text">Calendar</span>
-    </div>
-    <div class="user-menu">
-      <span class="name" id="topbar-name"></span>
-      <div class="avatar" id="topbar-avatar" title="Sign out" onclick="logout()"></div>
+    <div id="gcal-indicator"><span class="gcal-dot" id="gcal-dot"></span><span id="gcal-text">Calendar</span></div>
+    <div class="user-chip">
+      <span class="uname" id="topbar-name"></span>
+      <div class="avatar" id="topbar-avatar" onclick="logout()" title="Click to sign out"></div>
     </div>
   </div>
   <div id="content"><p class="empty">Loading…</p></div>
 </div>
 
-<!-- NEW REQUISITION MODAL -->
+<!-- ── New Requisition Modal ── -->
 <div class="modal-bg" id="req-modal" onclick="if(event.target===this)closeReqModal()">
   <div class="modal">
     <h2>New requisition</h2>
     <div class="form-row">
-      <div class="form-group"><label>Job title</label><input id="rf-title" placeholder="e.g. Backend Engineer"></div>
+      <div class="form-group"><label>Job title</label><input id="rf-title" placeholder="Backend Engineer"></div>
       <div class="form-group"><label>Fiscal year</label><input id="rf-fy" placeholder="FY25-26"></div>
     </div>
     <div class="form-row">
@@ -186,21 +221,26 @@ tr:hover td{background:#faf8f5}
       <div class="form-group"><label>Band</label><select id="rf-band"></select></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Roll type</label>
-        <select id="rf-roll"><option value="on_roll">On-roll</option><option value="off_roll">Off-roll</option></select>
-      </div>
+      <div class="form-group"><label>Roll type</label><select id="rf-roll"><option value="on_roll">On-roll</option><option value="off_roll">Off-roll</option></select></div>
       <div class="form-group"><label>Openings</label><input id="rf-openings" type="number" value="1" min="1"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Min experience (years)</label><input id="rf-exp" type="number" placeholder="3"></div>
+      <div class="form-group"><label>Min experience (yrs)</label><input id="rf-exp" type="number" placeholder="3"></div>
       <div class="form-group"><label>Budgeted CTC (₹)</label><input id="rf-ctc" type="number" placeholder="1800000"></div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>Hiring location</label><input id="rf-loc" placeholder="Ahmedabad"></div>
+      <div class="form-group"><label>Risk</label><select id="rf-risk"><option value="">None</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+      <input id="rf-p1" type="checkbox" style="width:auto">
+      <label for="rf-p1" style="text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer">P1 — Priority hire</label>
+    </div>
     <div class="form-group"><label>Key skills (comma separated)</label><input id="rf-skills" placeholder="Python, PostgreSQL, GCP"></div>
-    <div class="form-group"><label>Job description</label><textarea id="rf-jd" rows="3" placeholder="Role overview…"></textarea></div>
-
-    <div style="margin-bottom:10px">
-      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px">Panel levels</div>
-      <div id="rounds-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+    <div class="form-group"><label>Job description</label><textarea id="rf-jd" rows="3"></textarea></div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px">Panel levels</div>
+      <div id="rounds-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px"></div>
       <button class="btn btn-ghost btn-sm" type="button" onclick="addRound()">+ Add level</button>
     </div>
     <div class="modal-btns">
@@ -210,7 +250,7 @@ tr:hover td{background:#faf8f5}
   </div>
 </div>
 
-<!-- APPLY MODAL -->
+<!-- ── Apply Modal ── -->
 <div class="modal-bg" id="apply-modal" onclick="if(event.target===this)closeApplyModal()">
   <div class="modal">
     <h2>Submit application</h2>
@@ -220,23 +260,15 @@ tr:hover td{background:#faf8f5}
       <div class="form-group"><label>Email</label><input id="am-email" type="email" placeholder="priya@example.com"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Gender</label>
-        <select id="am-gender"><option value="female">Female</option><option value="male">Male</option><option value="undisclosed">Undisclosed</option></select>
-      </div>
+      <div class="form-group"><label>Gender</label><select id="am-gender"><option value="female">Female</option><option value="male">Male</option><option value="undisclosed">Undisclosed</option></select></div>
       <div class="form-group"><label>Years of experience</label><input id="am-years" type="number" placeholder="4"></div>
     </div>
     <div class="tabs">
       <div class="tab active" id="am-tab-file" onclick="setApplyMode('file')">Upload resume</div>
       <div class="tab" id="am-tab-text" onclick="setApplyMode('text')">Paste text</div>
     </div>
-    <div id="am-file-area" class="form-group">
-      <label>Resume file (PDF or Word)</label>
-      <input id="am-file" type="file" accept=".pdf,.docx,.doc" style="padding:6px;cursor:pointer">
-    </div>
-    <div id="am-text-area" class="form-group" style="display:none">
-      <label>Resume text</label>
-      <textarea id="am-text" rows="4" placeholder="Python, PostgreSQL, REST API…"></textarea>
-    </div>
+    <div id="am-file-area" class="form-group"><label>Resume (PDF or Word)</label><input id="am-file" type="file" accept=".pdf,.docx,.doc" style="padding:6px;cursor:pointer"></div>
+    <div id="am-text-area" class="form-group" style="display:none"><label>Resume text</label><textarea id="am-text" rows="4" placeholder="Python, PostgreSQL…"></textarea></div>
     <div id="am-result" style="display:none;margin-top:12px;padding:14px;background:#faf9f6;border-radius:4px;border:1px solid var(--border)"></div>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeApplyModal()">Close</button>
@@ -245,8 +277,8 @@ tr:hover td{background:#faf8f5}
   </div>
 </div>
 
-<!-- CHANGE PASSWORD MODAL -->
-<div class="modal-bg" id="chpw-modal" onclick="if(event.target===this)document.getElementById('chpw-modal').classList.remove('open')">
+<!-- ── Change Password Modal ── -->
+<div class="modal-bg" id="chpw-modal" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="modal" style="max-width:360px">
     <h2>Change password</h2>
     <div class="form-group"><label>Current password</label><input id="chpw-old" type="password"></div>
@@ -259,7 +291,7 @@ tr:hover td{background:#faf8f5}
   </div>
 </div>
 
-<!-- RESET PW MODAL (admin) -->
+<!-- ── Reset PW Modal ── -->
 <div class="modal-bg" id="reset-modal" onclick="if(event.target===this)closeResetModal()">
   <div class="modal" style="max-width:340px">
     <h2>Reset password</h2>
@@ -272,8 +304,41 @@ tr:hover td{background:#faf8f5}
   </div>
 </div>
 
+<!-- ── NexAI Voice Modal ── -->
+<div class="modal-bg" id="nexai-modal" onclick="if(event.target===this)closeNexAI()">
+  <div class="modal" style="max-width:560px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+      <h2 style="margin-bottom:0">NexAI Voice Interview</h2>
+      <span style="font-size:11px;background:#fdeedd;color:var(--gold);padding:2px 8px;border-radius:10px;font-weight:600">ASSISTIVE ONLY</span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">NexAI never auto-rejects. All scores are reviewed by the recruiter.</p>
+
+    <!-- A2/A3: Visual — orb (default) or avatar video (GPU providers) -->
+    <div class="nexai-orb-wrap">
+      <video id="nexai-avatar-video" autoplay playsinline muted="false"></video>
+      <canvas id="nexai-orb" width="180" height="180"></canvas>
+      <div class="nexai-state-label idle" id="nexai-orb-label">Ready</div>
+    </div>
+    <!-- B2: Hidden webcam for identity snapshot + proctoring -->
+    <video id="proctor-webcam" autoplay playsinline muted style="display:none;width:1px;height:1px"></video>
+    <canvas id="proctor-snap-canvas" style="display:none"></canvas>
+
+    <div id="nexai-status" style="font-size:13px;color:var(--muted);margin:10px 0 8px;text-align:center;min-height:20px">Preparing questions…</div>
+    <div class="nexai-question-box" id="nexai-question">Questions will appear here.</div>
+    <div class="nexai-transcript" id="nexai-transcript" style="display:none"></div>
+    <div class="inline-btns" style="margin-bottom:12px">
+      <button id="nxbtn-speak" class="btn btn-primary btn-sm" onclick="nexaiSpeak()">▶ Speak question</button>
+      <button id="nxbtn-listen" class="btn btn-green btn-sm" onclick="nexaiListen()" style="display:none">🎤 Record answer</button>
+      <button id="nxbtn-next" class="btn btn-ghost btn-sm" onclick="nexaiNext()" style="display:none">Next →</button>
+      <button id="nxbtn-end" class="btn btn-danger btn-sm" onclick="nexaiSubmit()" style="display:none">End &amp; score</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeNexAI()">Cancel</button>
+    </div>
+    <div id="nexai-result" style="display:none"></div>
+  </div>
+</div>
+
 <script>
-// ── Auth bootstrap ────────────────────────────────────────────────────────────
+// ── Auth ──────────────────────────────────────────────────────────────────────
 const _tok = localStorage.getItem('egnex_token');
 if (!_tok) { window.location.replace('/login'); throw ''; }
 function _jwt(t) {
@@ -283,24 +348,21 @@ function _jwt(t) {
 const ME = _jwt(_tok);
 if (!ME) { localStorage.removeItem('egnex_token'); window.location.replace('/login'); throw ''; }
 
-// ── API helper ────────────────────────────────────────────────────────────────
+// ── API ───────────────────────────────────────────────────────────────────────
 async function api(path, opts = {}) {
   opts.headers = { ...opts.headers, Authorization: `Bearer ${_tok}` };
   let r;
   try { r = await fetch(path, opts); }
   catch (e) {
-    console.error('Network error:', path, e);
-    flash('Network error — server may still be starting up. Retrying…', false);
-    // auto-retry once after 2 s
+    flash('Network error. Retrying…', false);
     await new Promise(res => setTimeout(res, 2000));
-    try { r = await fetch(path, opts); }
-    catch (e2) { flash('Server unreachable. Is Docker running?', false); return null; }
+    try { r = await fetch(path, opts); } catch { flash('Server unreachable.', false); return null; }
   }
   if (r.status === 401) { logout(); return null; }
   if (!r.ok) {
-    let detail = `HTTP ${r.status}`;
-    try { const j = await r.clone().json(); detail = j.detail || JSON.stringify(j); } catch {}
-    console.error('API error:', path, detail);
+    let d = `HTTP ${r.status}`;
+    try { const j = await r.clone().json(); d = j.detail || d; } catch {}
+    console.error('API error:', path, d);
     return null;
   }
   const ct = r.headers.get('content-type') || '';
@@ -320,36 +382,52 @@ function logout() { localStorage.removeItem('egnex_token'); window.location.repl
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
 const NAV_DEF = {
-  recruiter:      [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'requisitions',icon:'📋',label:'Requisitions'},{id:'candidates',icon:'👤',label:'Candidates'},{id:'interviews',icon:'📅',label:'Interviews'},{id:'reports',icon:'📊',label:'Reports'}],
-  ta_manager:     [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'requisitions',icon:'📋',label:'Requisitions'},{id:'candidates',icon:'👤',label:'Candidates'},{id:'interviews',icon:'📅',label:'Interviews'},{id:'reports',icon:'📊',label:'Reports'},{id:'sep'},{id:'team',icon:'👥',label:'Team'},{id:'analytics',icon:'📈',label:'Analytics'}],
-  admin:          [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'requisitions',icon:'📋',label:'Requisitions'},{id:'candidates',icon:'👤',label:'Candidates'},{id:'interviews',icon:'📅',label:'Interviews'},{id:'reports',icon:'📊',label:'Reports'},{id:'sep'},{id:'team',icon:'👥',label:'Team'}],
-  hiring_manager: [{id:'dashboard',icon:'⬛',label:'Dashboard'},{id:'profiles',icon:'✅',label:'Profiles to review'},{id:'interviews',icon:'📅',label:'Interviews'}],
+  admin: [
+    {id:'users',      icon:'👥', label:'Users & Access'},
+    {id:'bot_health', icon:'🤖', label:'Bot Health'},
+    {id:'database',   icon:'🗄️', label:'Database'},
+    {id:'sys_logs',   icon:'📋', label:'System Logs'},
+  ],
+  ta_manager: [
+    {id:'dashboard',          icon:'⬛', label:'Dashboard'},
+    {id:'requisitions',       icon:'📋', label:'Requisitions'},
+    {id:'team',               icon:'👥', label:'Team'},
+    {id:'reports',            icon:'📊', label:'Reports'},
+    {id:'analytics',          icon:'📈', label:'Analytics'},
+    {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
+  ],
+  recruiter: [
+    {id:'dashboard',          icon:'⬛', label:'Dashboard'},
+    {id:'requisitions',       icon:'📋', label:'Requisitions'},
+    {id:'candidates',         icon:'👤', label:'Candidates'},
+    {id:'interviews',         icon:'📅', label:'Interviews'},
+    {id:'my_reports',         icon:'📊', label:'My Reports'},
+    {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
+  ],
+  hiring_manager: [
+    {id:'profiles',   icon:'✅', label:'Profiles to Review'},
+    {id:'interviews', icon:'📅', label:'Interviews'},
+    {id:'my_reports', icon:'📊', label:'My Reports'},
+  ],
 };
 
 function buildNav() {
-  const role = ME.role || 'recruiter';
+  const role  = ME.role || 'recruiter';
   const items = NAV_DEF[role] || NAV_DEF.recruiter;
-  const nav = document.getElementById('sidenav');
-  nav.innerHTML = items.map(it => {
-    if (it.id === 'sep') return '<div class="nav-sep"></div>';
-    return `<div class="nav-item" id="nav-${it.id}" onclick="navigate('${it.id}')">
-      <span class="nav-icon">${it.icon}</span>${it.label}
-    </div>`;
-  }).join('') + `
-    <div style="flex:1"></div>
-    <div class="nav-sep"></div>
-    <div class="nav-item" onclick="document.getElementById('chpw-modal').classList.add('open');document.getElementById('chpw-old').value='';document.getElementById('chpw-new').value='';document.getElementById('chpw-err').style.display='none'">
-      <span class="nav-icon">🔑</span>Change password
-    </div>
-    <div class="nav-item" onclick="logout()" style="color:#f87171">
-      <span class="nav-icon">🚪</span>Sign out
-    </div>`;
+  const nav   = document.getElementById('sidenav');
+  nav.innerHTML = items.map(it =>
+    `<div class="nav-item" id="nav-${it.id}" onclick="navigate('${it.id}')">
+       <span class="nav-icon">${it.icon}</span>${it.label}
+     </div>`
+  ).join('') +
+  `<div class="nav-spacer"></div>
+   <div class="nav-sep"></div>
+   <div class="nav-item" onclick="openChpw()"><span class="nav-icon">🔑</span>Change password</div>
+   <div class="nav-item danger" onclick="logout()"><span class="nav-icon">🚪</span>Sign out</div>`;
 
-  // Topbar
   document.getElementById('topbar-name').textContent = ME.name;
   const initials = (ME.name||'?').split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
   document.getElementById('topbar-avatar').textContent = initials;
-  document.getElementById('topbar-avatar').title = ME.name;
 }
 
 function setActive(id) {
@@ -357,223 +435,200 @@ function setActive(id) {
   const el = document.getElementById(`nav-${id}`);
   if (el) el.classList.add('active');
 }
-
 function setTitle(t) { document.getElementById('topbar-title').textContent = t; }
 
 // ── Router ────────────────────────────────────────────────────────────────────
 const SCREENS = {
+  // admin
+  users:      screenUsers,
+  bot_health: screenBotHealth,
+  database:   screenDatabase,
+  sys_logs:   screenSysLogs,
+  // ta_manager + shared
   dashboard:    screenDashboard,
   requisitions: screenRequisitions,
-  candidates:   screenCandidates,
-  interviews:   screenInterviews,
-  reports:      screenReports,
   team:         screenTeam,
-  analytics:    screenAnalytics,
-  profiles:     screenProfiles,
+  reports:      screenTAReports,
+  analytics:    screenTAReports,
+  // recruiter
+  candidates: screenCandidates,
+  interviews: screenInterviews,
+  // hm
+  profiles: screenProfiles,
+  // proctoring (recruiter + ta_manager)
+  proctoring_review: screenProctoringReview,
 };
 
 function navigate(id, param) {
-  const hash = param ? `#${id}/${param}` : `#${id}`;
-  history.pushState({}, '', hash);
+  history.pushState({}, '', param ? `#${id}/${param}` : `#${id}`);
   runRoute(id, param);
 }
 
 function runRoute(id, param) {
   setActive(id);
-  const content = document.getElementById('content');
-  content.innerHTML = '<p class="empty">Loading…</p>';
-  if (id === 'kanban' && param) { setTitle('Kanban board'); screenKanban(param); return; }
+  document.getElementById('content').innerHTML = '<p class="empty">Loading…</p>';
+  if (id === 'kanban' && param) { setTitle('Kanban'); screenKanban(param); return; }
+  if (id === 'my_reports') {
+    ME.role === 'hiring_manager' ? screenHMReports() : screenMyReports();
+    return;
+  }
   const fn = SCREENS[id];
-  if (fn) fn();
-  else content.innerHTML = '<p class="empty">Screen not found.</p>';
+  if (fn) { try { fn(); } catch(e) { showErr(e.message); console.error(e); } }
+  else document.getElementById('content').innerHTML = '<p class="empty">Screen not found.</p>';
+}
+
+function showErr(msg) {
+  document.getElementById('content').innerHTML = `
+    <div class="card" style="text-align:center;padding:40px">
+      <p style="font-weight:600;margin-bottom:8px">⚠ Error</p>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${msg}</p>
+      <button class="btn btn-ghost" onclick="location.reload()">Reload</button>
+    </div>`;
 }
 
 window.addEventListener('popstate', () => {
-  const [, id, param] = (location.hash || '#dashboard').split(/[#\/]/);
-  runRoute(id || 'dashboard', param);
+  const p = (location.hash || '#dashboard').split(/[#\/]/);
+  runRoute(p[1] || 'dashboard', p[2]);
 });
 
-// ── GCal status in topbar ─────────────────────────────────────────────────────
-let _gcalRid = localStorage.getItem('egnex_recruiter_id') || ME.sub;
-
-async function refreshGCalStatus() {
-  if (!_gcalRid) return;
-  const d = await api(`/api/google/status?recruiter_id=${_gcalRid}`);
+// ── GCal status ───────────────────────────────────────────────────────────────
+async function refreshGCal() {
+  const uid = ME.sub;
+  const d = await api(`/api/google/status?recruiter_id=${uid}`);
   if (!d) return;
-  const dot = document.getElementById('gcal-dot');
-  const txt = document.getElementById('gcal-text');
-  if (d.linked) { dot.className = 'gcal-dot on'; txt.textContent = `Calendar: ${d.google_email}`; }
-  else          { dot.className = 'gcal-dot';    txt.textContent = 'Calendar: not linked'; }
+  document.getElementById('gcal-dot').className = `gcal-dot${d.linked?' on':''}`;
+  document.getElementById('gcal-text').textContent = d.linked ? `📅 ${d.google_email}` : 'Calendar: not linked';
 }
+
+// ── Chart.js helpers ──────────────────────────────────────────────────────────
+const _charts = {};
+function mkChart(id, cfg) {
+  if (_charts[id]) { try { _charts[id].destroy(); } catch {} }
+  const el = document.getElementById(id);
+  if (!el) return;
+  _charts[id] = new Chart(el.getContext('2d'), cfg);
+}
+
+const C_COLORS = ['#f15a22','#2563eb','#1d6e56','#b08423','#7c3aed','#0891b2','#db2777','#65a30d'];
 
 // ── SCREEN: Dashboard ─────────────────────────────────────────────────────────
 async function screenDashboard() {
   setTitle('Dashboard');
   const d = await api('/api/dashboard');
-  if (!d) {
-    document.getElementById('content').innerHTML = `
-      <div class="card" style="text-align:center;padding:48px 32px">
-        <div style="font-size:32px;margin-bottom:12px">⚠</div>
-        <p style="font-weight:600;margin-bottom:8px">Dashboard couldn't load</p>
-        <p style="color:var(--muted);font-size:13px;margin-bottom:20px">
-          The server may be restarting. Wait a moment then refresh.
-        </p>
-        <button class="btn btn-primary" onclick="screenDashboard()">Retry</button>
-        &nbsp;
-        <button class="btn btn-ghost" onclick="logout()">Sign out</button>
-      </div>`;
-    return;
-  }
+  if (!d) { showErr('Dashboard could not load. Retry.'); return; }
 
-  const totalCands = (d.gender_split||[]).reduce((s,g)=>s+parseInt(g.n||0),0);
-  const femaleN = (d.gender_split||[]).find(g=>g.gender==='female')?.n || 0;
-  const maleN   = (d.gender_split||[]).find(g=>g.gender==='male')?.n || 0;
-  const unkN    = (d.gender_split||[]).find(g=>g.gender==='undisclosed')?.n || 0;
-  const fp = totalCands ? Math.round(femaleN/totalCands*100) : 0;
-  const mp = totalCands ? Math.round(maleN/totalCands*100)   : 0;
-  const up = 100 - fp - mp;
+  // Admin gets a different home
+  if (ME.role === 'admin') { screenUsers(); return; }
+
+  const g = d.gender_split || [];
+  const tot = g.reduce((s,x)=>s+parseInt(x.n||0),0);
+  const fn = g.find(x=>x.gender==='female')?.n||0;
+  const mn = g.find(x=>x.gender==='male')?.n||0;
+  const un = g.find(x=>x.gender==='undisclosed')?.n||0;
+  const fp = tot ? Math.round(fn/tot*100) : 0;
+  const mp = tot ? Math.round(mn/tot*100) : 0;
+  const up = 100-fp-mp;
 
   const stages = [
-    {key:'open_reqs',        label:'Open Requisitions'},
-    {key:'apps_received',    label:'Applications Received'},
-    {key:'under_screening',  label:'Under Screening'},
-    {key:'screening_cleared',label:'Screening Cleared'},
-    {key:'ai_interview',     label:'AI Interview'},
-    {key:'panel_interview',  label:'Panel Interview'},
-    {key:'selected',         label:'Selected'},
-    {key:'offer_stage',      label:'Offer Stage'},
-    {key:'joined',           label:'Joined', cls:'joined'},
+    {k:'open_reqs',label:'Open Reqs'},{k:'apps_received',label:'Applications'},
+    {k:'under_screening',label:'Under Screening'},{k:'screening_cleared',label:'Screening Cleared'},
+    {k:'ai_interview',label:'AI Interview'},{k:'panel_interview',label:'Panel Interview'},
+    {k:'selected',label:'Selected'},{k:'offer_stage',label:'Offer Stage'},
+    {k:'joined',label:'Joined',cls:'joined'},
   ];
 
-  const stageHtml = stages.map(s =>
-    `<div class="stage-card ${s.cls||''}">
-      <div class="n">${d[s.key]??0}</div>
-      <div class="lbl">${s.label}</div>
-    </div>`
-  ).join('');
+  const stHtml = stages.map(s=>`
+    <div class="stage-card ${s.cls||''}">
+      <div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div>
+    </div>`).join('') +
+    `<div class="stage-card ath">
+       <div class="n">${d.avg_days_to_hire??'—'}<span style="font-size:12px;color:var(--muted)">d</span></div>
+       <div class="lbl">Avg time to hire</div>
+     </div>`;
 
-  const athHtml = `<div class="stage-card ath">
-    <div class="n">${d.avg_days_to_hire ?? '—'}<span style="font-size:13px;color:var(--muted)"> days</span></div>
-    <div class="lbl">Avg time to hire</div>
-  </div>`;
-
-  const reqRows = (d.recent_reqs||[]).map(r => `
+  const reqRows = (d.recent_reqs||[]).map(r=>`
     <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
-      <td>${r.title}</td>
+      <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong></td>
       <td>${r.business_unit}</td>
       <td>${r.band}</td>
-      <td><span class="pill ${r.status}">${r.status.replace('_',' ')}</span></td>
-      <td>${r.in_pipeline}</td>
-      <td>${r.levels}</td>
+      <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+      <td>${r.in_pipeline}</td><td>${r.levels}</td>
     </tr>`).join('');
 
-  let recruiterLoadHtml = '';
-  if (d.recruiter_load) {
-    recruiterLoadHtml = `
-    <div class="section">
-      <div class="card">
-        <div class="card-title">Recruiter load</div>
-        <table>
-          <thead><tr><th>Recruiter</th><th>Open reqs</th><th>Total applications</th></tr></thead>
-          <tbody>${(d.recruiter_load).map(r=>`<tr><td>${r.full_name}</td><td>${r.open_reqs??0}</td><td>${r.total_applications??0}</td></tr>`).join('')}</tbody>
-        </table>
-      </div>
-    </div>`;
-  }
+  const loadHtml = (d.recruiter_load||[]).length ? `
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">Recruiter load</div>
+      <table><thead><tr><th>Recruiter</th><th>Open reqs</th><th>Applications</th></tr></thead>
+      <tbody>${d.recruiter_load.map(r=>`<tr><td>${r.full_name}</td><td>${r.open_reqs??0}</td><td>${r.total_applications??0}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>` : '';
 
-  let profilesHtml = '';
-  if (d.profiles_to_review) {
-    profilesHtml = `
-    <div class="section">
-      <div class="card">
-        <div class="card-title">Profiles awaiting your review</div>
-        ${(d.profiles_to_review||[]).length === 0 ? '<p class="empty">No profiles pending review.</p>' :
-          `<table>
-            <thead><tr><th>Candidate</th><th>Requisition</th><th>Score</th><th></th></tr></thead>
-            <tbody>${d.profiles_to_review.map(p=>`
-              <tr>
-                <td>${p.full_name}</td>
-                <td>${p.req_title}</td>
-                <td>${p.combined_score??p.match_score??'—'}</td>
-                <td><button class="btn btn-primary btn-sm" onclick="navigate('profiles')">Review</button></td>
-              </tr>`).join('')}</tbody>
-          </table>`}
-      </div>
-    </div>`;
-  }
+  const profilesHtml = (d.profiles_to_review||[]).length ? `
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">Profiles awaiting your review (${d.profiles_to_review.length})</div>
+      <table><thead><tr><th>Candidate</th><th>Requisition</th><th>Score</th><th></th></tr></thead>
+      <tbody>${d.profiles_to_review.map(p=>`
+        <tr><td>${p.full_name}</td><td>${p.req_title}</td>
+        <td>${p.combined_score??p.match_score??'—'}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="navigate('profiles')">Review</button></td></tr>`).join('')}
+      </tbody></table>
+    </div>` : '';
 
   document.getElementById('content').innerHTML = `
-    <div class="section">
-      <div class="stage-grid">${stageHtml}${athHtml}</div>
-    </div>
-
+    <div class="stage-grid">${stHtml}</div>
     <div class="two-col">
-      <div class="section">
-        <div class="card">
-          <div class="card-title">${ME.role==='hiring_manager'?'My requisitions':ME.role==='ta_manager'||ME.role==='admin'?'All requisitions':'My requisitions'}</div>
-          ${reqRows ? `<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>In pipeline</th><th>Levels</th></tr></thead><tbody>${reqRows}</tbody></table>` : '<p class="empty">No requisitions yet.</p>'}
-        </div>
+      <div class="card">
+        <div class="card-title">${ME.role==='ta_manager'||ME.role==='admin'?'All':'My'} requisitions</div>
+        ${reqRows?`<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${reqRows}</tbody></table>`:'<p class="empty">No requisitions yet.</p>'}
       </div>
-      <div class="section">
-        <div class="card">
-          <div class="card-title">Diversity (gender)</div>
-          <div class="div-bar-wrap">
-            <div class="div-bar">
-              ${fp>0?`<div class="seg female" style="width:${fp}%">${fp>8?fp+'%':''}</div>`:''}
-              ${mp>0?`<div class="seg male" style="width:${mp}%">${mp>8?mp+'%':''}</div>`:''}
-              ${up>0?`<div class="seg unk" style="width:${up}%">${up>8?up+'%':''}</div>`:''}
-            </div>
-          </div>
-          <div class="div-legend">
-            <span><span class="dot" style="background:var(--accent)"></span>Female ${femaleN}</span>
-            <span><span class="dot" style="background:#2563eb"></span>Male ${maleN}</span>
-            <span><span class="dot" style="background:var(--muted)"></span>Undisclosed ${unkN}</span>
-          </div>
+      <div class="card">
+        <div class="card-title">Diversity (gender)</div>
+        <div class="div-bar" style="margin-top:10px">
+          ${fp>0?`<div class="seg female" style="width:${fp}%">${fp>8?fp+'%':''}</div>`:''}
+          ${mp>0?`<div class="seg male"   style="width:${mp}%">${mp>8?mp+'%':''}</div>`:''}
+          ${up>0?`<div class="seg unk"    style="width:${up}%">${up>8?up+'%':''}</div>`:''}
+        </div>
+        <div class="div-legend">
+          <span><span class="dot" style="background:var(--accent)"></span>Female ${fn}</span>
+          <span><span class="dot" style="background:#2563eb"></span>Male ${mn}</span>
+          <span><span class="dot" style="background:var(--muted)"></span>Undisclosed ${un}</span>
         </div>
       </div>
     </div>
-
-    ${recruiterLoadHtml}
-    ${profilesHtml}`;
-  // fix label quoting issue
-  document.querySelector('#content .card-title') && null;
+    ${loadHtml}${profilesHtml}`;
 }
 
 // ── SCREEN: Requisitions ──────────────────────────────────────────────────────
 async function screenRequisitions() {
   setTitle('Requisitions');
   const rows = await api('/api/requisitions/full');
-  if (!rows) { document.getElementById('content').innerHTML=`<div class="card" style="text-align:center;padding:40px"><p style="color:var(--muted)">Failed to load. <span style="color:var(--accent);cursor:pointer" onclick="screenRequisitions()">Retry</span></p></div>`; return; }
+  if (!rows) { showErr('Could not load requisitions.'); return; }
 
   const canCreate = ['recruiter','ta_manager','admin'].includes(ME.role);
-  const statusCounts = {open:0, on_hold:0, closed:0, draft:0};
-  rows.forEach(r => { if (statusCounts[r.status]!==undefined) statusCounts[r.status]++; });
+  const sc = {open:0,on_hold:0,closed:0,draft:0};
+  rows.forEach(r => { if(sc[r.status]!==undefined) sc[r.status]++; });
 
-  const tableRows = rows.map(r => `
+  const tRows = rows.map(r=>`
     <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
-      <td><strong>${r.title}</strong></td>
-      <td>${r.business_unit}</td>
-      <td>${r.band}</td>
+      <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong></td>
+      <td>${r.business_unit}</td><td>${r.band}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
-      <td>${r.in_pipeline}</td>
-      <td>${r.levels} level${r.levels!==1?'s':''}</td>
+      <td>${r.in_pipeline}</td><td>${r.levels} level${r.levels!==1?'s':''}</td>
     </tr>`).join('');
 
   document.getElementById('content').innerHTML = `
     <div class="page-header">
       <h1>Requisitions</h1>
-      ${canCreate ? '<button class="btn btn-primary" onclick="openReqModal()">+ New requisition</button>' : ''}
+      ${canCreate?'<button class="btn btn-primary" onclick="openReqModal()">+ New requisition</button>':''}
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      <span class="pill open">Open ${statusCounts.open}</span>
-      <span class="pill on_hold">On hold ${statusCounts.on_hold}</span>
-      <span class="pill closed">Closed ${statusCounts.closed}</span>
-      <span class="pill draft">Draft ${statusCounts.draft}</span>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <span class="pill open">Open ${sc.open}</span>
+      <span class="pill on_hold">On hold ${sc.on_hold}</span>
+      <span class="pill closed">Closed ${sc.closed}</span>
+      <span class="pill draft">Draft ${sc.draft}</span>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${tableRows
-        ? `<table><thead><tr><th>Role</th><th>Business unit</th><th>Band</th><th>Status</th><th>In pipeline</th><th>Levels</th></tr></thead><tbody>${tableRows}</tbody></table>`
-        : '<p class="empty">No requisitions yet. Create the first one.</p>'}
+      ${tRows?`<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${tRows}</tbody></table>`:'<p class="empty">No requisitions yet.</p>'}
     </div>`;
 }
 
@@ -583,252 +638,187 @@ let _kanbanReqId = null;
 async function screenKanban(reqId) {
   _kanbanReqId = reqId;
   setActive('requisitions');
-
-  const [detail, kb] = await Promise.all([
+  const [det, kb] = await Promise.all([
     api(`/api/requisitions/${reqId}/detail`),
     api(`/api/requisitions/${reqId}/kanban`),
   ]);
-  if (!kb) return;
+  if (!kb) { showErr('Could not load kanban.'); return; }
+  setTitle(det?.title || 'Kanban');
 
-  const title = detail?.title || 'Requisition';
-  setTitle(title);
-
-  // Build column definitions
-  const fixedLeft = [
-    { status: 'applied',      label: 'Applications' },
-    { status: 'screening',    label: 'Screening' },
-    { status: 'screen_passed',label: 'Screening cleared' },
+  const fixL = [
+    {status:'applied',     label:'Applications'},
+    {status:'screening',   label:'Screening'},
+    {status:'screen_passed',label:'Screening Cleared'},
   ];
-  const panelCols = (kb.rounds||[])
-    .filter(r => !r.is_auto)
-    .map(r => ({ status: 'interviewing', label: r.name, round_seq: r.sequence }));
-  const fixedRight = [
-    { status: 'selected',    label: 'Selected' },
-    { status: 'offer_stage', label: 'Offer stage' },
-    { status: 'joined',      label: 'Joined' },
+  const panelCols = (kb.rounds||[]).filter(r=>!r.is_auto).map(r=>({status:'interviewing',label:r.name,round_seq:r.sequence}));
+  const fixR = [
+    {status:'selected',   label:'Selected'},
+    {status:'offer_stage',label:'Offer Stage'},
+    {status:'joined',     label:'Joined'},
   ];
-  const cols = [...fixedLeft, ...panelCols, ...fixedRight];
+  const cols = [...fixL,...panelCols,...fixR];
 
-  // Group candidates into columns
   function cardsFor(col) {
-    return (kb.candidates||[]).filter(c => {
-      if (c.status !== col.status) return false;
-      if (col.round_seq !== undefined && c.current_round !== col.round_seq) return false;
-      if (col.status === 'interviewing' && col.round_seq === undefined) return false;
+    return (kb.candidates||[]).filter(c=>{
+      if(c.status!==col.status) return false;
+      if(col.round_seq!==undefined && c.current_round!==col.round_seq) return false;
+      if(col.status==='interviewing' && col.round_seq===undefined) return false;
       return true;
     });
   }
 
-  const colsHtml = cols.map((col, i) => {
+  const canApply = ['recruiter','ta_manager','admin'].includes(ME.role);
+  const canNexAI = canApply;
+
+  const colsHtml = cols.map((col,i)=>{
     const cards = cardsFor(col);
-    const cardHtml = cards.map(c => `
-      <div class="kb-card" draggable="true"
-        data-app-id="${c.app_id}" data-status="${c.status}"
-        ondragstart="kbDragStart(event)" ondragend="kbDragEnd(event)">
-        <div class="name">${c.full_name}</div>
-        <div class="score">Score: ${c.score!=null?Math.round(c.score):'—'}</div>
-        <div class="gender">${c.gender||'—'}</div>
+    const cardHtml = cards.map(c=>`
+      <div class="kb-card" draggable="true" data-app-id="${c.app_id}"
+        ondragstart="kbDS(event)" ondragend="kbDE(event)">
+        <div class="cname">${c.full_name}</div>
+        <div class="cscore">Score: ${c.score!=null?Math.round(c.score):'—'} · ${c.gender||'—'}</div>
+        ${canNexAI&&col.status==='screen_passed'?`<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="openNexAI('${c.app_id}',event)">🤖 AI Interview</button>`:''}
       </div>`).join('');
     return `
       <div class="kb-col">
-        <div class="kb-col-head">
-          <span>${col.label}</span>
-          <span class="cnt">${cards.length}</span>
-        </div>
-        <div class="kb-col-body" data-col-index="${i}" data-status="${col.status}"
-          ondragover="kbDragOver(event)" ondrop="kbDrop(event,this,'${col.status}',${col.round_seq||0})"
-          ondragleave="kbDragLeave(event)">
+        <div class="kb-col-head"><span>${col.label}</span><span class="cnt">${cards.length}</span></div>
+        <div class="kb-col-body" ondragover="kbDO(event)" ondrop="kbDrop(event,this,'${col.status}',${col.round_seq||0})" ondragleave="kbDL(event)">
           ${cardHtml}
         </div>
       </div>`;
   }).join('');
 
-  const canApply = ['recruiter','ta_manager','admin'].includes(ME.role);
-
   document.getElementById('content').innerHTML = `
     <div class="page-header">
-      <h1>${title}</h1>
+      <h1>${det?.title||'Requisition'}</h1>
       <button class="btn btn-ghost btn-sm" onclick="navigate('requisitions')">← All requisitions</button>
-      ${canApply ? `<button class="btn btn-primary" onclick="openApplyModal('${reqId}')">+ Submit application</button>` : ''}
+      ${canApply?`<button class="btn btn-primary" onclick="openApplyModal('${reqId}')">+ Submit application</button>`:''}
     </div>
     <div class="kanban">${colsHtml}</div>`;
 }
 
-// ── Kanban drag-and-drop ──────────────────────────────────────────────────────
-let _dragAppId = null;
-
-function kbDragStart(e) {
-  _dragAppId = e.currentTarget.dataset.appId;
-  e.currentTarget.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-}
-function kbDragEnd(e) { e.currentTarget.classList.remove('dragging'); }
-function kbDragOver(e) { e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
-function kbDragLeave(e) { e.currentTarget.classList.remove('drag-over'); }
-async function kbDrop(e, col, toStatus, roundSeq) {
-  e.preventDefault();
-  col.classList.remove('drag-over');
-  if (!_dragAppId) return;
-  const appId = _dragAppId; _dragAppId = null;
-  const res = await api(`/api/applications/${appId}/advance`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to_status: toStatus, actor_id: ME.sub, note: `moved to ${toStatus}` }),
-  });
-  if (res) { flash(`Moved to ${toStatus}`); screenKanban(_kanbanReqId); }
+let _dragAppId=null;
+function kbDS(e){_dragAppId=e.currentTarget.dataset.appId;e.currentTarget.classList.add('dragging');e.dataTransfer.effectAllowed='move';}
+function kbDE(e){e.currentTarget.classList.remove('dragging');}
+function kbDO(e){e.preventDefault();e.currentTarget.classList.add('drag-over');}
+function kbDL(e){e.currentTarget.classList.remove('drag-over');}
+async function kbDrop(e,col,toStatus,roundSeq){
+  e.preventDefault();col.classList.remove('drag-over');
+  if(!_dragAppId) return;
+  const id=_dragAppId;_dragAppId=null;
+  const res=await api(`/api/applications/${id}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_status:toStatus,actor_id:ME.sub})});
+  if(res){flash(`Moved to ${toStatus}`);screenKanban(_kanbanReqId);}
 }
 
 // ── SCREEN: Candidates ────────────────────────────────────────────────────────
 async function screenCandidates() {
   setTitle('Candidates');
   const rows = await api('/api/candidates');
-  if (!rows) return;
-  const tableRows = rows.map(r => `
-    <tr>
-      <td>${r.full_name}</td>
-      <td style="font-size:12px;color:var(--muted)">${r.email}</td>
-      <td>${r.gender||'—'}</td>
-      <td>${r.requisition}</td>
-      <td>${r.match_score!=null?Math.round(r.match_score):'—'}</td>
-      <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
-      <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+  if (!rows) { showErr('Could not load candidates.'); return; }
+  const tRows = rows.map(r=>`
+    <tr><td>${r.full_name}</td>
+    <td style="font-size:12px;color:var(--muted)">${r.email}</td>
+    <td>${r.gender||'—'}</td><td>${r.requisition}</td>
+    <td>${r.match_score!=null?Math.round(r.match_score):'—'}</td>
+    <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
+    <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
     </tr>`).join('');
-
   document.getElementById('content').innerHTML = `
     <div class="page-header"><h1>Candidates</h1></div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${tableRows
-        ? `<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Match</th><th>Combined</th><th>Stage</th></tr></thead><tbody>${tableRows}</tbody></table>`
-        : '<p class="empty">No candidates yet.</p>'}
+      ${tRows?`<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Match</th><th>Combined</th><th>Stage</th></tr></thead><tbody>${tRows}</tbody></table>`:'<p class="empty">No candidates yet.</p>'}
     </div>`;
 }
 
 // ── SCREEN: Interviews ────────────────────────────────────────────────────────
 async function screenInterviews() {
   setTitle('Interviews');
-  const rows = await api('/api/interviews');
-  if (!rows) return;
-
-  const tableRows = rows.map(r => `
-    <tr>
-      <td>${r.candidate_name}</td>
-      <td>${r.requisition}</td>
-      <td>${r.round_name}</td>
-      <td>${r.scheduled_at ? new Date(r.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '—'}</td>
-      <td><span class="pill ${r.status}">${r.status}</span></td>
-      <td>${r.meet_link ? `<a href="${r.meet_link}" target="_blank" style="color:var(--accent)">Join</a>` : '—'}</td>
+  const [rows, gcal] = await Promise.all([
+    api('/api/interviews'),
+    api(`/api/google/status?recruiter_id=${ME.sub}`),
+  ]);
+  const tRows = (rows||[]).map(r=>`
+    <tr><td>${r.candidate_name}</td><td>${r.requisition}</td><td>${r.round_name}</td>
+    <td>${r.scheduled_at?new Date(r.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}):'—'}</td>
+    <td><span class="pill ${r.status}">${r.status}</span></td>
+    <td>${r.meet_link?`<a href="${r.meet_link}" target="_blank" style="color:var(--accent)">Join</a>`:'—'}</td>
     </tr>`).join('');
-
-  // GCal connect card
-  const gcalStatus = await api(`/api/google/status?recruiter_id=${ME.sub}`);
-  const gcalLinked  = gcalStatus?.linked;
-  const gcalEmail   = gcalStatus?.google_email;
-
   document.getElementById('content').innerHTML = `
     <div class="page-header"><h1>Interviews</h1></div>
-    <div class="two-col" style="margin-bottom:20px">
-      <div class="card">
-        <div class="card-title">Google Calendar</div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Connect your Google account to schedule interviews and auto-create Meet links.</p>
-        ${gcalLinked
-          ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-               <span class="gcal-dot on"></span>
-               <span style="font-size:13px">Connected as <strong>${gcalEmail}</strong></span>
-             </div>
-             <button class="btn btn-danger btn-sm" onclick="disconnectGCal()">Disconnect</button>`
-          : `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-               <span class="gcal-dot"></span>
-               <span style="font-size:13px;color:var(--muted)">Not connected — scheduling blocked</span>
-             </div>
-             <button class="btn btn-primary btn-sm" onclick="connectGCal()">Connect Google Calendar</button>`}
-      </div>
+    <div class="card" style="margin-bottom:20px;max-width:400px">
+      <div class="card-title">Google Calendar</div>
+      ${gcal?.linked
+        ?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="gcal-dot on"></span><span style="font-size:13px">Connected as <strong>${gcal.google_email}</strong></span></div>
+           <button class="btn btn-danger btn-sm" onclick="disconnectGCal()">Disconnect</button>`
+        :`<p style="font-size:13px;color:var(--muted);margin-bottom:10px">Not connected — scheduling blocked until linked.</p>
+          <button class="btn btn-primary btn-sm" onclick="connectGCal()">Connect Google Calendar</button>`}
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${tableRows
-        ? `<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th></tr></thead><tbody>${tableRows}</tbody></table>`
-        : '<p class="empty">No interviews scheduled yet.</p>'}
+      ${tRows?`<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th></tr></thead><tbody>${tRows}</tbody></table>`:'<p class="empty">No interviews scheduled yet.</p>'}
     </div>`;
 }
+function connectGCal(){window.location.href=`/api/google/connect?recruiter_id=${ME.sub}`;}
+async function disconnectGCal(){await api(`/api/google/disconnect?recruiter_id=${ME.sub}`,{method:'POST'});flash('Disconnected');screenInterviews();}
 
-function connectGCal()    { window.location.href = `/api/google/connect?recruiter_id=${ME.sub}`; }
-async function disconnectGCal() {
-  await api(`/api/google/disconnect?recruiter_id=${ME.sub}`, { method: 'POST' });
-  flash('Calendar disconnected');
-  screenInterviews();
-}
-
-// ── SCREEN: Reports ───────────────────────────────────────────────────────────
-const REPORT_DEFS = [
-  { key:'gender',    label:'Gender split',      cols:['requisition_id','title','gender','status','candidate_count'] },
-  { key:'bu',        label:'Business unit',     cols:['group_company','business_unit','requisitions','open_reqs','joined_count'] },
-  { key:'roll',      label:'On/Off-roll',       cols:['roll_type','fiscal_year','requisitions','total_openings'] },
-  { key:'positions', label:'Positions by FY',   cols:['fiscal_year','total_requisitions','total_openings','open_requisitions','closed_requisitions'] },
-  { key:'budget',    label:'Budget vs offered', cols:['title','fiscal_year','budgeted_ctc','avg_offered_ctc','offers_made'] },
-  { key:'tat',       label:'Time to fill',      cols:['title','status','opened_at','first_offer_at','days_to_first_offer'] },
-  { key:'recruiter-load', label:'Recruiter load', cols:['full_name','open_reqs','total_applications'] },
-];
-
-let _activeReport = 'gender';
-
-async function screenReports() {
-  setTitle('Reports');
+// ── SCREEN: Profiles to Review (HM) ──────────────────────────────────────────
+async function screenProfiles() {
+  setTitle('Profiles to review');
+  const rows = await api('/api/profiles-to-review');
+  if (!rows) { showErr('Could not load profiles.'); return; }
+  if (!rows.length) {
+    document.getElementById('content').innerHTML = `
+      <div class="page-header"><h1>Profiles to review</h1></div>
+      <div class="card"><p class="empty">No profiles pending your review.</p>
+      <p style="text-align:center;font-size:12px;color:var(--muted);margin-top:8px">Profiles appear when a requisition lists you as hiring manager and a candidate is selected.</p></div>`;
+    return;
+  }
   document.getElementById('content').innerHTML = `
-    <div class="page-header"><h1>Reports</h1></div>
-    <div class="tabs" id="report-tabs">
-      ${REPORT_DEFS.map(r=>`<div class="tab${r.key===_activeReport?' active':''}" onclick="loadReport('${r.key}')">${r.label}</div>`).join('')}
-    </div>
-    <div id="report-body"><p class="empty">Loading…</p></div>`;
-  loadReport(_activeReport);
+    <div class="page-header"><h1>Profiles to review (${rows.length})</h1></div>
+    ${rows.map(r=>`
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:600">${r.full_name}</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px">${r.email} · ${r.gender||'—'}</div>
+          <div style="margin-top:6px;font-size:13px">Requisition: <strong>${r.req_title}</strong></div>
+          <div style="margin-top:8px"><span style="font-size:22px;font-weight:700;color:var(--accent)">${r.combined_score!=null?Math.round(r.combined_score):r.match_score!=null?Math.round(r.match_score):'—'}</span><span style="font-size:12px;color:var(--muted)"> / 100</span></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;min-width:180px">
+          <input id="hm-c-${r.id}" placeholder="Optional comment…" style="padding:7px 10px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+          <button class="btn btn-green btn-sm" onclick="hmFeedback('${r.id}',true)">✓ Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="hmFeedback('${r.id}',false)">✗ Not approved</button>
+        </div>
+      </div>
+    </div>`).join('')}`;
+}
+async function hmFeedback(id,approved){
+  const c=document.getElementById(`hm-c-${id}`)?.value.trim();
+  const res=await api(`/api/applications/${id}/hm-feedback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approved,comment:c})});
+  if(res){flash(approved?'Approved.':'Feedback submitted.');screenProfiles();}
 }
 
-async function loadReport(key) {
-  _activeReport = key;
-  document.querySelectorAll('#report-tabs .tab').forEach(t => {
-    t.classList.toggle('active', t.textContent === REPORT_DEFS.find(r=>r.key===key)?.label);
-  });
-  const def = REPORT_DEFS.find(r=>r.key===key);
-  const data = await api(`/api/reports/${key}`);
-  if (!data) return;
-  const body = document.getElementById('report-body');
-  if (!data.length) { body.innerHTML = '<p class="empty">No data yet.</p>'; return; }
-  const keys = def?.cols || Object.keys(data[0]);
-  const thead = keys.map(k=>`<th>${k.replace(/_/g,' ')}</th>`).join('');
-  const tbody = data.map(row=>`<tr>${keys.map(k=>`<td>${row[k]!=null?row[k]:'—'}</td>`).join('')}</tr>`).join('');
-  body.innerHTML = `<div class="card" style="padding:0;overflow:hidden"><table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></div>`;
-}
-
-// ── SCREEN: Team (admin/ta_manager) ──────────────────────────────────────────
-const ALL_ROLES = ['admin','ta_manager','recruiter','hiring_manager','bu_head','director','interviewer'];
-let _resetUid = null;
-
-async function screenTeam() {
-  setTitle('Team management');
-  const users = await api('/api/admin/users');
-  if (!users) return;
-
-  const rows = users.map(u => {
-    const isSelf = u.id === ME.sub;
-    const sel = `<select style="padding:4px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px;" onchange="changeRole('${u.id}',this.value)">${ALL_ROLES.map(r=>`<option value="${r}"${r===u.role?' selected':''}>${r.replace(/_/g,' ')}</option>`).join('')}</select>`;
-    const act = u.is_active && !isSelf
-      ? `<button class="btn btn-danger btn-sm" onclick="deactivateUser('${u.id}','${u.full_name.replace(/'/g,"\\\'")}')">Deactivate</button>`
-      : (!u.is_active ? `<button class="btn btn-ghost btn-sm" onclick="activateUser('${u.id}')">Activate</button>` : '');
+// ── SCREEN: Admin — Users & Access ────────────────────────────────────────────
+const ALL_ROLES=['admin','ta_manager','recruiter','hiring_manager','bu_head','director','interviewer'];
+let _resetUid=null;
+async function screenUsers(){
+  setTitle('Users & Access');
+  const users=await api('/api/admin/users');
+  if(!users){showErr('Could not load users.');return;}
+  const rows=users.map(u=>{
+    const isSelf=u.id===ME.sub;
+    const sel=`<select style="padding:4px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px" onchange="changeRole('${u.id}',this.value)">${ALL_ROLES.map(r=>'<option value="'+r+'"'+(r===u.role?' selected':'')+'>'+r.split('_').join(' ')+'</option>').join('')}</select>`;
+    const deact=u.is_active&&!isSelf?`<button class="btn btn-danger btn-sm" onclick="deactivateUser('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Deactivate</button>`:'';
+    const act=!u.is_active?`<button class="btn btn-ghost btn-sm" onclick="activateUser('${u.id}')">Activate</button>`:'';
     return `<tr>
       <td>${u.full_name}${isSelf?' <span style="font-size:11px;color:var(--muted)">(you)</span>':''}</td>
-      <td style="font-size:12px">${u.email}</td>
-      <td>${sel}</td>
+      <td style="font-size:12px">${u.email}</td><td>${sel}</td>
       <td><span class="pill ${u.is_active?'open':'closed'}">${u.is_active?'Active':'Inactive'}</span></td>
       <td><div class="inline-btns">
-        <button class="btn btn-ghost btn-sm" onclick="openResetModal('${u.id}','${u.full_name.replace(/'/g,"\\\'")}')">Reset pwd</button>
-        ${act}
-      </div></td>
-    </tr>`;
+        <button class="btn btn-ghost btn-sm" onclick="openResetModal('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Reset pwd</button>
+        ${deact}${act}</div></td></tr>`;
   }).join('');
-
-  document.getElementById('content').innerHTML = `
-    <div class="page-header">
-      <h1>Team management</h1>
-      <button class="btn btn-primary" onclick="openAddUser()">+ Add user</button>
-    </div>
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>Users &amp; Access</h1><button class="btn btn-primary" onclick="openAddUser()">+ Add user</button></div>
     <div class="card" id="add-user-card" style="display:none;margin-bottom:16px">
       <div style="font-weight:600;margin-bottom:12px">New user</div>
       <div class="form-row">
@@ -836,13 +826,11 @@ async function screenTeam() {
         <div class="form-group"><label>Work email</label><input id="nu-email" type="email" placeholder="priya@amnex.com"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label>Role</label>
-          <select id="nu-role">${ALL_ROLES.map(r=>`<option value="${r}">${r.replace(/_/g,' ')}</option>`).join('')}</select>
-        </div>
-        <div class="form-group"><label>Initial password</label><input id="nu-pw" type="password" placeholder="min 6 characters"></div>
+        <div class="form-group"><label>Role</label><select id="nu-role">${ALL_ROLES.map(r=>'<option value="'+r+'">'+r.split('_').join(' ')+'</option>').join('')}</select></div>
+        <div class="form-group"><label>Password</label><input id="nu-pw" type="password" placeholder="min 6 characters"></div>
       </div>
       <div class="inline-btns">
-        <button class="btn btn-primary" onclick="createUser()">Create user</button>
+        <button class="btn btn-primary" onclick="createUser()">Create</button>
         <button class="btn btn-ghost" onclick="document.getElementById('add-user-card').style.display='none'">Cancel</button>
       </div>
     </div>
@@ -851,140 +839,283 @@ async function screenTeam() {
       <tbody>${rows}</tbody></table>
     </div>`;
 }
-
-function openAddUser() {
-  document.getElementById('add-user-card').style.display = 'block';
-  ['nu-name','nu-email','nu-pw'].forEach(id=>document.getElementById(id).value='');
-}
-
-async function createUser() {
-  const name=document.getElementById('nu-name').value.trim(), email=document.getElementById('nu-email').value.trim();
-  const role=document.getElementById('nu-role').value, pw=document.getElementById('nu-pw').value;
+function openAddUser(){document.getElementById('add-user-card').style.display='block';['nu-name','nu-email','nu-pw'].forEach(id=>document.getElementById(id).value='');}
+async function createUser(){
+  const name=document.getElementById('nu-name').value.trim(),email=document.getElementById('nu-email').value.trim();
+  const role=document.getElementById('nu-role').value,pw=document.getElementById('nu-pw').value;
   if(!name||!email||!pw){flash('Fill in all fields.',false);return;}
   const res=await api('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({full_name:name,email,role,password:pw})});
-  if(!res||res.detail||res.error){flash(res?.detail||res?.error||'Error',false);return;}
-  flash(`User ${name} created.`); screenTeam();
+  if(!res||res.detail){flash(res?.detail||'Error',false);return;}
+  flash(`User ${name} created.`);screenUsers();
 }
-
-async function changeRole(uid,role) {
-  const res=await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});
-  if(!res||res.detail){flash(res?.detail||'Error',false);screenTeam();return;}
-  flash('Role updated.');
-}
-
-async function deactivateUser(uid,name) {
-  if(!confirm(`Deactivate ${name}?`))return;
-  await api(`/api/admin/users/${uid}`,{method:'DELETE'});
-  flash(`${name} deactivated.`); screenTeam();
-}
-
-async function activateUser(uid) {
-  await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:true})});
-  flash('User reactivated.'); screenTeam();
-}
-
-function openResetModal(uid,name) {
-  _resetUid=uid; document.getElementById('reset-for').textContent=name;
-  document.getElementById('reset-pw').value='';
-  document.getElementById('reset-modal').classList.add('open');
-}
-function closeResetModal() { document.getElementById('reset-modal').classList.remove('open'); }
-async function doReset() {
+async function changeRole(uid,role){await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});flash('Role updated.');}
+async function deactivateUser(uid,name){if(!confirm(`Deactivate ${name}?`))return;await api(`/api/admin/users/${uid}`,{method:'DELETE'});flash(`${name} deactivated.`);screenUsers();}
+async function activateUser(uid){await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:true})});flash('Reactivated.');screenUsers();}
+function openResetModal(uid,name){_resetUid=uid;document.getElementById('reset-for').textContent=name;document.getElementById('reset-pw').value='';document.getElementById('reset-modal').classList.add('open');}
+function closeResetModal(){document.getElementById('reset-modal').classList.remove('open');}
+async function doReset(){
   const pw=document.getElementById('reset-pw').value;
   if(!pw||pw.length<6){flash('Minimum 6 characters.',false);return;}
   const res=await api(`/api/admin/users/${_resetUid}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:pw})});
-  if(res?.ok){flash('Password reset.');closeResetModal();}else{flash(res?.detail||'Error',false);}
+  if(res?.ok){flash('Password reset.');closeResetModal();}else flash(res?.detail||'Error',false);
 }
 
-// ── SCREEN: Analytics ────────────────────────────────────────────────────────
-function screenAnalytics() {
-  setTitle('Analytics');
-  screenReports(); // reuse the reports screen for now
+// ── SCREEN: Admin — Bot Health ────────────────────────────────────────────────
+async function screenBotHealth(){
+  setTitle('Bot Health — NexAI');
+  const d=await api('/api/nexai/health');
+  if(!d){showErr('Could not load bot health.');return;}
+  const recentRows=(d.recent_sessions||[]).map(s=>`
+    <tr><td style="font-size:11px">${(s.id||'').slice(0,8)}…</td>
+    <td><span class="pill ${s.status}">${s.status}</span></td>
+    <td>${s.raw_score!=null?s.raw_score:'—'}</td>
+    <td>${s.completed_at?new Date(s.completed_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td></tr>`).join('');
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>NexAI Bot Health</h1><span class="badge badge-green">Active</span></div>
+    <div class="stat-row">
+      <div class="stat-box"><div class="sv">${d.total_sessions}</div><div class="sl">Total sessions</div></div>
+      <div class="stat-box"><div class="sv">${d.completed_sessions}</div><div class="sl">Completed</div></div>
+      <div class="stat-box"><div class="sv">${d.avg_score??'—'}</div><div class="sl">Avg score</div></div>
+      <div class="stat-box"><div class="sv">${d.sessions_today}</div><div class="sl">Today</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Model info</div>
+      <table><tbody>
+        <tr><td><strong>Name</strong></td><td>${d.bot_name}</td></tr>
+        <tr><td><strong>Version</strong></td><td>${d.version}</td></tr>
+        <tr><td><strong>Model type</strong></td><td>${d.model}</td></tr>
+        <tr><td><strong>In progress</strong></td><td>${d.in_progress}</td></tr>
+        <tr><td><strong>Failed sessions</strong></td><td>${d.failed_sessions}</td></tr>
+      </tbody></table>
+    </div>
+    <div class="card" style="margin-top:16px;padding:0;overflow:hidden">
+      <div class="card-title" style="padding:16px 20px 10px">Recent sessions</div>
+      ${recentRows?`<table><thead><tr><th>Session</th><th>Status</th><th>Score</th><th>Completed</th></tr></thead><tbody>${recentRows}</tbody></table>`:'<p class="empty">No sessions yet.</p>'}
+    </div>`;
 }
 
-// ── SCREEN: Profiles to review (hiring_manager) ───────────────────────────────
-async function screenProfiles() {
-  setTitle('Profiles to review');
-  const rows = await api('/api/profiles-to-review');
-  if (!rows) return;
+// ── SCREEN: Admin — Database ──────────────────────────────────────────────────
+async function screenDatabase(){
+  setTitle('Database');
+  const d=await api('/api/admin/db-stats');
+  if(!d){showErr('Could not load DB stats.');return;}
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>Database</h1></div>
+    <div class="card">
+      <div class="card-title">Table row counts</div>
+      <table><thead><tr><th>Table</th><th>Rows</th></tr></thead>
+      <tbody>${Object.entries(d).map(([t,n])=>`<tr><td><code>${t}</code></td><td>${n.toLocaleString()}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
 
-  if (!rows.length) {
-    document.getElementById('content').innerHTML = `
-      <div class="page-header"><h1>Profiles to review</h1></div>
-      <div class="card"><p class="empty">No profiles pending your review.</p>
-      <p class="hint" style="text-align:center;margin-top:8px">Profiles appear here when a requisition lists you as hiring manager and a candidate reaches "Selected" stage.</p>
-      </div>`;
-    return;
+// ── SCREEN: Admin — System Logs ───────────────────────────────────────────────
+async function screenSysLogs(){
+  setTitle('System Logs');
+  const rows=await api('/api/admin/sys-logs?limit=100');
+  if(!rows){showErr('Could not load logs.');return;}
+  const tRows=rows.map(r=>`
+    <tr><td>${r.actor}</td>
+    <td><span class="pill ${r.from_status||'draft'}">${r.from_status||'—'}</span></td>
+    <td><span class="pill ${r.to_status}">${r.to_status}</span></td>
+    <td style="font-size:12px;color:var(--muted)">${r.note||''}</td>
+    <td style="font-size:11px;color:var(--muted)">${r.occurred_at?new Date(r.occurred_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td>
+    </tr>`).join('');
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>System Logs</h1></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      ${tRows?`<table><thead><tr><th>Actor</th><th>From</th><th>To</th><th>Note</th><th>Time</th></tr></thead><tbody>${tRows}</tbody></table>`:'<p class="empty">No log entries.</p>'}
+    </div>`;
+}
+
+// ── SCREEN: Team (TA Manager view) ────────────────────────────────────────────
+async function screenTeam(){
+  setTitle('Team');
+  const users=await api('/api/admin/users');
+  if(!users){showErr('Could not load team.');return;}
+  const recruiters=users.filter(u=>['recruiter','ta_manager','hiring_manager'].includes(u.role)&&u.is_active);
+  const rows=recruiters.map(u=>`
+    <tr><td>${u.full_name}</td>
+    <td style="font-size:12px">${u.email}</td>
+    <td><span class="pill ${u.role==='recruiter'?'open':'interviewing'}">${u.role.replace(/_/g,' ')}</span></td>
+    <td><span class="pill open">Active</span></td></tr>`).join('');
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>Team</h1>
+      <button class="btn btn-ghost btn-sm" onclick="screenUsers()">Manage users →</button>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      ${rows?`<table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="empty">No team members.</p>'}
+    </div>`;
+}
+
+// ── SCREEN: TA Manager Reports ────────────────────────────────────────────────
+let _period='yearly', _year=new Date().getFullYear();
+
+async function screenTAReports(){
+  setTitle('Reports');
+  const yr=_year;
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>TA Manager Reports &mdash; ${yr}</h1>
+      <a class="btn btn-green" href="/api/reports2/ta/excel?period=${_period}&year=${yr}" download>⬇ Download Excel</a>
+    </div>
+    <div class="period-bar">
+      ${['weekly','monthly','quarterly','half_yearly','yearly'].map(p=>`<button class="period-btn${p===_period?' active':''}" onclick="setPeriod('${p}')">${p.split('_').join(' ')}</button>`).join('')}
+    </div>
+    <div class="chart-grid">
+      <div class="card"><div class="card-title">1. Net Open Positions by Company</div><div class="chart-wrap"><canvas id="c1"></canvas></div></div>
+      <div class="card"><div class="card-title">2. Diversity Hiring YTD</div><div class="chart-wrap"><canvas id="c2"></canvas></div></div>
+      <div class="card"><div class="card-title">3. Status by Entity &amp; Band</div><div class="chart-wrap"><canvas id="c3"></canvas></div></div>
+      <div class="card"><div class="card-title">4. Hiring Stage Funnel</div><div class="chart-wrap"><canvas id="c4"></canvas></div></div>
+      <div class="card"><div class="card-title">5. Internal Movement</div><div class="chart-wrap"><canvas id="c5"></canvas></div></div>
+      <div class="card"><div class="card-title">6. Aging of Open Positions</div><div class="chart-wrap"><canvas id="c6"></canvas></div></div>
+      <div class="card"><div class="card-title">7. Recruiter Productivity YTD</div><div class="chart-wrap"><canvas id="c7"></canvas></div></div>
+      <div class="card"><div class="card-title">8. Joined / Offered / Selected YTD</div><div class="chart-wrap"><canvas id="c8"></canvas></div></div>
+    </div>`;
+
+  await loadAllPivots('ta', yr);
+}
+
+function setPeriod(p){_period=p;const s=SCREENS[_currentScreen||'reports'];if(s)s();else screenTAReports();}
+let _currentScreen=null;
+
+async function loadAllPivots(scope, yr){
+  const base=`/api/reports2/${scope}`;
+  const [p1,p2,p3,p4,p5,p6,p7,p8]=await Promise.all(
+    [1,2,3,4,5,6,7,8].map(i=>api(`${base}/pivot/${i}?period=${_period}&year=${yr}`))
+  );
+
+  // Chart 1: Net Open Positions — grouped bar by company
+  if(p1?.length){
+    const companies=[...new Set(p1.map(r=>r.company))];
+    const onRoll=companies.map(c=>{const r=p1.find(x=>x.company===c&&x.roll_type==='on_roll');return r?.open_count||0;});
+    const offRoll=companies.map(c=>{const r=p1.find(x=>x.company===c&&x.roll_type==='off_roll');return r?.open_count||0;});
+    mkChart('c1',{type:'bar',data:{labels:companies,datasets:[{label:'On-roll',data:onRoll,backgroundColor:'#f15a22'},{label:'Off-roll',data:offRoll,backgroundColor:'#2563eb'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
 
-  const cards = rows.map(r => `
-    <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:600;margin-bottom:4px">${r.full_name}</div>
-          <div style="font-size:13px;color:var(--muted)">${r.email} · ${r.gender||'—'}</div>
-          <div style="font-size:13px;margin-top:6px">Requisition: <strong>${r.req_title}</strong></div>
-          <div style="margin-top:8px">
-            <span style="font-size:20px;font-weight:700;color:var(--accent)">${r.combined_score!=null?Math.round(r.combined_score):r.match_score!=null?Math.round(r.match_score):'—'}</span>
-            <span style="font-size:12px;color:var(--muted)"> / 100 score</span>
-          </div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px;min-width:180px">
-          <input id="hm-comment-${r.id}" placeholder="Optional comment…" style="padding:7px 10px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:100%">
-          <button class="btn btn-primary btn-sm" onclick="hmFeedback('${r.id}',true)">✓ Approve</button>
-          <button class="btn btn-danger btn-sm" onclick="hmFeedback('${r.id}',false)">✗ Not approved</button>
-        </div>
-      </div>
-    </div>`).join('');
+  // Chart 2: Diversity — pie
+  if(p2?.length){
+    const gMap={female:0,male:0,undisclosed:0};
+    p2.forEach(r=>gMap[r.gender]=(gMap[r.gender]||0)+parseInt(r.n||0));
+    const total=Object.values(gMap).reduce((a,b)=>a+b,0);
+    mkChart('c2',{type:'doughnut',data:{labels:['Female','Male','Undisclosed'],datasets:[{data:[gMap.female,gMap.male,gMap.undisclosed],backgroundColor:['#f15a22','#2563eb','#6b6760']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:function(ctx){var pct=total?Math.round(ctx.raw/total*100):0;return ctx.label+': '+ctx.raw+' ('+pct+'%)';}}}}}}});
+  }
 
-  document.getElementById('content').innerHTML = `
-    <div class="page-header"><h1>Profiles to review</h1></div>
-    ${cards}`;
+  // Chart 3: Status by Band — stacked bar
+  if(p3?.length){
+    const bands=[...new Set(p3.map(r=>r.band))];
+    const statuses=[...new Set(p3.map(r=>r.status))];
+    mkChart('c3',{type:'bar',data:{labels:bands,datasets:statuses.map((s,i)=>({label:s,data:bands.map(b=>{const r=p3.find(x=>x.band===b&&x.status===s);return r?.n||0;}),backgroundColor:C_COLORS[i%C_COLORS.length]}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{stacked:true},y:{stacked:true}}}});
+  }
+
+  // Chart 4: Funnel — horizontal bar
+  if(p4?.length){
+    const order=['Sourcing','Screening','Interview','Selected'];
+    const labels=order.filter(s=>p4.find(r=>r.stage===s));
+    const vals=labels.map(s=>{const r=p4.find(x=>x.stage===s);return r?.n||0;});
+    mkChart('c4',{type:'bar',data:{labels,datasets:[{label:'Candidates',data:vals,backgroundColor:'#f15a22'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  }
+
+  // Chart 5: Internal Movement — bar with rate
+  if(p5?.length){
+    mkChart('c5',{type:'bar',data:{labels:p5.map(r=>r.company),datasets:[{label:'Total',data:p5.map(r=>r.total||0),backgroundColor:'#e5e3df'},{label:'Internal',data:p5.map(r=>r.internal_count||0),backgroundColor:'#1d6e56'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  }
+
+  // Chart 6: Aging brackets — bar
+  if(p6?.length){
+    const order=['0-15','16-30','31-45','46-60','61-90','91+'];
+    const sorted=order.map(b=>{const r=p6.find(x=>x.aging_bracket===b);return{b,n:r?.n||0};});
+    mkChart('c6',{type:'bar',data:{labels:sorted.map(x=>x.b+' days'),datasets:[{label:'Open reqs',data:sorted.map(x=>x.n),backgroundColor:sorted.map((_,i)=>i<2?'#1d6e56':i<4?'#f15a22':'#c0392b')}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  }
+
+  // Chart 7: Recruiter Productivity — bar
+  if(p7?.length){
+    mkChart('c7',{type:'bar',data:{labels:p7.map(r=>r.recruiter),datasets:[{label:'Total handled',data:p7.map(r=>r.total_handled||0),backgroundColor:'#e5e3df'},{label:'Converted',data:p7.map(r=>r.converted||0),backgroundColor:'#f15a22'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  }
+
+  // Chart 8: Joined/Offered/Selected
+  if(p8){
+    const row=Array.isArray(p8)?p8[0]:p8;
+    mkChart('c8',{type:'bar',data:{labels:['Selected','Offered','Joined'],datasets:[{data:[row?.selected||0,row?.offered||0,row?.joined||0],backgroundColor:['#f15a22','#2563eb','#1d6e56']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  }
 }
 
-async function hmFeedback(appId, approved) {
-  const comment = document.getElementById(`hm-comment-${appId}`)?.value.trim();
-  const res = await api(`/api/applications/${appId}/hm-feedback`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ approved, comment }),
-  });
-  if (res) { flash(approved ? 'Approved.' : 'Feedback submitted.'); screenProfiles(); }
+// ── SCREEN: Recruiter My Reports ──────────────────────────────────────────────
+async function screenMyReports(){
+  _currentScreen='my_reports';
+  setTitle('My Reports');
+  const yr=_year;
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>My Reports &mdash; ${yr}</h1>
+      <a class="btn btn-green" href="/api/reports2/recruiter/excel?period=${_period}&year=${yr}" download>⬇ Download Excel</a>
+    </div>
+    <div class="period-bar">
+      ${['weekly','monthly','quarterly','half_yearly','yearly'].map(p=>`<button class="period-btn${p===_period?' active':''}" onclick="setPeriodMy('${p}')">${p.split('_').join(' ')}</button>`).join('')}
+    </div>
+    <div class="chart-grid">
+      <div class="card"><div class="card-title">Hiring Stage Funnel</div><div class="chart-wrap"><canvas id="c1"></canvas></div></div>
+      <div class="card"><div class="card-title">Recruiter Productivity</div><div class="chart-wrap"><canvas id="c7"></canvas></div></div>
+      <div class="card"><div class="card-title">Aging of My Requisitions</div><div class="chart-wrap"><canvas id="c6"></canvas></div></div>
+      <div class="card"><div class="card-title">Joined / Offered / Selected</div><div class="chart-wrap"><canvas id="c8"></canvas></div></div>
+    </div>`;
+  await loadAllPivots('recruiter', yr);
+}
+function setPeriodMy(p){_period=p;screenMyReports();}
+
+// ── SCREEN: HM Reports ────────────────────────────────────────────────────────
+async function screenHMReports(){
+  setTitle('My Reports');
+  const d=await api('/api/reports2/hm/summary');
+  if(!d){showErr('Could not load your reports.');return;}
+  const outcomes=d.outcomes||{};
+  const total=Object.values(outcomes).reduce((a,b)=>a+b,0);
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>My Interview Reports</h1></div>
+    <div class="stat-row">
+      <div class="stat-box"><div class="sv">${d.interviews_taken}</div><div class="sl">Interviews taken</div></div>
+      <div class="stat-box"><div class="sv">${d.avg_feedback_turnaround_hours??'—'}</div><div class="sl">Avg feedback (hrs)</div></div>
+      <div class="stat-box"><div class="sv">${d.pending_reviews}</div><div class="sl">Pending reviews</div></div>
+      <div class="stat-box"><div class="sv">${outcomes.strong_yes||0}</div><div class="sl">Strong yes votes</div></div>
+    </div>
+    <div class="card" style="max-width:400px">
+      <div class="card-title">Interview outcomes</div>
+      <div class="chart-wrap"><canvas id="chm-outcomes"></canvas></div>
+    </div>`;
+  if(total>0){
+    mkChart('chm-outcomes',{type:'doughnut',data:{labels:Object.keys(outcomes),datasets:[{data:Object.values(outcomes),backgroundColor:['#1d6e56','#f15a22','#6b6760','#c0392b']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  }else{
+    document.querySelector('#chm-outcomes')?.closest('.chart-wrap')?.insertAdjacentHTML('afterend','<p class="empty">No outcomes recorded yet.</p>');
+  }
 }
 
-// ── New Requisition form ──────────────────────────────────────────────────────
-let _roundCount = 0;
-
-async function openReqModal() {
-  _roundCount = 0;
-  document.getElementById('rounds-list').innerHTML = '';
-  ['rf-title','rf-fy','rf-skills','rf-jd'].forEach(id=>document.getElementById(id).value='');
+// ── New Requisition helpers ───────────────────────────────────────────────────
+let _roundCount=0;
+async function openReqModal(){
+  _roundCount=0;
+  document.getElementById('rounds-list').innerHTML='';
+  ['rf-title','rf-fy','rf-skills','rf-jd','rf-loc'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rf-openings').value='1';
   ['rf-exp','rf-ctc'].forEach(id=>document.getElementById(id).value='');
-
-  const [bus, bands] = await Promise.all([api('/api/business-units'), api('/api/bands')]);
-  document.getElementById('rf-bu').innerHTML   = (bus  ||[]).map(b=>`<option value="${b.id}">${b.name} (${b.company})</option>`).join('');
-  document.getElementById('rf-band').innerHTML = (bands||[]).filter(b=>b.is_active).map(b=>`<option value="${b.id}">${b.code} — ${b.description}</option>`).join('');
-
-  // Default: AI screening + 2 panel levels
-  addRound('AI screening interview', 'bot_interview', true);
-  addRound('Technical panel', 'panel', false);
-
+  document.getElementById('rf-p1').checked=false;
+  document.getElementById('rf-risk').value='';
+  const [bus,bands]=await Promise.all([api('/api/business-units'),api('/api/bands')]);
+  document.getElementById('rf-bu').innerHTML=(bus||[]).map(b=>`<option value="${b.id}">${b.name} (${b.company})</option>`).join('');
+  document.getElementById('rf-band').innerHTML=(bands||[]).filter(b=>b.is_active).map(b=>`<option value="${b.id}">${b.code} — ${b.description}</option>`).join('');
+  addRound('AI screening interview','bot_interview',true);
+  addRound('Technical panel','panel',false);
   document.getElementById('req-modal').classList.add('open');
 }
+function closeReqModal(){document.getElementById('req-modal').classList.remove('open');}
 
-function closeReqModal() { document.getElementById('req-modal').classList.remove('open'); }
-
-function addRound(name='', type='panel', isAuto=false) {
+function addRound(name='',type='panel',isAuto=false){
   _roundCount++;
-  const seq = _roundCount;
-  const el = document.createElement('div');
+  const el=document.createElement('div');
   el.style.cssText='display:flex;gap:8px;align-items:center';
-  el.innerHTML = `
-    <span style="font-size:12px;color:var(--muted);min-width:20px">${seq}.</span>
-    <input data-round="name" placeholder="Round name e.g. Level 1 Panel" value="${name}" style="flex:2;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+  el.innerHTML=`
+    <span style="font-size:12px;color:var(--muted);min-width:18px">${_roundCount}.</span>
+    <input data-round="name" placeholder="Round name" value="${name}" style="flex:2;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
     <select data-round="type" style="padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
       <option value="panel"${type==='panel'?' selected':''}>Panel</option>
-      <option value="bot_interview"${type==='bot_interview'?' selected':''}>AI / Bot</option>
+      <option value="bot_interview"${type==='bot_interview'?' selected':''}>AI/Bot</option>
       <option value="hr"${type==='hr'?' selected':''}>HR</option>
       <option value="assessment"${type==='assessment'?' selected':''}>Assessment</option>
     </select>
@@ -992,193 +1123,842 @@ function addRound(name='', type='panel', isAuto=false) {
       <option value="false"${!isAuto?' selected':''}>Manual</option>
       <option value="true"${isAuto?' selected':''}>Auto</option>
     </select>
-    <button type="button" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px" onclick="this.parentElement.remove()">×</button>`;
-  el.dataset.seq = seq;
+    <button type="button" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1" onclick="this.parentElement.remove()">×</button>`;
   document.getElementById('rounds-list').appendChild(el);
 }
 
-async function submitReq() {
-  const title = document.getElementById('rf-title').value.trim();
-  if (!title) { flash('Job title is required.', false); return; }
-  const skillsRaw = document.getElementById('rf-skills').value;
-  const skills = skillsRaw.split(',').map(s=>s.trim()).filter(Boolean);
-
-  // Collect rounds
-  const roundEls = document.querySelectorAll('#rounds-list > div');
-  const rounds = [];
-  roundEls.forEach((el, i) => {
-    const name = el.querySelector('[data-round="name"]')?.value.trim();
-    if (!name) return;
-    rounds.push({
-      sequence: i+1,
-      name,
-      round_type: el.querySelector('[data-round="type"]')?.value || 'panel',
-      is_auto:    el.querySelector('[data-round="auto"]')?.value === 'true',
-    });
+async function submitReq(){
+  const title=document.getElementById('rf-title').value.trim();
+  if(!title){flash('Job title is required.',false);return;}
+  const skills=document.getElementById('rf-skills').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const roundEls=document.querySelectorAll('#rounds-list > div');
+  const rounds=[];
+  roundEls.forEach((el,i)=>{
+    const name=el.querySelector('[data-round="name"]')?.value.trim();
+    if(!name) return;
+    rounds.push({sequence:i+1,name,round_type:el.querySelector('[data-round="type"]')?.value||'panel',is_auto:el.querySelector('[data-round="auto"]')?.value==='true'});
   });
-
-  const body = {
-    title,
-    bu_id:          document.getElementById('rf-bu').value,
-    band_id:        document.getElementById('rf-band').value,
-    roll_type:      document.getElementById('rf-roll').value,
-    openings:       parseInt(document.getElementById('rf-openings').value)||1,
-    fiscal_year:    document.getElementById('rf-fy').value.trim()||null,
-    min_experience: parseFloat(document.getElementById('rf-exp').value)||null,
-    budgeted_ctc:   parseFloat(document.getElementById('rf-ctc').value)||null,
-    key_skills:     skills,
-    job_description:document.getElementById('rf-jd').value.trim()||null,
+  const body={
+    title,bu_id:document.getElementById('rf-bu').value,band_id:document.getElementById('rf-band').value,
+    roll_type:document.getElementById('rf-roll').value,openings:parseInt(document.getElementById('rf-openings').value)||1,
+    fiscal_year:document.getElementById('rf-fy').value.trim()||null,
+    min_experience:parseFloat(document.getElementById('rf-exp').value)||null,
+    budgeted_ctc:parseFloat(document.getElementById('rf-ctc').value)||null,
+    key_skills:skills,job_description:document.getElementById('rf-jd').value.trim()||null,
+    is_p1:document.getElementById('rf-p1').checked,
+    risk:document.getElementById('rf-risk').value||null,
+    hiring_location:document.getElementById('rf-loc').value.trim()||null,
     rounds,
   };
-
-  const res = await api('/api/requisitions', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res || res.detail || res.error) { flash(res?.detail||res?.error||'Error creating requisition', false); return; }
-  flash(`Requisition "${title}" created.`);
-  closeReqModal();
-  screenRequisitions();
+  const res=await api('/api/requisitions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!res||res.detail){flash(res?.detail||'Error creating requisition',false);return;}
+  flash(`Requisition "${title}" created.`);closeReqModal();screenRequisitions();
 }
 
-// ── Apply modal ───────────────────────────────────────────────────────────────
-let _applyMode = 'file';
-
-async function openApplyModal(reqId) {
+// ── Apply helpers ─────────────────────────────────────────────────────────────
+let _applyMode='file';
+async function openApplyModal(reqId){
   document.getElementById('am-result').style.display='none';
-  document.getElementById('am-result').innerHTML='';
   ['am-name','am-email','am-years'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('am-file').value='';
   document.getElementById('am-text').value='';
-
-  const reqs = await api('/api/requisitions');
-  document.getElementById('am-req').innerHTML = (reqs||[]).map(r=>
-    `<option value="${r.id}"${r.id===reqId?' selected':''}>${r.title} — ${r.business_unit}</option>`
-  ).join('');
+  const reqs=await api('/api/requisitions');
+  document.getElementById('am-req').innerHTML=(reqs||[]).map(r=>`<option value="${r.id}"${r.id===reqId?' selected':''}>${r.title} — ${r.business_unit}</option>`).join('');
   setApplyMode('file');
   document.getElementById('apply-modal').classList.add('open');
 }
-
-function closeApplyModal() { document.getElementById('apply-modal').classList.remove('open'); }
-
-function setApplyMode(mode) {
-  _applyMode = mode;
-  document.getElementById('am-tab-file').classList.toggle('active', mode==='file');
-  document.getElementById('am-tab-text').classList.toggle('active', mode==='text');
-  document.getElementById('am-file-area').style.display = mode==='file'?'':'none';
-  document.getElementById('am-text-area').style.display = mode==='text'?'':'none';
+function closeApplyModal(){document.getElementById('apply-modal').classList.remove('open');}
+function setApplyMode(m){
+  _applyMode=m;
+  document.getElementById('am-tab-file').classList.toggle('active',m==='file');
+  document.getElementById('am-tab-text').classList.toggle('active',m==='text');
+  document.getElementById('am-file-area').style.display=m==='file'?'':'none';
+  document.getElementById('am-text-area').style.display=m==='text'?'':'none';
 }
-
-async function submitApply() {
+async function submitApply(){
   const btn=document.getElementById('am-submit-btn');
-  btn.disabled=true; btn.textContent='Screening…';
-  const resEl=document.getElementById('am-result');
-  resEl.style.display='none';
-
+  btn.disabled=true;btn.textContent='Screening…';
+  const resEl=document.getElementById('am-result');resEl.style.display='none';
   try {
     const reqId=document.getElementById('am-req').value;
     const name=document.getElementById('am-name').value||'Unnamed';
     const email=document.getElementById('am-email').value||'x@x.com';
     const gender=document.getElementById('am-gender').value;
     const years=document.getElementById('am-years').value;
-
     let res;
-    if (_applyMode === 'file') {
+    if(_applyMode==='file'){
       const file=document.getElementById('am-file').files[0];
       if(!file){flash('Select a file first.',false);return;}
       const fd=new FormData();
-      fd.append('requisition_id',reqId); fd.append('full_name',name);
-      fd.append('email',email); fd.append('gender',gender);
-      if(years) fd.append('years_experience',years);
-      fd.append('file',file);
-      res = await api('/api/apply/upload',{method:'POST',body:fd});
-    } else {
-      res = await api('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requisition_id:reqId,full_name:name,email,gender,years_experience:parseFloat(years)||null,resume_text:document.getElementById('am-text').value})});
+      fd.append('requisition_id',reqId);fd.append('full_name',name);fd.append('email',email);
+      fd.append('gender',gender);if(years)fd.append('years_experience',years);fd.append('file',file);
+      res=await api('/api/apply/upload',{method:'POST',body:fd});
+    }else{
+      res=await api('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({requisition_id:reqId,full_name:name,email,gender,
+          years_experience:parseFloat(years)||null,resume_text:document.getElementById('am-text').value})});
     }
-    if (!res) return;
-    if (res.detail||res.error){flash(res.detail||res.error,false);return;}
+    if(!res){return;}
+    if(res.detail){flash(res.detail,false);return;}
     const b=res.breakdown||{};
     resEl.innerHTML=`
-      <span class="score-big">${res.match_score}</span><span style="font-size:13px;color:var(--muted)"> / 100</span>
+      <span style="font-size:26px;font-weight:700;color:var(--accent)">${res.match_score}</span><span style="font-size:12px;color:var(--muted)"> / 100</span>
       <div style="margin-top:8px;font-size:13px">
-        Skills matched: <strong>${b.skills_matched_count??'—'} / ${b.skills_total??'—'}</strong><br>
+        Skills matched: <strong>${b.skills_matched_count??'—'}/${b.skills_total??'—'}</strong><br>
         Matched: ${(b.matched_skills||[]).join(', ')||'—'}<br>
         Missing: ${(b.missing_skills||[]).join(', ')||'—'}
       </div>
-      ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ ${res.warning}</p>`:''}
-      ${res.resume_preview?`<details style="margin-top:8px;font-size:12px"><summary style="cursor:pointer;color:var(--muted)">Resume preview</summary><pre style="white-space:pre-wrap;font-size:11px;margin-top:4px;background:#f4f1ea;padding:8px;border-radius:3px">${res.resume_preview.replace(/</g,'&lt;')}…</pre></details>`:''}`;
+      ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ ${res.warning}</p>`:''}`;
     resEl.style.display='block';
-  } finally {
-    btn.disabled=false; btn.textContent='Submit & screen';
-  }
+  } finally {btn.disabled=false;btn.textContent='Submit & screen';}
 }
 
-// ── Change own password ───────────────────────────────────────────────────────
-document.getElementById('topbar-avatar').addEventListener('contextmenu', e => {
-  e.preventDefault();
-  document.getElementById('chpw-modal').classList.add('open');
-  document.getElementById('chpw-old').value=''; document.getElementById('chpw-new').value='';
+// ── Change password ───────────────────────────────────────────────────────────
+function openChpw(){
+  ['chpw-old','chpw-new'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('chpw-err').style.display='none';
-});
-
-async function doChpw() {
-  const op=document.getElementById('chpw-old').value, np=document.getElementById('chpw-new').value;
-  const errEl=document.getElementById('chpw-err');
-  errEl.style.display='none';
+  document.getElementById('chpw-modal').classList.add('open');
+}
+async function doChpw(){
+  const op=document.getElementById('chpw-old').value,np=document.getElementById('chpw-new').value;
+  const errEl=document.getElementById('chpw-err');errEl.style.display='none';
   if(!op||!np){errEl.textContent='Fill in both fields.';errEl.style.display='block';return;}
   const res=await api('/api/auth/change-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:op,new_password:np})});
-  if(res?.ok){flash('Password changed. Signing you out…'); document.getElementById('chpw-modal').classList.remove('open'); setTimeout(logout,2000);}
+  if(res?.ok){flash('Password changed. Signing out…');document.getElementById('chpw-modal').classList.remove('open');setTimeout(logout,2000);}
   else{errEl.textContent=res?.detail||'Error';errEl.style.display='block';}
 }
 
-// ── Post-OAuth redirect check ─────────────────────────────────────────────────
-const _qs = new URLSearchParams(window.location.search);
-if (_qs.get('connected')==='1') { history.replaceState({},'','/'); flash('Google Calendar connected.'); }
-if (_qs.get('gcal_error'))      { history.replaceState({},'','/'); flash('GCal error: '+_qs.get('gcal_error'), false); }
+// ── NexAI Orb Engine ─────────────────────────────────────────────────────────
+// Real amplitude from mic via Web Audio API AnalyserNode during listening.
+// Simulated multi-harmonic oscillation during speaking (speechSynthesis
+// does not expose its stream to the Web Audio API in any current browser).
 
-// ── 15-minute inactivity timeout ─────────────────────────────────────────────
-const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutes
-let _idleTimer;
-function _resetIdle() {
-  clearTimeout(_idleTimer);
-  _idleTimer = setTimeout(() => {
-    flash('Session timed out after 15 minutes of inactivity. Signing out…', false);
-    setTimeout(logout, 2000);
-  }, INACTIVITY_MS);
+const _orb = {
+  canvas: null, ctx: null,
+  raf: null, phase: 0,
+  state: 'off',        // off | idle | speaking | listening | done
+  analyser: null,      // AnalyserNode — live during listening
+  micStream: null,     // MediaStream — live during listening
+  audioCtx: null,
+  freqData: null,
+};
+
+function _orbLabel(state) {
+  const el = document.getElementById('nexai-orb-label');
+  if (!el) return;
+  el.className = 'nexai-state-label ' + state;
+  el.textContent = {
+    idle:      'Ready',
+    speaking:  'Speaking…',
+    listening: 'Listening…',
+    done:      'Complete',
+    off:       '',
+  }[state] || '';
 }
-['mousemove','keydown','mousedown','touchstart','scroll','click'].forEach(ev =>
-  document.addEventListener(ev, _resetIdle, { passive: true })
-);
-_resetIdle(); // start timer on page load
+
+function orbSetState(state) {
+  _orb.state = state;
+  _orbLabel(state);
+
+  // Release mic stream when no longer listening
+  if (state !== 'listening') {
+    if (_orb.micStream) { _orb.micStream.getTracks().forEach(t => t.stop()); _orb.micStream = null; }
+    if (_orb.audioCtx)  { try { _orb.audioCtx.close(); } catch {} _orb.audioCtx = null; }
+    _orb.analyser = null; _orb.freqData = null;
+  }
+
+  if (state === 'off') {
+    if (_orb.raf) { cancelAnimationFrame(_orb.raf); _orb.raf = null; }
+    if (_orb.ctx && _orb.canvas) _orb.ctx.clearRect(0, 0, _orb.canvas.width, _orb.canvas.height);
+    return;
+  }
+
+  // Start mic analyser for real amplitude during listening
+  if (state === 'listening') {
+    navigator.mediaDevices?.getUserMedia({ audio: true, video: false })
+      .then(stream => {
+        _orb.micStream = stream;
+        _orb.audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+        const src = _orb.audioCtx.createMediaStreamSource(stream);
+        _orb.analyser  = _orb.audioCtx.createAnalyser();
+        _orb.analyser.fftSize = 64;
+        _orb.freqData  = new Uint8Array(_orb.analyser.frequencyBinCount);
+        src.connect(_orb.analyser);
+      })
+      .catch(() => {}); // mic permission denied — fall back to simulated
+  }
+
+  if (!_orb.raf) _orbFrame();
+}
+
+function _orbAmplitude() {
+  // Real amplitude during listening (if mic available)
+  if (_orb.state === 'listening' && _orb.analyser && _orb.freqData) {
+    _orb.analyser.getByteFrequencyData(_orb.freqData);
+    const avg = _orb.freqData.reduce((a, b) => a + b, 0) / _orb.freqData.length;
+    return Math.min(avg / 80, 1.4);   // 0–1.4 range
+  }
+
+  // Simulated multi-harmonic oscillation for speaking
+  if (_orb.state === 'speaking') {
+    return 0.3 +
+      Math.abs(Math.sin(_orb.phase * 1.9)) * 0.4 +
+      Math.abs(Math.sin(_orb.phase * 3.3 + 0.8)) * 0.2 +
+      Math.abs(Math.sin(_orb.phase * 5.7 + 2.1)) * 0.1;
+  }
+
+  // Slow idle pulse
+  return 0.15 + Math.abs(Math.sin(_orb.phase * 0.6)) * 0.15;
+}
+
+function _orbFrame() {
+  if (_orb.state === 'off') return;
+
+  const canvas = _orb.canvas || (_orb.canvas = document.getElementById('nexai-orb'));
+  if (!canvas) return;
+  const ctx = _orb.ctx || (_orb.ctx = canvas.getContext('2d'));
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+
+  // Phase speed varies by state
+  const speed = _orb.state === 'speaking' ? 0.06 : _orb.state === 'listening' ? 0.08 : 0.025;
+  _orb.phase += speed;
+
+  const amp   = _orbAmplitude();
+  const baseR = Math.min(W, H) * 0.22;
+  const r     = baseR * (1 + amp * 0.35);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Outer diffuse glow (3 rings)
+  for (let i = 3; i >= 1; i--) {
+    const gr = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * (1.2 + i * 0.55));
+    const alpha = (0.18 - i * 0.04) * amp;
+    gr.addColorStop(0, `rgba(241,90,34,${alpha})`);
+    gr.addColorStop(1, 'rgba(241,90,34,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * (1.2 + i * 0.55), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Core orb gradient
+  const coreGr = ctx.createRadialGradient(cx - r * 0.28, cy - r * 0.28, r * 0.05, cx, cy, r);
+  if (_orb.state === 'listening') {
+    coreGr.addColorStop(0, '#6ee7b7');
+    coreGr.addColorStop(0.55, '#1d6e56');
+    coreGr.addColorStop(1, '#0f3d30');
+  } else if (_orb.state === 'done') {
+    coreGr.addColorStop(0, '#93c5fd');
+    coreGr.addColorStop(0.55, '#2563eb');
+    coreGr.addColorStop(1, '#1e40af');
+  } else {
+    coreGr.addColorStop(0, '#ff9a6c');
+    coreGr.addColorStop(0.55, '#f15a22');
+    coreGr.addColorStop(1, '#9c3a0e');
+  }
+  ctx.fillStyle = coreGr;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Specular highlight
+  const spec = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, 0, cx - r * 0.1, cy - r * 0.15, r * 0.55);
+  spec.addColorStop(0, 'rgba(255,255,255,0.28)');
+  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = spec;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Listening ring (expands outward)
+  if (_orb.state === 'listening') {
+    const ringR = r * (1.15 + Math.sin(_orb.phase * 2) * 0.12);
+    ctx.strokeStyle = `rgba(29,110,86,${0.5 + Math.sin(_orb.phase * 2) * 0.25})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  _orb.raf = requestAnimationFrame(_orbFrame);
+}
+
+// ── Proctoring state ──────────────────────────────────────────────────────────
+let _procSessionId = null;      // proctoring_session.id
+let _procPendingAppId = null;   // held while showing consent modal
+let _procConsented = false;
+let _webcamStream = null;       // MediaStream
+let _screenStream = null;
+let _webcamRecorder = null;
+let _screenRecorder = null;
+let _behaviorInterval = null;
+let _behaviorFlags = [];
+let _tfModels = null;           // loaded lazily when proctoring starts
+let _avatarProvider = 'orb';   // set from /api/nexai/avatar/config
+let _selectedFaceId = 'nexai-female';
+
+// B1: Show consent screen before opening NexAI modal
+async function openNexAI(appId, event) {
+  if (event) event.stopPropagation();
+  _procPendingAppId = appId;
+  // Check avatar config for A2/A3
+  const avatarCfg = await api('/api/nexai/avatar/config');
+  _avatarProvider = avatarCfg?.provider || 'orb';
+  // Show consent modal
+  document.getElementById('consent-check').checked = false;
+  document.getElementById('consent-accept-btn').disabled = true;
+  document.getElementById('proctor-consent-modal').classList.add('open');
+}
+
+function declineProctoring() {
+  document.getElementById('proctor-consent-modal').classList.remove('open');
+  _procConsented = false;
+  _startNexAI(_procPendingAppId, false);
+}
+
+async function acceptProctoring() {
+  document.getElementById('proctor-consent-modal').classList.remove('open');
+  _procConsented = true;
+  // B1: Create proctoring session and record consent
+  const psRes = await api('/api/proctoring/sessions', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({application_id: _procPendingAppId}),
+  });
+  if (psRes) {
+    _procSessionId = psRes.id;
+    await api(`/api/proctoring/sessions/${_procSessionId}/consent`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({granted:true}),
+    });
+  }
+  _startNexAI(_procPendingAppId, true);
+}
+
+async function _startNexAI(appId, proctored) {
+  // A2/A3: face selector (only for GPU providers with face images)
+  if (_avatarProvider !== 'orb' && (await _hasFaceImages())) {
+    await _showFaceSelector();
+  }
+  _openNexAIModal(appId, proctored);
+}
+
+async function _hasFaceImages() {
+  const cfg = await api('/api/nexai/avatar/config');
+  return (cfg?.face_ids||[]).length > 0;
+}
+
+function _showFaceSelector() {
+  return new Promise(resolve => {
+    api('/api/nexai/avatar/config').then(cfg => {
+      const faces = cfg?.face_ids || [];
+      const container = document.getElementById('face-options');
+      container.innerHTML = faces.map(fid => `
+        <label style="cursor:pointer;text-align:center">
+          <img src="/assets/avatars/${fid}.png" style="width:80px;height:80px;border-radius:50%;border:3px solid transparent;display:block"
+            onerror="this.src='/assets/egnex-logo.png'"
+            onclick="document.querySelectorAll('#face-options img').forEach(i=>i.style.borderColor='transparent');this.style.borderColor='#f15a22';_selectedFaceId='${fid}'">
+          <span style="font-size:11px">${fid.replace('nexai-','')}</span>
+        </label>`).join('');
+      document.getElementById('face-select-modal').classList.add('open');
+      window._faceSelectResolve = resolve;
+    });
+  });
+}
+
+function confirmFaceSelect() {
+  document.getElementById('face-select-modal').classList.remove('open');
+  if (window._faceSelectResolve) { window._faceSelectResolve(); delete window._faceSelectResolve; }
+}
+
+// ── NexAI Voice Interview ─────────────────────────────────────────────────────
+let _nxSessionId=null,_nxQuestions=[],_nxSeq=0,_nxTranscript=[],_nxRecog=null,_nxSynth=window.speechSynthesis;
+
+async function _openNexAIModal(appId, proctored) {
+  _nxSessionId=null; _nxQuestions=[]; _nxSeq=0; _nxTranscript=[];
+  _orb.canvas=null; _orb.ctx=null;
+  orbSetState('idle');
+  document.getElementById('nexai-status').textContent='Preparing questions…';
+  document.getElementById('nexai-question').textContent='Questions will appear here.';
+  document.getElementById('nexai-result').style.display='none';
+  document.getElementById('nexai-transcript').style.display='none';
+  document.getElementById('nexai-avatar-video').style.display='none';
+  ['nxbtn-speak','nxbtn-listen','nxbtn-next','nxbtn-end'].forEach(id => {
+    const el=document.getElementById(id);
+    el.style.display=id==='nxbtn-speak'?'':'none'; el.disabled=true;
+  });
+  document.getElementById('nexai-modal').classList.add('open');
+
+  // B2/B3: Start proctoring streams if consented
+  if (proctored && _procSessionId) {
+    await _startProctoringStreams();
+  }
+
+  const res = await api('/api/nexai/sessions', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({application_id:appId})});
+  if (!res) { flash('Could not start NexAI session.', false); closeNexAI(); return; }
+  _nxSessionId = res.session_id;
+  _nxQuestions = res.questions || [];
+
+  // Update nexai_session_id in proctoring session
+  if (_procSessionId) {
+    await api(`/api/proctoring/sessions`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({application_id:appId, nexai_session_id:_nxSessionId}),
+    });
+  }
+
+  document.getElementById('nexai-status').textContent = `${_nxQuestions.length} questions prepared. Press ▶ Speak to begin.`;
+  document.getElementById('nxbtn-speak').disabled = false;
+}
+
+function closeNexAI() {
+  if (_nxRecog) try { _nxRecog.abort(); } catch {}
+  if (_nxSynth) _nxSynth.cancel();
+  orbSetState('off');
+  _stopProctoringStreams();
+  _nxSessionId=null; _nxQuestions=[]; _nxSeq=0; _nxTranscript=[];
+  document.getElementById('nexai-modal').classList.remove('open');
+  document.getElementById('nexai-avatar-video').style.display='none';
+}
+
+async function nexaiSpeak() {
+  if (_nxSeq >= _nxQuestions.length) return;
+  const q = _nxQuestions[_nxSeq];
+  document.getElementById('nexai-question').textContent = `Q${q.seq}: ${q.text}`;
+  document.getElementById('nexai-status').textContent = `Question ${q.seq} of ${_nxQuestions.length}`;
+  orbSetState('speaking');
+  document.getElementById('nxbtn-speak').disabled = true;
+  document.getElementById('nxbtn-listen').style.display = 'none';
+  document.getElementById('nxbtn-next').style.display = 'none';
+  document.getElementById('nxbtn-end').style.display = 'none';
+
+  const onQuestionEnd = () => {
+    orbSetState('idle');
+    document.getElementById('nexai-status').textContent = 'Your turn — click 🎤 to record your answer.';
+    document.getElementById('nxbtn-listen').style.display = '';
+    document.getElementById('nxbtn-listen').disabled = false;
+  };
+
+  // A3: GPU avatar path — render video if provider != orb
+  if (_avatarProvider !== 'orb') {
+    try {
+      const renderRes = await api('/api/nexai/render-question', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({question_text:q.text, face_id:_selectedFaceId, session_id:_nxSessionId}),
+      });
+      if (renderRes?.video_url) {
+        const vid = document.getElementById('nexai-avatar-video');
+        document.getElementById('nexai-orb').style.display = 'none';
+        vid.src = renderRes.video_url; vid.style.display = 'block';
+        vid.onended = () => {
+          vid.style.display = 'none';
+          document.getElementById('nexai-orb').style.display = 'block';
+          onQuestionEnd();
+        };
+        vid.play().catch(() => _speakWithTTS(q.text, onQuestionEnd));
+        return;
+      }
+    } catch (e) { console.warn('Avatar render failed, falling back to TTS+orb', e); }
+  }
+
+  // Default: browser TTS + orb animation
+  _speakWithTTS(q.text, onQuestionEnd);
+}
+
+function _speakWithTTS(text, onEnd) {
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.lang = 'en-IN'; utt.rate = 0.9;
+  utt.onend  = onEnd;
+  utt.onerror = e => {
+    orbSetState('idle');
+    document.getElementById('nexai-status').textContent = '(TTS unavailable — click 🎤 to record your answer)';
+    document.getElementById('nxbtn-listen').style.display = '';
+    document.getElementById('nxbtn-listen').disabled = false;
+    console.warn('TTS error', e);
+  };
+  _nxSynth.cancel();
+  _nxSynth.speak(utt);
+}
+
+function nexaiListen() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { flash('Speech recognition not supported. Use Chrome or Edge.', false); return; }
+  document.getElementById('nxbtn-listen').disabled = true;
+  document.getElementById('nexai-status').textContent = 'Listening — speak your answer…';
+  orbSetState('listening');   // triggers real mic amplitude via AudioContext
+  _nxRecog = new SR();
+  _nxRecog.lang = 'en-IN'; _nxRecog.continuous = false;
+  _nxRecog.interimResults = false; _nxRecog.maxAlternatives = 1;
+  let answer = '';
+  _nxRecog.onresult = e => { answer = Array.from(e.results).map(r => r[0].transcript).join(' '); };
+  _nxRecog.onend = () => {
+    orbSetState('idle');
+    const q = _nxQuestions[_nxSeq];
+    _nxTranscript.push({seq:q.seq, question:q.text, answer:answer||'(no answer captured)'});
+    const tb = document.getElementById('nexai-transcript');
+    tb.style.display = 'block';
+    tb.innerHTML += `<div style="margin-bottom:6px"><strong>Q${q.seq}:</strong> ${answer||'(silent)'}</div>`;
+    document.getElementById('nexai-status').textContent =
+      _nxSeq+1 < _nxQuestions.length ? 'Answer recorded. Click Next →' : 'All questions answered. Click End & score.';
+    document.getElementById('nxbtn-listen').style.display = 'none';
+    if (_nxSeq+1 < _nxQuestions.length) {
+      document.getElementById('nxbtn-next').style.display = '';
+      document.getElementById('nxbtn-end').style.display = '';
+    } else {
+      document.getElementById('nxbtn-end').style.display = '';
+    }
+  };
+  _nxRecog.onerror = e => {
+    orbSetState('idle');
+    document.getElementById('nexai-status').textContent = `Mic error: ${e.error}. Click 🎤 to retry.`;
+    document.getElementById('nxbtn-listen').disabled = false;
+  };
+  _nxRecog.start();
+}
+
+function nexaiNext() {
+  _nxSeq++;
+  document.getElementById('nxbtn-next').style.display = 'none';
+  document.getElementById('nxbtn-end').style.display = 'none';
+  document.getElementById('nxbtn-speak').disabled = false;
+  orbSetState('idle');
+  nexaiSpeak();
+}
+
+async function nexaiSubmit() {
+  if (_nxSynth) _nxSynth.cancel();
+  if (_nxRecog) try { _nxRecog.abort(); } catch {}
+  orbSetState('done');
+  document.getElementById('nexai-status').textContent = 'Scoring…';
+  ['nxbtn-speak','nxbtn-listen','nxbtn-next','nxbtn-end'].forEach(id => document.getElementById(id).disabled=true);
+
+  // B6: Submit AI behaviour flags collected during the session
+  if (_procSessionId && _behaviorFlags.length) {
+    await api(`/api/proctoring/sessions/${_procSessionId}/flags`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({flags:_behaviorFlags}),
+    });
+  }
+  // Stop recording streams
+  _stopProctoringStreams();
+  if (_procSessionId) {
+    await api(`/api/proctoring/sessions/${_procSessionId}/complete`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+  }
+  document.getElementById('rec-badge').style.display = 'none';
+
+  const res = await api(`/api/nexai/sessions/${_nxSessionId}/submit`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({transcript:_nxTranscript}),
+  });
+  if (!res) { flash('Scoring failed.', false); return; }
+  const d = res.score_detail || {};
+  document.getElementById('nexai-result').innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;padding:14px;background:#faf9f6;border-radius:4px;border:1px solid var(--border)">
+      <span style="font-size:36px;font-weight:700;color:var(--accent)">${res.raw_score}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600">NexAI assistive score / 100</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Questions answered: ${d.questions_answered??'—'}/${d.total_questions??'—'}</div>
+        <div style="font-size:12px;color:var(--muted)">Per-question: ${(d.per_question||[]).join(', ')||'—'}</div>
+        ${_procConsented?`<div style="font-size:11px;color:var(--muted);margin-top:4px">Proctoring: ${_behaviorFlags.length} AI flags recorded (human review pending)</div>`:''}
+        <div style="font-size:11px;color:var(--gold);margin-top:4px;font-style:italic">Recruiter reviews all scores — NexAI never auto-rejects.</div>
+      </div>
+    </div>`;
+  document.getElementById('nexai-result').style.display = 'block';
+  document.getElementById('nexai-status').textContent = 'Interview complete. Score saved.';
+}
+
+// ── B2/B3/B4/B5: Proctoring streams ──────────────────────────────────────────
+
+async function _startProctoringStreams() {
+  _behaviorFlags = [];
+  try {
+    // B2: Get webcam + audio stream
+    _webcamStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    const webcamEl = document.getElementById('proctor-webcam');
+    webcamEl.srcObject = _webcamStream;
+
+    // B2: Capture identity snapshot (first frame after 1.5 s)
+    setTimeout(() => _captureIdentitySnapshot(), 1500);
+
+    // B3: Webcam recorder (chunks every 10 s)
+    _webcamRecorder = new MediaRecorder(_webcamStream, {mimeType:'video/webm;codecs=vp8,opus'});
+    let wIdx = 0;
+    _webcamRecorder.ondataavailable = async e => {
+      if (e.data.size > 0 && _procSessionId) {
+        const fd = new FormData();
+        fd.append('media_type','webcam'); fd.append('chunk_index',wIdx++);
+        fd.append('chunk', e.data, `chunk_${wIdx}.webm`);
+        api(`/api/proctoring/sessions/${_procSessionId}/media-chunk`,{method:'POST',body:fd});
+      }
+    };
+    _webcamRecorder.start(10000);
+
+    // B4: Screen recording
+    try {
+      _screenStream = await navigator.mediaDevices.getDisplayMedia({ video:true });
+      _screenRecorder = new MediaRecorder(_screenStream, {mimeType:'video/webm;codecs=vp8'});
+      let sIdx = 0;
+      _screenRecorder.ondataavailable = async e => {
+        if (e.data.size > 0 && _procSessionId) {
+          const fd = new FormData();
+          fd.append('media_type','screen'); fd.append('chunk_index',sIdx++);
+          fd.append('chunk', e.data, `chunk_${sIdx}.webm`);
+          api(`/api/proctoring/sessions/${_procSessionId}/media-chunk`,{method:'POST',body:fd});
+        }
+      };
+      _screenRecorder.start(10000);
+    } catch (e) {
+      // B4: Screen permission declined — flag session but do not block
+      if (_procSessionId) {
+        api(`/api/proctoring/sessions/${_procSessionId}/screen-declined`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+      }
+      flash('Screen recording declined — interview continues without screen capture.', false);
+    }
+
+    // B1: Show persistent REC badge
+    document.getElementById('rec-badge').style.display = 'block';
+
+    // B6: Start AI behaviour analysis
+    _startBehaviorAnalysis();
+
+  } catch (e) {
+    flash('Could not access webcam. Interview continues without proctoring.', false);
+    _procConsented = false;
+  }
+}
+
+function _stopProctoringStreams() {
+  if (_behaviorInterval) { clearInterval(_behaviorInterval); _behaviorInterval = null; }
+  if (_webcamRecorder && _webcamRecorder.state !== 'inactive') _webcamRecorder.stop();
+  if (_screenRecorder && _screenRecorder.state !== 'inactive') _screenRecorder.stop();
+  if (_webcamStream) { _webcamStream.getTracks().forEach(t => t.stop()); _webcamStream = null; }
+  if (_screenStream) { _screenStream.getTracks().forEach(t => t.stop()); _screenStream = null; }
+  document.getElementById('rec-badge').style.display = 'none';
+  const webcamEl = document.getElementById('proctor-webcam');
+  if (webcamEl) webcamEl.srcObject = null;
+}
+
+async function _captureIdentitySnapshot() {
+  if (!_webcamStream || !_procSessionId) return;
+  const canvas = document.getElementById('proctor-snap-canvas');
+  const vid = document.getElementById('proctor-webcam');
+  canvas.width = vid.videoWidth || 640;
+  canvas.height = vid.videoHeight || 480;
+  canvas.getContext('2d').drawImage(vid, 0, 0);
+  canvas.toBlob(async blob => {
+    if (!blob) return;
+    const fd = new FormData();
+    fd.append('snapshot', blob, 'identity.jpg');
+    await api(`/api/proctoring/sessions/${_procSessionId}/identity`, {method:'POST', body:fd});
+  }, 'image/jpeg', 0.85);
+}
+
+// ── B6: AI behaviour analysis (TF.js BlazeFace + COCO-SSD) ───────────────────
+
+async function _loadTFModels() {
+  if (_tfModels) return _tfModels;
+  try {
+    // Lazy-load TensorFlow.js + models via CDN
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js');
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js');
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+    const [blaze, coco] = await Promise.all([
+      window.blazeface.load(),
+      window.cocoSsd.load(),
+    ]);
+    _tfModels = { blaze, coco };
+    return _tfModels;
+  } catch (e) {
+    console.warn('TF.js models failed to load — behaviour analysis disabled:', e);
+    return null;
+  }
+}
+
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script'); s.src = src; s.crossOrigin = 'anonymous';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function _startBehaviorAnalysis() {
+  const models = await _loadTFModels();
+  if (!models) return;
+
+  _behaviorInterval = setInterval(async () => {
+    if (!_webcamStream) return;
+    const vid = document.getElementById('proctor-webcam');
+    if (!vid || !vid.videoWidth) return;
+    const now = Date.now();
+    try {
+      // Face detection
+      const faces = await models.blaze.estimateFaces(vid, false);
+      if (faces.length === 0) {
+        _addFlag(now, 'no_face', 0.9, 'No face detected in frame');
+      } else if (faces.length > 1) {
+        _addFlag(now, 'multi_face', 0.95, `${faces.length} faces detected`);
+      } else {
+        // Check if face is looking away (rough: top of bounding box near top of frame)
+        const f = faces[0];
+        const [tx, ty] = f.topLeft;
+        if (ty < 10) _addFlag(now, 'face_away', 0.7, 'Candidate may be looking away');
+      }
+      // Object detection (phone)
+      const objects = await models.coco.detect(vid);
+      const phones = objects.filter(o => o.class === 'cell phone' && o.score > 0.55);
+      if (phones.length) _addFlag(now, 'phone_detected', phones[0].score, 'Mobile phone detected in frame');
+    } catch (e) { /* silently ignore frame errors */ }
+  }, 5000);   // analyse every 5 seconds
+}
+
+function _addFlag(tsMs, type, confidence, detail) {
+  _behaviorFlags.push({ ts_ms: tsMs, type, confidence: Math.round(confidence*100)/100, detail });
+  // Show a subtle on-screen indicator (does not disturb the interview)
+  const badge = document.getElementById('rec-badge');
+  if (badge) {
+    badge.textContent = `● REC  ⚠ ${type.replace(/_/g,' ')}`;
+    setTimeout(() => { if (badge) badge.textContent = '● REC'; }, 3000);
+  }
+}
+
+// ── B7: Proctoring review screen ──────────────────────────────────────────────
+
+async function screenProctoringReview() {
+  setTitle('Proctoring Review');
+  const rows = await api('/api/proctoring/review');
+  if (!rows) { showErr('Could not load proctoring sessions.'); return; }
+
+  const legal = `<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:4px;padding:10px 14px;font-size:12px;margin-bottom:16px">
+    <strong>Legal reminder:</strong> These recordings contain regulated personal/biometric data.
+    Handle and retain per Amnex data protection policy. AI flags are assistive only — human review required.
+    <span style="margin-left:8px;color:var(--muted)">Testing with internal volunteers only until legal sign-off obtained.</span>
+  </div>`;
+
+  if (!rows.length) {
+    document.getElementById('content').innerHTML = `
+      <div class="page-header"><h1>Proctoring Review</h1></div>${legal}
+      <div class="card"><p class="empty">No proctored sessions yet.</p></div>`;
+    return;
+  }
+
+  const tRows = rows.map(r => {
+    const decisionCls = r.human_decision==='cleared'?'open':r.human_decision?.includes('flagged')?'interviewing':r.human_decision==='voided'?'rejected':'draft';
+    return `<tr class="clickable-row" onclick="openProctoringDetail('${r.id}')">
+      <td>${r.candidate_name||'—'}</td>
+      <td style="font-size:12px">${r.req_title||'—'}</td>
+      <td><span class="pill ${r.consent_granted?'open':'closed'}">${r.consent_granted?'Consented':'Declined'}</span></td>
+      <td>${r.flag_count??0}</td>
+      <td>${r.screen_recording_declined?'<span style="color:var(--gold)">Screen declined</span>':'✓'}</td>
+      <td><span class="pill ${decisionCls}">${r.human_decision||'Pending review'}</span></td>
+      <td style="font-size:11px;color:var(--muted)">${r.created_at?new Date(r.created_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>Proctoring Review</h1></div>
+    ${legal}
+    <div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr><th>Candidate</th><th>Requisition</th><th>Consent</th><th>AI flags</th><th>Screen</th><th>Decision</th><th>Date</th></tr></thead>
+      <tbody>${tRows}</tbody></table>
+    </div>`;
+}
+
+async function openProctoringDetail(sessionId) {
+  const d = await api(`/api/proctoring/review/${sessionId}`);
+  if (!d) return;
+  const flags = Array.isArray(d.flags) ? d.flags : [];
+  const flagHtml = flags.length ? flags.map(f => `
+    <div class="flag-item ${f.type||''}">
+      <span class="flag-ts">${_fmtMs(f.ts_ms)}</span>
+      <span class="badge ${f.type==='multi_face'||f.type==='phone_detected'?'badge-red':'badge-orange'}">${(f.type||'').replace(/_/g,' ')}</span>
+      <span style="color:var(--muted)">${f.detail||''}</span>
+      <span style="margin-left:auto;font-size:11px;color:var(--muted)">${Math.round((f.confidence||0)*100)}%</span>
+    </div>`).join('') : '<p style="color:var(--muted);font-size:13px">No AI flags recorded.</p>';
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header">
+      <h1>Proctoring session</h1>
+      <button class="btn btn-ghost btn-sm" onclick="navigate('proctoring_review')">← Back</button>
+      <a class="btn btn-ghost btn-sm" href="/api/proctoring/review/${sessionId}/summary" download>⬇ Incident summary CSV</a>
+    </div>
+    <div class="two-col" style="margin-bottom:16px">
+      <div class="card">
+        <div class="card-title">Session info</div>
+        <table><tbody>
+          <tr><td>Candidate</td><td><strong>${d.candidate_name}</strong></td></tr>
+          <tr><td>Requisition</td><td>${d.req_title}</td></tr>
+          <tr><td>Consent</td><td><span class="pill ${d.consent_granted?'open':'closed'}">${d.consent_granted?'Granted':'Declined'}</span></td></tr>
+          <tr><td>Screen recording</td><td>${d.screen_recording_declined?'<span style="color:var(--gold)">Declined by candidate</span>':'Captured'}</td></tr>
+          <tr><td>Identity snapshot</td><td>${d.identity_snapshot_path?'Captured (human review)':'Not captured'}</td></tr>
+          <tr><td>AI flags</td><td><strong>${d.flag_count}</strong></td></tr>
+          <tr><td>Date</td><td style="font-size:12px">${d.created_at?new Date(d.created_at).toLocaleString('en-IN'):'—'}</td></tr>
+        </tbody></table>
+      </div>
+      <div class="card">
+        <div class="card-title">Human review</div>
+        <div class="form-group"><label>Decision</label>
+          <select id="det-decision" onchange="document.getElementById('det-save-btn').disabled=false">
+            <option value="">— Pending —</option>
+            <option value="cleared" ${d.human_decision==='cleared'?'selected':''}>Cleared</option>
+            <option value="flagged_minor" ${d.human_decision==='flagged_minor'?'selected':''}>Flagged minor</option>
+            <option value="flagged_major" ${d.human_decision==='flagged_major'?'selected':''}>Flagged major</option>
+            <option value="voided" ${d.human_decision==='voided'?'selected':''}>Voided</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Reviewer notes</label>
+          <textarea id="det-notes" rows="3">${d.reviewer_notes||''}</textarea>
+        </div>
+        <p style="font-size:11px;color:var(--gold);margin-bottom:10px;font-style:italic">AI flags are assistive only — this decision is made by you, not the AI.</p>
+        <button class="btn btn-primary" id="det-save-btn" disabled onclick="saveProctoringReview('${sessionId}')">Save decision</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">AI behaviour flags — timeline (${flags.length} events)</div>
+      <div class="flag-timeline">${flagHtml}</div>
+    </div>`;
+}
+
+async function saveProctoringReview(sessionId) {
+  const res = await api(`/api/proctoring/review/${sessionId}`, {
+    method:'PATCH', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      human_decision: document.getElementById('det-decision').value || null,
+      reviewer_notes: document.getElementById('det-notes').value.trim() || null,
+    }),
+  });
+  if (res) { flash('Review saved.'); document.getElementById('det-save-btn').disabled=true; }
+}
+
+function _fmtMs(ms) {
+  if (!ms) return '—';
+  const s = Math.floor(ms/1000);
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+// ── Post-OAuth redirect ───────────────────────────────────────────────────────
+const _qs=new URLSearchParams(window.location.search);
+if(_qs.get('connected')==='1'){history.replaceState({},'','/');flash('Google Calendar connected.');}
+if(_qs.get('gcal_error')){history.replaceState({},'','/');flash('GCal error: '+_qs.get('gcal_error'),false);}
+
+// ── 15-min inactivity logout ──────────────────────────────────────────────────
+let _idle;
+function _resetIdle(){
+  clearTimeout(_idle);
+  _idle=setTimeout(()=>{flash('Signed out after 15 min of inactivity.',false);setTimeout(logout,2500);},15*60*1000);
+}
+['mousemove','keydown','mousedown','touchstart','scroll','click'].forEach(ev=>document.addEventListener(ev,_resetIdle,{passive:true}));
+_resetIdle();
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-(function boot() {
-  try {
-    buildNav();
-  } catch (e) {
-    document.getElementById('sidenav').innerHTML =
-      `<div style="color:#f87171;padding:16px;font-size:12px">Nav error: ${e.message}</div>`;
-    console.error('buildNav failed:', e);
-  }
-
-  refreshGCalStatus().catch(e => console.warn('GCal status:', e));
-
-  const hashParts = (location.hash || '#dashboard').split(/[#\/]/);
-  const initId    = hashParts[1] || 'dashboard';
-  const initParam = hashParts[2];
-
-  try {
-    runRoute(initId, initParam);
-  } catch (e) {
-    document.getElementById('content').innerHTML =
-      `<div class="card" style="padding:40px;text-align:center">
-        <p style="font-weight:600;margin-bottom:8px">Startup error</p>
-        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${e.message}</p>
-        <button class="btn btn-primary" onclick="location.reload()">Reload page</button>
-        <button class="btn btn-ghost" style="margin-left:8px" onclick="logout()">Sign out</button>
-      </div>`;
-    console.error('runRoute failed:', e);
-  }
+(function boot(){
+  try { buildNav(); } catch(e){ console.error('buildNav:',e); }
+  refreshGCal().catch(()=>{});
+  const hp=(location.hash||'').split(/[#\/]/);
+  const initId=hp[1]||(ME.role==='admin'?'users':'dashboard');
+  const initParam=hp[2];
+  try { runRoute(initId,initParam); } catch(e){ showErr(e.message); console.error('boot:',e); }
 })();
 </script>
 </body>

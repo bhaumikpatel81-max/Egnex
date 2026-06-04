@@ -1,0 +1,421 @@
+"""
+Reports API — 8 management pivots for TA Manager, scoped variants for Recruiter
+and Hiring Manager, plus openpyxl-based Excel download.
+"""
+import io
+from datetime import date, timedelta
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+
+from ..db import query, query_one
+from ..auth_utils import get_current_user
+
+router = APIRouter(prefix="/api/reports2", tags=["reports2"])
+
+
+# ── Period → SQL date range helper ────────────────────────────────────────────
+
+def _period_start(period: str, year: int) -> date:
+    today = date.today()
+    p = period.lower()
+    if p == "weekly":
+        return today - timedelta(days=today.weekday())
+    if p == "monthly":
+        return date(year, today.month, 1)
+    if p == "quarterly":
+        m = today.month
+        if m <= 3:   qs = 1
+        elif m <= 6: qs = 4
+        elif m <= 9: qs = 7
+        else:        qs = 10
+        return date(year, qs, 1)
+    if p in ("half_yearly", "half-yearly"):
+        if today.month >= 4 and today.month <= 9:
+            return date(year, 4, 1)
+        else:
+            return date(year, 10, 1)
+    # yearly / default
+    return date(year, 1, 1)
+
+
+def _recruiter_join(role: str, uid: str) -> tuple:
+    """Returns (sql_join_fragment, extra_params_list)."""
+    if role == "recruiter":
+        return (
+            "JOIN requisition_recruiter rr ON rr.requisition_id = r.id AND rr.recruiter_id = %s",
+            [uid],
+        )
+    return ("", [])
+
+
+# ── Pivot 1: Net Open Positions vs Total Demand ───────────────────────────────
+
+def _pivot1(year, ps: date, rjoin: str, rp: list):
+    sql = f"""
+        SELECT gc.name AS company, r.roll_type,
+               COUNT(r.id) AS total_reqs,
+               SUM(r.openings) AS total_openings,
+               COUNT(r.id) FILTER (WHERE r.status = 'open') AS open_count
+        FROM requisition r
+        JOIN business_unit bu ON bu.id = r.bu_id
+        JOIN group_company gc ON gc.id = bu.company_id
+        {rjoin}
+        WHERE COALESCE(r.opened_at, r.created_at) >= %s
+        GROUP BY gc.name, r.roll_type
+        ORDER BY gc.name, r.roll_type
+    """
+    return query(sql, rp + [ps])
+
+
+# ── Pivot 2: Diversity Hiring YTD ─────────────────────────────────────────────
+
+def _pivot2(year, ps: date, rjoin: str, rp: list):
+    sql = f"""
+        SELECT gc.name AS company, c.gender, COUNT(*) AS n
+        FROM application a
+        JOIN candidate   c  ON c.id  = a.candidate_id
+        JOIN requisition r  ON r.id  = a.requisition_id
+        JOIN business_unit bu ON bu.id = r.bu_id
+        JOIN group_company gc ON gc.id = bu.company_id
+        {rjoin}
+        WHERE a.applied_at >= %s
+          AND a.status IN ('joined','selected','offered','offer_stage')
+        GROUP BY gc.name, c.gender
+        ORDER BY gc.name, c.gender
+    """
+    return query(sql, rp + [ps])
+
+
+# ── Pivot 3: Status of Open Positions by Entity & Band ────────────────────────
+
+def _pivot3(year, ps: date, rjoin: str, rp: list):
+    sql = f"""
+        SELECT gc.name AS company, b.code AS band, r.status, COUNT(r.id) AS n
+        FROM requisition r
+        JOIN business_unit bu ON bu.id = r.bu_id
+        JOIN group_company gc ON gc.id = bu.company_id
+        JOIN band b ON b.id = r.band_id
+        {rjoin}
+        WHERE COALESCE(r.opened_at, r.created_at) >= %s
+        GROUP BY gc.name, b.code, r.status
+        ORDER BY gc.name, b.code
+    """
+    return query(sql, rp + [ps])
+
+
+# ── Pivot 4: Status by Hiring Stage (funnel) ─────────────────────────────────
+
+def _pivot4(year, ps: date, rjoin: str, rp: list):
+    sql = f"""
+        SELECT
+          CASE
+            WHEN a.status = 'applied'  THEN 'Sourcing'
+            WHEN a.status IN ('screening','screen_passed') THEN 'Screening'
+            WHEN a.status IN ('interviewing') THEN 'Interview'
+            WHEN a.status IN ('selected','offer_stage','offered','joined') THEN 'Selected'
+            ELSE 'Other'
+          END AS stage,
+          COUNT(*) AS n
+        FROM application a
+        JOIN requisition r ON r.id = a.requisition_id
+        {rjoin}
+        WHERE a.applied_at >= %s
+        GROUP BY stage
+        ORDER BY n DESC
+    """
+    return query(sql, rp + [ps])
+
+
+# ── Pivot 5: Internal Movement ────────────────────────────────────────────────
+
+def _pivot5(year, ps: date, rjoin: str, rp: list):
+    sql = f"""
+        SELECT gc.name AS company,
+               COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE a.is_internal_movement) AS internal_count
+        FROM application a
+        JOIN requisition r ON r.id = a.requisition_id
+        JOIN business_unit bu ON bu.id = r.bu_id
+        JOIN group_company gc ON gc.id = bu.company_id
+        {rjoin}
+        WHERE a.applied_at >= %s
+        GROUP BY gc.name
+        ORDER BY gc.name
+    """
+    return query(sql, rp + [ps])
+
+
+# ── Pivot 6: Aging of Open Positions ─────────────────────────────────────────
+
+def _pivot6(year, ps: date, role: str, uid: str):
+    if role == "recruiter":
+        extra = "AND id IN (SELECT requisition_id FROM requisition_recruiter WHERE recruiter_id = %s)"
+        params = [uid]
+    else:
+        extra = ""
+        params = []
+    sql = f"""
+        SELECT aging_bracket, COUNT(*) AS n,
+               ROUND(AVG(aging_days)::numeric, 0) AS avg_days
+        FROM v_requisition_aging
+        WHERE 1=1 {extra}
+        GROUP BY aging_bracket
+        ORDER BY MIN(aging_days)
+    """
+    return query(sql, params)
+
+
+# ── Pivot 7: Recruiter Productivity ──────────────────────────────────────────
+
+def _pivot7(year, ps: date, rjoin2: str, rp2: list):
+    """rjoin2/rp2 are for recruiter-scope on requisition_recruiter table."""
+    # SQL param order: ps (for applied_at) comes first, then rp2 (for recruiter_id if scoped)
+    where_extra = "AND rr.recruiter_id = %s" if rjoin2 else ""
+    sql = f"""
+        SELECT u.full_name AS recruiter,
+               COUNT(DISTINCT a.id) AS total_handled,
+               COUNT(DISTINCT a.id) FILTER (WHERE a.status IN ('selected','offered','joined')) AS converted
+        FROM app_user u
+        JOIN requisition_recruiter rr ON rr.recruiter_id = u.id
+        JOIN requisition r ON r.id = rr.requisition_id
+        LEFT JOIN application a ON a.requisition_id = r.id AND a.applied_at >= %s
+        WHERE u.role = 'recruiter'
+          {where_extra}
+        GROUP BY u.full_name
+        ORDER BY converted DESC
+    """
+    return query(sql, [ps] + rp2)
+
+
+# ── Pivot 8: Total Joined/Offered/Selected ────────────────────────────────────
+
+def _pivot8(year, ps: date, rjoin: str, rp: list):
+    sql = f"""
+        SELECT
+          COUNT(*) FILTER (WHERE a.status = 'selected') AS selected,
+          COUNT(*) FILTER (WHERE a.status IN ('offered','offer_stage')) AS offered,
+          COUNT(*) FILTER (WHERE a.status = 'joined') AS joined
+        FROM application a
+        JOIN requisition r ON r.id = a.requisition_id
+        {rjoin}
+        WHERE a.applied_at >= %s
+    """
+    rows = query(sql, rp + [ps])
+    return rows[0] if rows else {"selected": 0, "offered": 0, "joined": 0}
+
+
+# ── TA pivot endpoint ─────────────────────────────────────────────────────────
+
+PIVOT_MAP = {
+    "1": ("Net Open Positions", _pivot1),
+    "2": ("Diversity Hiring YTD", _pivot2),
+    "3": ("Status by Entity & Band", _pivot3),
+    "4": ("Status by Hiring Stage", _pivot4),
+    "5": ("Internal Movement", _pivot5),
+    "6": ("Aging of Open Positions", _pivot6),
+    "7": ("Recruiter Productivity", _pivot7),
+    "8": ("Total Joined / Offered / Selected", _pivot8),
+}
+
+
+@router.get("/ta/pivot/{pivot_id}")
+def ta_pivot(
+    pivot_id: str,
+    period: str = Query("yearly"),
+    year: int = Query(default_factory=lambda: date.today().year),
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] not in ("ta_manager", "admin"):
+        raise HTTPException(403, "TA Manager or Admin only")
+    if pivot_id not in PIVOT_MAP:
+        raise HTTPException(404, f"pivot_id must be 1-8, got {pivot_id!r}")
+    ps = _period_start(period, year)
+    rjoin, rp = "", []
+    if pivot_id == "6":
+        return _pivot6(year, ps, "ta_manager", "")
+    if pivot_id == "7":
+        return _pivot7(year, ps, "", [])
+    if pivot_id == "8":
+        return _pivot8(year, ps, rjoin, rp)
+    return PIVOT_MAP[pivot_id][1](year, ps, rjoin, rp)
+
+
+# ── Recruiter pivot endpoint ──────────────────────────────────────────────────
+
+@router.get("/recruiter/pivot/{pivot_id}")
+def recruiter_pivot(
+    pivot_id: str,
+    period: str = Query("yearly"),
+    year: int = Query(default_factory=lambda: date.today().year),
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] != "recruiter":
+        raise HTTPException(403, "Recruiter only")
+    if pivot_id not in PIVOT_MAP:
+        raise HTTPException(404, f"pivot_id must be 1-8")
+    uid = user["sub"]
+    ps = _period_start(period, year)
+    rjoin, rp = _recruiter_join("recruiter", uid)
+    if pivot_id == "6":
+        return _pivot6(year, ps, "recruiter", uid)
+    if pivot_id == "7":
+        return _pivot7(year, ps, "recruiter", [uid])
+    if pivot_id == "8":
+        return _pivot8(year, ps, rjoin, rp)
+    return PIVOT_MAP[pivot_id][1](year, ps, rjoin, rp)
+
+
+# ── HM summary ───────────────────────────────────────────────────────────────
+
+@router.get("/hm/summary")
+def hm_summary(user: dict = Depends(get_current_user)):
+    uid = user["sub"]
+    taken = query_one(
+        """SELECT COUNT(*) AS n FROM interview i
+           JOIN interview_panel ip ON ip.interview_id = i.id
+           WHERE ip.interviewer_id = %s AND i.status = 'completed'""",
+        [uid],
+    )
+    outcomes = query(
+        """SELECT COALESCE(sc.verdict,'no_verdict') AS verdict, COUNT(*) AS n
+           FROM scorecard sc
+           JOIN interview i ON i.id = sc.interview_id
+           JOIN interview_panel ip ON ip.interview_id = i.id
+           WHERE ip.interviewer_id = %s
+           GROUP BY sc.verdict""",
+        [uid],
+    )
+    turnaround = query_one(
+        """SELECT ROUND(AVG(
+               EXTRACT(EPOCH FROM (sc.submitted_at - i.scheduled_at)) / 3600.0
+           )::numeric, 1) AS avg_hours
+           FROM scorecard sc
+           JOIN interview i ON i.id = sc.interview_id
+           JOIN interview_panel ip ON ip.interview_id = i.id
+           WHERE ip.interviewer_id = %s
+             AND i.status = 'completed'
+             AND sc.submitted_at IS NOT NULL""",
+        [uid],
+    )
+    pending = query_one(
+        """SELECT COUNT(*) AS n FROM application a
+           JOIN requisition r ON r.id = a.requisition_id
+           WHERE r.hiring_manager_id = %s
+             AND a.status IN ('selected','interviewing')
+             AND (a.hm_feedback IS NULL OR a.hm_feedback = '')""",
+        [uid],
+    )
+    return {
+        "interviews_taken": int(taken["n"]) if taken else 0,
+        "outcomes": {o["verdict"]: int(o["n"]) for o in outcomes},
+        "avg_feedback_turnaround_hours": (
+            float(turnaround["avg_hours"]) if turnaround and turnaround["avg_hours"] else None
+        ),
+        "pending_reviews": int(pending["n"]) if pending else 0,
+    }
+
+
+# ── Excel export helpers ──────────────────────────────────────────────────────
+
+def _wb_header(ws, cols: list, row: int = 1):
+    import openpyxl.styles as xs
+    fill = xs.PatternFill("solid", fgColor="0C0D10")
+    font = xs.Font(bold=True, color="FFFFFF")
+    for ci, col in enumerate(cols, 1):
+        cell = ws.cell(row=row, column=ci, value=col)
+        cell.fill = fill
+        cell.font = font
+
+
+def _pivot_to_sheet(wb, title: str, rows: list):
+    ws = wb.create_sheet(title=title[:31])
+    if not rows:
+        ws.cell(1, 1, "No data for this period")
+        return ws
+    cols = list(rows[0].keys())
+    _wb_header(ws, cols)
+    for ri, row in enumerate(rows, 2):
+        for ci, col in enumerate(cols, 1):
+            val = row[col]
+            ws.cell(ri, ci, float(val) if hasattr(val, "__float__") and not isinstance(val, (int, str)) else val)
+    return ws
+
+
+def _build_workbook(all_pivots: list) -> bytes:
+    import openpyxl
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # remove default sheet
+    labels = [
+        "Net Open Positions", "Diversity YTD", "Status Entity Band",
+        "Status by Stage", "Internal Movement", "Aging",
+        "Recruiter Productivity", "Joined Offered Selected",
+    ]
+    for label, rows in zip(labels, all_pivots):
+        data = rows if isinstance(rows, list) else [rows]
+        _pivot_to_sheet(wb, label, data)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+# ── TA Excel download ─────────────────────────────────────────────────────────
+
+@router.get("/ta/excel")
+def ta_excel(
+    period: str = Query("yearly"),
+    year: int = Query(default_factory=lambda: date.today().year),
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] not in ("ta_manager", "admin"):
+        raise HTTPException(403, "TA Manager or Admin only")
+    ps = _period_start(period, year)
+    pivots = [
+        _pivot1(year, ps, "", []),
+        _pivot2(year, ps, "", []),
+        _pivot3(year, ps, "", []),
+        _pivot4(year, ps, "", []),
+        _pivot5(year, ps, "", []),
+        _pivot6(year, ps, "ta_manager", ""),
+        _pivot7(year, ps, "", []),
+        [_pivot8(year, ps, "", [])],
+    ]
+    xlsx = _build_workbook(pivots)
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=egnex_ta_report_{year}_{period}.xlsx"},
+    )
+
+
+# ── Recruiter Excel download ──────────────────────────────────────────────────
+
+@router.get("/recruiter/excel")
+def recruiter_excel(
+    period: str = Query("yearly"),
+    year: int = Query(default_factory=lambda: date.today().year),
+    user: dict = Depends(get_current_user),
+):
+    if user["role"] != "recruiter":
+        raise HTTPException(403, "Recruiter only")
+    uid = user["sub"]
+    ps = _period_start(period, year)
+    rjoin, rp = _recruiter_join("recruiter", uid)
+    pivots = [
+        _pivot1(year, ps, rjoin, rp),
+        _pivot2(year, ps, rjoin, rp),
+        _pivot3(year, ps, rjoin, rp),
+        _pivot4(year, ps, rjoin, rp),
+        _pivot5(year, ps, rjoin, rp),
+        _pivot6(year, ps, "recruiter", uid),
+        _pivot7(year, ps, "recruiter", [uid]),
+        [_pivot8(year, ps, rjoin, rp)],
+    ]
+    xlsx = _build_workbook(pivots)
+    return StreamingResponse(
+        io.BytesIO(xlsx),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=egnex_my_report_{year}_{period}.xlsx"},
+    )

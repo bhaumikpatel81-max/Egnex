@@ -181,6 +181,7 @@ def list_requisitions_full(user: dict = Depends(get_current_user)):
         return query(
             """
             SELECT r.id, r.title, r.status, r.roll_type, r.fiscal_year,
+                   r.is_p1, r.risk, r.hiring_location,
                    b.code AS band, bu.name AS business_unit,
                    (SELECT COUNT(*) FROM application  WHERE requisition_id = r.id) AS in_pipeline,
                    (SELECT COUNT(*) FROM round_config WHERE requisition_id = r.id) AS levels
@@ -195,6 +196,7 @@ def list_requisitions_full(user: dict = Depends(get_current_user)):
     return query(
         """
         SELECT r.id, r.title, r.status, r.roll_type, r.fiscal_year,
+               r.is_p1, r.risk, r.hiring_location,
                b.code AS band, bu.name AS business_unit,
                (SELECT COUNT(*) FROM application  WHERE requisition_id = r.id) AS in_pipeline,
                (SELECT COUNT(*) FROM round_config WHERE requisition_id = r.id) AS levels
@@ -225,6 +227,9 @@ class RequisitionIn(BaseModel):
     openings: int = 1
     fiscal_year: Optional[str] = None
     job_description: Optional[str] = None
+    is_p1: bool = False
+    risk: Optional[str] = None
+    hiring_location: Optional[str] = None
     rounds: list[RoundIn] = []
 
 
@@ -237,14 +242,16 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
         INSERT INTO requisition
           (title, bu_id, band_id, roll_type, key_skills, min_experience,
            budgeted_ctc, openings, fiscal_year, job_description,
+           is_p1, risk, hiring_location,
            status, opened_at, created_by)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s)
         RETURNING id, title, status
         """,
         [
             body.title, body.bu_id, body.band_id, body.roll_type,
             body.key_skills, body.min_experience, body.budgeted_ctc,
             body.openings, body.fiscal_year, body.job_description,
+            body.is_p1, body.risk, body.hiring_location,
             user["sub"],
         ],
     )

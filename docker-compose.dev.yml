@@ -32,6 +32,9 @@ services:
       GOOGLE_CLIENT_SECRET: placeholder
       GOOGLE_REDIRECT_URI: http://localhost:8080/api/google/callback
       OAUTHLIB_INSECURE_TRANSPORT: "1"
+      # Avatar provider: orb (default) | sadtalker | wav2lip | vendor
+      # Set SADTALKER_SERVICE_URL / WAV2LIP_SERVICE_URL when GPU box is running
+      AVATAR_PROVIDER: "orb"
     ports:
       - "8080:8080"
     depends_on:

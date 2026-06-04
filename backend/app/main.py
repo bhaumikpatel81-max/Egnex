@@ -23,6 +23,9 @@ from .routers.google_oauth import router as _google_oauth_router
 from .routers.auth import router as _auth_router
 from .routers.admin_users import router as _admin_router
 from .routers.pipeline_api import router as _pipeline_router
+from .routers.reports_api import router as _reports2_router
+from .routers.nexai_api import router as _nexai_router
+from .routers.proctoring_api import router as _proctoring_router
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
@@ -30,6 +33,9 @@ app.include_router(_auth_router)
 app.include_router(_admin_router)
 app.include_router(_google_oauth_router)
 app.include_router(_pipeline_router)
+app.include_router(_reports2_router)
+app.include_router(_nexai_router)
+app.include_router(_proctoring_router)
 
 _UPLOADS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
@@ -312,6 +318,38 @@ def report(view_name: str):
     if view_name not in allowed:
         raise HTTPException(404, f"unknown report. choose: {list(allowed)}")
     return query(f"SELECT * FROM {allowed[view_name]}")
+
+
+# ---------------- admin system endpoints ----------------
+@app.get("/api/admin/db-stats")
+def db_stats(request: Request):
+    if request.state.user.get("role") != "admin":
+        return JSONResponse(status_code=403, content={"detail": "Admin only"})
+    tables = [
+        "app_user", "requisition", "application", "candidate",
+        "interview", "scorecard", "offer", "stage_event", "nexai_session",
+    ]
+    result = {}
+    for t in tables:
+        row = query_one(f"SELECT COUNT(*) AS n FROM {t}")
+        result[t] = int(row["n"]) if row else 0
+    return result
+
+
+@app.get("/api/admin/sys-logs")
+def sys_logs(request: Request, limit: int = 100):
+    if request.state.user.get("role") != "admin":
+        return JSONResponse(status_code=403, content={"detail": "Admin only"})
+    return query(
+        """SELECT se.id, se.from_status, se.to_status,
+                  COALESCE(u.full_name, 'system') AS actor,
+                  se.note, se.occurred_at
+           FROM stage_event se
+           LEFT JOIN app_user u ON u.id = se.actor_id
+           ORDER BY se.occurred_at DESC
+           LIMIT %s""",
+        [min(limit, 500)],
+    )
 
 
 # ---------------- frontend ----------------

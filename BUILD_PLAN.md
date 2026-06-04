@@ -60,3 +60,50 @@ Light theme, logo at `frontend/assets/egnex-logo.png`, fire-orange `#f15a22` as 
 
 ## Rule for every step
 Build it, then STOP and tell the user: the command to run, the URL, and what to look for. Wait for them to confirm it works before the next step. If a step needs a backend API that doesn't exist, say so before inventing one.
+
+---
+
+# PART 2 — Role views, reports, and NexAI (continue in order after Part 1)
+
+## STEP 9 — Fix the role views so all four roles differ (CRITICAL BUG)
+Right now TA Admin and TA Manager see the same view. They must not. Make each role land on a genuinely different home screen and see different nav, per these definitions:
+- **TA Admin** — system administration: manage logins, grant custom access per user, monitor NexAI bot health/status, manage/inspect the database. NOT recruiting analytics. Nav: Users & Access, Bot Health, Database, System Logs.
+- **TA Manager** — people + analytics: assign recruiters to requisitions, view and DOWNLOAD all reports. Nav: Dashboard, Requisitions, Team, Reports, Analytics.
+- **Recruiter** — works requisitions, builds candidate data, runs pipeline. Nav: Dashboard, Requisitions, Candidates, Interviews, My Reports.
+- **Hiring Manager** — reviews profiles, interviews, gives feedback. Nav: Profiles to Review, Interviews, My Reports.
+Verify: log in as each of the four roles and confirm four clearly different screens.
+
+## STEP 10 — Add missing report fields to the database
+The management Excel needs fields Egnex does not yet store. Add to the requisition/application model: `is_p1` (boolean priority flag), `risk` (text/enum), `hiring_location`, `aging_days` (computed from open date), `aging_bracket` (0-15, 16-30, 31-45, 46-60, 61-90, 91+), and `internal_movement` (boolean). Aging and bracket are computed, not entered. 
+Verify: these fields appear on a requisition and populate correctly.
+
+## STEP 11 — TA Manager reports — match the management Excel, shown as pivots + charts
+Build a Reports area for TA Manager that reproduces EXACTLY these pivots from the weekly Excel, each rendered as an interactive pivot table AND an appropriate chart (pie/bar/line/cohort), not raw numbers:
+1. Net Open Positions vs Total Demand — by company, split On-Roll/Off-Roll (bar)
+2. Diversity Hiring YTD — Female/Male by company (pie + bar, with % like the Excel's 5.4%/94.6%)
+3. Status of Open Positions by Entity & Band (stacked bar)
+4. Status of Open Positions by Hiring Stage — Sourcing/Screening/Interview/Selected (funnel or stacked bar)
+5. Internal Movement against open positions (bar + rate %)
+6. Aging of Open Positions — the day brackets (cohort/heatmap + bar)
+7. Recruiter-Wise Productivity YTD (bar)
+8. Total Joined/Offered/Selected YTD (stacked bar)
+Add a time-period selector: Weekly, Monthly, Quarterly, Half-Yearly, Yearly. Add a "Download as Excel" button that exports the pivots into an .xlsx matching the existing Summary-sheet layout (so management gets the same file they get today). Use openpyxl on the backend to generate the file.
+Verify: TA Manager picks "Weekly", sees the pivots and charts, clicks Download, gets an .xlsx that mirrors the current report.
+
+## STEP 12 — Recruiter reports (their own activity)
+Same charting toolkit, scoped to the logged-in recruiter: profiles processed, screened, advanced, rejected; conversion ratios (applied→screened→interviewed→selected→joined as a funnel/cohort); their requisitions' aging. Same Weekly/Monthly/Quarterly/Half-Yearly/Yearly selector and Excel download.
+Verify: a recruiter sees only their own numbers, can download.
+
+## STEP 13 — Hiring Manager reports (interviews they conducted)
+Scoped to the logged-in hiring manager: interviews taken, by period; outcomes (selected/rejected ratio); average feedback turnaround; pending reviews. Same period selector, same chart types, Excel download.
+Verify: a hiring manager sees only their interview activity.
+
+## STEP 14 — NexAI: the interview bot (named NexAI), built in STAGES
+The current "bot" is a stub returning a fake score. Build NexAI properly, in stages — do NOT build the photorealistic face first.
+- **14a (voice-first):** NexAI conducts a structured interview using text-to-speech to ask JD-based questions and speech-to-text to capture spoken answers; it produces a transcript and an ASSISTIVE score (recruiter still decides). Consent-gated via the existing notetaker consent flow.
+- **14b (face, later):** add an AI-generated talking human face via a vendor avatar service, only after 14a works and the per-interview cost is validated.
+Keep NexAI assistive only — it never auto-rejects. Surface NexAI's health/status on the TA Admin "Bot Health" screen.
+Verify (14a): a candidate hears a spoken question, answers by voice, and a transcript + score is saved.
+
+## Honest scope note for NexAI
+A real-time human-face, human-voice interviewer means combining speech-to-text, a conversational model, text-to-speech, and a talking-avatar service — mostly paid vendors with per-minute cost. Voice-first (14a) delivers most value cheaply; the face (14b) is the expensive, risky part. Validate 14a with real candidates before paying for avatars.
