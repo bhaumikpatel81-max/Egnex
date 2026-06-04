@@ -18,9 +18,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--page);color
 #sidebar .logo-area{padding:20px 16px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
 #sidebar .logo-area img{height:36px;width:auto;display:block}
 #sidebar nav{padding:8px 0;flex:1}
-.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:#888;cursor:pointer;border-left:3px solid transparent;font-size:13px;transition:background .12s,color .12s;white-space:nowrap}
-.nav-item:hover{background:rgba(255,255,255,.05);color:#ccc}
-.nav-item.active{border-left-color:var(--accent);background:rgba(241,90,34,.12);color:#fff;font-weight:500}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:#c0bfbd;cursor:pointer;border-left:3px solid transparent;font-size:13px;transition:background .12s,color .12s;white-space:nowrap}
+.nav-item:hover{background:rgba(255,255,255,.08);color:#fff}
+.nav-item.active{border-left-color:var(--accent);background:rgba(241,90,34,.15);color:#fff;font-weight:500}
 .nav-icon{font-size:15px;opacity:.7;width:18px;text-align:center}
 .nav-sep{height:1px;background:rgba(255,255,255,.06);margin:6px 16px}
 
@@ -510,7 +510,7 @@ async function screenDashboard() {
     <div class="two-col">
       <div class="section">
         <div class="card">
-          <div class="card-title">${ME.role==='hiring_manager'?'My requisitions':'${ME.role==='ta_manager'||ME.role==='admin'?'All requisitions':'My requisitions'}'}</div>
+          <div class="card-title">${ME.role==='hiring_manager'?'My requisitions':ME.role==='ta_manager'||ME.role==='admin'?'All requisitions':'My requisitions'}</div>
           ${reqRows ? `<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>In pipeline</th><th>Levels</th></tr></thead><tbody>${reqRows}</tbody></table>` : '<p class="empty">No requisitions yet.</p>'}
         </div>
       </div>
@@ -1136,12 +1136,50 @@ const _qs = new URLSearchParams(window.location.search);
 if (_qs.get('connected')==='1') { history.replaceState({},'','/'); flash('Google Calendar connected.'); }
 if (_qs.get('gcal_error'))      { history.replaceState({},'','/'); flash('GCal error: '+_qs.get('gcal_error'), false); }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-buildNav();
-refreshGCalStatus();
+// ── 15-minute inactivity timeout ─────────────────────────────────────────────
+const INACTIVITY_MS = 15 * 60 * 1000; // 15 minutes
+let _idleTimer;
+function _resetIdle() {
+  clearTimeout(_idleTimer);
+  _idleTimer = setTimeout(() => {
+    flash('Session timed out after 15 minutes of inactivity. Signing out…', false);
+    setTimeout(logout, 2000);
+  }, INACTIVITY_MS);
+}
+['mousemove','keydown','mousedown','touchstart','scroll','click'].forEach(ev =>
+  document.addEventListener(ev, _resetIdle, { passive: true })
+);
+_resetIdle(); // start timer on page load
 
-const [, _initId, _initParam] = (location.hash || '#dashboard').split(/[#\/]/);
-runRoute(_initId || 'dashboard', _initParam);
+// ── Boot ──────────────────────────────────────────────────────────────────────
+(function boot() {
+  try {
+    buildNav();
+  } catch (e) {
+    document.getElementById('sidenav').innerHTML =
+      `<div style="color:#f87171;padding:16px;font-size:12px">Nav error: ${e.message}</div>`;
+    console.error('buildNav failed:', e);
+  }
+
+  refreshGCalStatus().catch(e => console.warn('GCal status:', e));
+
+  const hashParts = (location.hash || '#dashboard').split(/[#\/]/);
+  const initId    = hashParts[1] || 'dashboard';
+  const initParam = hashParts[2];
+
+  try {
+    runRoute(initId, initParam);
+  } catch (e) {
+    document.getElementById('content').innerHTML =
+      `<div class="card" style="padding:40px;text-align:center">
+        <p style="font-weight:600;margin-bottom:8px">Startup error</p>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${e.message}</p>
+        <button class="btn btn-primary" onclick="location.reload()">Reload page</button>
+        <button class="btn btn-ghost" style="margin-left:8px" onclick="logout()">Sign out</button>
+      </div>`;
+    console.error('runRoute failed:', e);
+  }
+})();
 </script>
 </body>
 </html>

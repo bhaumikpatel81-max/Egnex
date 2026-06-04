@@ -315,13 +315,19 @@ def report(view_name: str):
 
 
 # ---------------- frontend ----------------
+_NO_CACHE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
 if os.path.isdir(_FRONTEND_DIR):
     @app.get("/login", response_class=HTMLResponse)
     def login_page():
         with open(os.path.join(_FRONTEND_DIR, "login.html")) as f:
-            return f.read()
+            return HTMLResponse(content=f.read(), headers=_NO_CACHE)
 
     @app.get("/", response_class=HTMLResponse)
     def index():
         with open(os.path.join(_FRONTEND_DIR, "index.html")) as f:
-            return f.read()
+            return HTMLResponse(content=f.read(), headers=_NO_CACHE)
