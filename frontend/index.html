@@ -6,10 +6,10 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="egnex-version" content="3.1">
+<meta name="egnex-version" content="3.2">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=31 to bypass stale cache -->
-<script>if(!location.search.includes('v=31')){var u=location.href.split('?')[0];location.replace(u+'?v=31');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=32 to bypass stale cache -->
+<script>if(!location.search.includes('v=32')){var u=location.href.split('?')[0];location.replace(u+'?v=32');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -1003,7 +1003,7 @@ async function loadAllPivots(scope, yr){
     const gMap={female:0,male:0,undisclosed:0};
     p2.forEach(r=>gMap[r.gender]=(gMap[r.gender]||0)+parseInt(r.n||0));
     const total=Object.values(gMap).reduce((a,b)=>a+b,0);
-    mkChart('c2',{type:'doughnut',data:{labels:['Female','Male','Undisclosed'],datasets:[{data:[gMap.female,gMap.male,gMap.undisclosed],backgroundColor:['#f15a22','#2563eb','#6b6760']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:function(ctx){var pct=total?Math.round(ctx.raw/total*100):0;return ctx.label+': '+ctx.raw+' ('+pct+'%)';}}}}}}});
+    mkChart('c2',{type:'doughnut',data:{labels:['Female','Male','Undisclosed'],datasets:[{data:[gMap.female,gMap.male,gMap.undisclosed],backgroundColor:['#f15a22','#2563eb','#6b6760']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:function(ctx){var pct=total?Math.round(ctx.raw/total*100):0;return ctx.label+': '+ctx.raw+' ('+pct+'%)';}}}}}});
   }
 
   // Chart 3: Status by Band — stacked bar
