@@ -6,10 +6,10 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="egnex-version" content="3.2">
+<meta name="egnex-version" content="3.3">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=32 to bypass stale cache -->
-<script>if(!location.search.includes('v=32')){var u=location.href.split('?')[0];location.replace(u+'?v=32');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=33 to bypass stale cache -->
+<script>if(!location.search.includes('v=33')){var u=location.href.split('?')[0];location.replace(u+'?v=33');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -523,7 +523,6 @@ async function screenDashboard() {
   const d = await api('/api/dashboard');
   if (!d) { showErr('Dashboard could not load. Retry.'); return; }
 
-  // Admin gets a different home
   if (ME.role === 'admin') { screenUsers(); return; }
 
   const g = d.gender_split || [];
@@ -534,6 +533,14 @@ async function screenDashboard() {
   const fp = tot ? Math.round(fn/tot*100) : 0;
   const mp = tot ? Math.round(mn/tot*100) : 0;
   const up = 100-fp-mp;
+
+  // Pipeline data for charts
+  const pipeKeys   = ['apps_received','under_screening','screening_cleared','ai_interview','panel_interview','selected','offer_stage','joined'];
+  const pipeLabels = ['Applications','Under Screening','Screening Cleared','AI Interview','Panel Interview','Selected','Offer Stage','Joined'];
+  const pipeVals   = pipeKeys.map(k=>parseInt(d[k]||0));
+  const pipeBase   = pipeVals[0] || 1;  // avoid /0
+  const pipeRates  = pipeVals.map(v=>Math.round(v/pipeBase*100));
+  const pipeBgColors = pipeKeys.map((k,i)=>i===pipeKeys.length-1?'#1d6e56':i===0?'#2563eb':'#f15a22');
 
   const stages = [
     {k:'open_reqs',label:'Open Reqs'},{k:'apps_received',label:'Applications'},
@@ -555,53 +562,181 @@ async function screenDashboard() {
   const reqRows = (d.recent_reqs||[]).map(r=>`
     <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
       <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong></td>
-      <td>${r.business_unit}</td>
-      <td>${r.band}</td>
+      <td>${r.business_unit}</td><td>${r.band}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
       <td>${r.in_pipeline}</td><td>${r.levels}</td>
     </tr>`).join('');
 
-  const loadHtml = (d.recruiter_load||[]).length ? `
-    <div class="card" style="margin-top:20px">
-      <div class="card-title">Recruiter load</div>
-      <table><thead><tr><th>Recruiter</th><th>Open reqs</th><th>Applications</th></tr></thead>
-      <tbody>${d.recruiter_load.map(r=>`<tr><td>${r.full_name}</td><td>${r.open_reqs??0}</td><td>${r.total_applications??0}</td></tr>`).join('')}</tbody>
-      </table>
-    </div>` : '';
+  // ── Role-specific extra sections ──────────────────────────────────────────
+  let extraHtml = '';
 
-  const profilesHtml = (d.profiles_to_review||[]).length ? `
-    <div class="card" style="margin-top:20px">
-      <div class="card-title">Profiles awaiting your review (${d.profiles_to_review.length})</div>
-      <table><thead><tr><th>Candidate</th><th>Requisition</th><th>Score</th><th></th></tr></thead>
-      <tbody>${d.profiles_to_review.map(p=>`
-        <tr><td>${p.full_name}</td><td>${p.req_title}</td>
-        <td>${p.combined_score??p.match_score??'—'}</td>
-        <td><button class="btn btn-primary btn-sm" onclick="navigate('profiles')">Review</button></td></tr>`).join('')}
-      </tbody></table>
-    </div>` : '';
+  if (ME.role === 'ta_manager') {
+    // Recruiter load: table + bar chart
+    if ((d.recruiter_load||[]).length) {
+      extraHtml += `
+        <div class="two-col" style="margin-top:20px">
+          <div class="card">
+            <div class="card-title">Recruiter load</div>
+            <table><thead><tr><th>Recruiter</th><th>Open reqs</th><th>Applications</th></tr></thead>
+            <tbody>${d.recruiter_load.map(r=>'<tr><td>'+r.full_name+'</td><td>'+
+              (r.open_reqs||0)+'</td><td>'+(r.total_applications||0)+'</td></tr>').join('')}
+            </tbody></table>
+          </div>
+          <div class="card">
+            <div class="card-title">Recruiter comparison</div>
+            <div class="chart-wrap" style="height:200px"><canvas id="dash-rec-bar"></canvas></div>
+          </div>
+        </div>`;
+    }
+  }
 
+  if (ME.role === 'hiring_manager') {
+    const pending = (d.profiles_to_review||[]).length;
+    const totalP  = parseInt(d.apps_received||0);
+    const reviewed = Math.max(0, totalP - pending);
+    extraHtml += `
+      <div class="two-col" style="margin-top:20px">
+        <div class="card">
+          <div class="card-title">Profiles awaiting your review</div>
+          ${pending ? `<div class="chart-wrap" style="height:180px"><canvas id="dash-hm-donut"></canvas></div>
+            <p style="text-align:center;font-size:13px;margin-top:8px"><strong style="color:var(--accent)">${pending}</strong> pending · ${reviewed} reviewed</p>
+            <div style="margin-top:10px">${(d.profiles_to_review||[]).map(p=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+p.full_name+' — <em>'+p.req_title+'</em></span><button class="btn btn-primary btn-sm" onclick="navigate(\'profiles\')">Review</button></div>').join('')}</div>`
+            :'<p class="empty">No profiles pending review.</p>'}
+        </div>
+        <div class="card">
+          <div class="card-title">My pipeline overview</div>
+          <div class="chart-wrap" style="height:200px"><canvas id="dash-hm-pipeline"></canvas></div>
+        </div>
+      </div>`;
+  }
+
+  // ── Build full HTML ────────────────────────────────────────────────────────
   document.getElementById('content').innerHTML = `
     <div class="stage-grid">${stHtml}</div>
-    <div class="two-col">
+
+    <div class="two-col" style="margin-bottom:20px">
       <div class="card">
-        <div class="card-title">${ME.role==='ta_manager'||ME.role==='admin'?'All':'My'} requisitions</div>
+        <div class="card-title">${ME.role==='ta_manager'?'All':'My'} requisitions</div>
         ${reqRows?`<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${reqRows}</tbody></table>`:'<p class="empty">No requisitions yet.</p>'}
       </div>
       <div class="card">
         <div class="card-title">Diversity (gender)</div>
-        <div class="div-bar" style="margin-top:10px">
+        <div class="div-bar" style="margin-top:8px">
           ${fp>0?`<div class="seg female" style="width:${fp}%">${fp>8?fp+'%':''}</div>`:''}
           ${mp>0?`<div class="seg male"   style="width:${mp}%">${mp>8?mp+'%':''}</div>`:''}
           ${up>0?`<div class="seg unk"    style="width:${up}%">${up>8?up+'%':''}</div>`:''}
         </div>
-        <div class="div-legend">
+        <div class="div-legend" style="margin-bottom:10px">
           <span><span class="dot" style="background:var(--accent)"></span>Female ${fn}</span>
           <span><span class="dot" style="background:#2563eb"></span>Male ${mn}</span>
           <span><span class="dot" style="background:var(--muted)"></span>Undisclosed ${un}</span>
         </div>
+        <div class="chart-wrap" style="height:160px"><canvas id="dash-div-donut"></canvas></div>
       </div>
     </div>
-    ${loadHtml}${profilesHtml}`;
+
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Pipeline funnel</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Candidates at each stage</p>
+        <div class="chart-wrap" style="height:230px"><canvas id="dash-funnel"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Conversion cohort</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">% of applications that reached each stage</p>
+        <div class="chart-wrap" style="height:230px"><canvas id="dash-cohort"></canvas></div>
+      </div>
+    </div>
+
+    ${extraHtml}`;
+
+  // ── Charts ─────────────────────────────────────────────────────────────────
+
+  // Diversity donut
+  if (tot > 0) {
+    mkChart('dash-div-donut', {
+      type: 'doughnut',
+      data: {
+        labels: ['Female','Male','Undisclosed'],
+        datasets: [{ data: [fn,mn,un], backgroundColor: ['#f15a22','#2563eb','#6b6760'], borderWidth: 0 }]
+      },
+      options: { responsive:true, maintainAspectRatio:false,
+        plugins: { legend:{ position:'bottom' }, tooltip:{ callbacks:{ label:function(ctx){ return ctx.label+': '+ctx.raw+' ('+(tot?Math.round(ctx.raw/tot*100):0)+'%)'; } } } }
+      }
+    });
+  } else {
+    const el=document.getElementById('dash-div-donut');
+    if(el){ el.parentElement.innerHTML='<p class="empty" style="padding:40px 0">No candidate data yet.</p>'; }
+  }
+
+  // Pipeline funnel — horizontal bar
+  mkChart('dash-funnel', {
+    type: 'bar',
+    data: {
+      labels: pipeLabels,
+      datasets: [{ label:'Candidates', data:pipeVals, backgroundColor: pipeBgColors, borderRadius:3 }]
+    },
+    options: {
+      indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins: { legend:{ display:false } },
+      scales: { x:{ beginAtZero:true, ticks:{ stepSize:1 } }, y:{ ticks:{ font:{ size:11 } } } }
+    }
+  });
+
+  // Conversion cohort — line chart showing drop-off
+  mkChart('dash-cohort', {
+    type: 'line',
+    data: {
+      labels: pipeLabels,
+      datasets: [{
+        label:'Conversion %', data:pipeRates,
+        fill:true, tension:0.35,
+        borderColor:'#f15a22', backgroundColor:'rgba(241,90,34,0.08)',
+        pointBackgroundColor:'#f15a22', pointRadius:4, pointHoverRadius:6,
+        borderWidth:2
+      }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label:function(ctx){ return ctx.raw+'% of applications'; } } } },
+      scales: { y:{ beginAtZero:true, max:100, ticks:{ callback:function(v){ return v+'%'; } } }, x:{ ticks:{ font:{ size:10 }, maxRotation:30 } } }
+    }
+  });
+
+  // TA Manager: recruiter comparison bar
+  if (ME.role==='ta_manager' && (d.recruiter_load||[]).length) {
+    mkChart('dash-rec-bar', {
+      type:'bar',
+      data: {
+        labels: d.recruiter_load.map(function(r){ return r.full_name; }),
+        datasets: [
+          { label:'Open reqs', data:d.recruiter_load.map(function(r){ return r.open_reqs||0; }), backgroundColor:'#f15a22', borderRadius:3 },
+          { label:'Applications', data:d.recruiter_load.map(function(r){ return r.total_applications||0; }), backgroundColor:'#2563eb', borderRadius:3 }
+        ]
+      },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, scales:{ x:{ ticks:{ font:{ size:11 } } } } }
+    });
+  }
+
+  // Hiring Manager: pending review donut
+  if (ME.role==='hiring_manager' && (d.profiles_to_review||[]).length) {
+    const pending2 = (d.profiles_to_review||[]).length;
+    const totalP2  = parseInt(d.apps_received||0);
+    const reviewed2 = Math.max(0, totalP2 - pending2);
+    mkChart('dash-hm-donut', {
+      type:'doughnut',
+      data: {
+        labels:['Reviewed','Pending review'],
+        datasets:[{ data:[reviewed2,pending2], backgroundColor:['#1d6e56','#f15a22'], borderWidth:0 }]
+      },
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
+    });
+    mkChart('dash-hm-pipeline', {
+      type:'bar',
+      data:{ labels:pipeLabels, datasets:[{ label:'Candidates', data:pipeVals, backgroundColor:pipeBgColors, borderRadius:3 }] },
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
+    });
+  }
 }
 
 // ── SCREEN: Requisitions ──────────────────────────────────────────────────────
