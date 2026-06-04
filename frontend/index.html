@@ -389,6 +389,8 @@ function logout() { localStorage.removeItem('egnex_token'); window.location.repl
 // ── Shell ─────────────────────────────────────────────────────────────────────
 const NAV_DEF = {
   admin: [
+    {id:'sys_health', icon:'🖥️', label:'System Health'},
+    {id:'tickets',    icon:'🎫', label:'Support Tickets'},
     {id:'users',      icon:'👥', label:'Users & Access'},
     {id:'bot_health', icon:'🤖', label:'Bot Health'},
     {id:'database',   icon:'🗄️', label:'Database'},
@@ -401,6 +403,7 @@ const NAV_DEF = {
     {id:'reports',            icon:'📊', label:'Reports'},
     {id:'analytics',          icon:'📈', label:'Analytics'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
+    {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
   recruiter: [
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
@@ -409,11 +412,14 @@ const NAV_DEF = {
     {id:'interviews',         icon:'📅', label:'Interviews'},
     {id:'my_reports',         icon:'📊', label:'My Reports'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
+    {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
   hiring_manager: [
-    {id:'profiles',   icon:'✅', label:'Profiles to Review'},
-    {id:'interviews', icon:'📅', label:'Interviews'},
-    {id:'my_reports', icon:'📊', label:'My Reports'},
+    {id:'dashboard',    icon:'⬛', label:'Dashboard'},
+    {id:'profiles',     icon:'✅', label:'Profiles to Review'},
+    {id:'interviews',   icon:'📅', label:'Interviews'},
+    {id:'my_reports',   icon:'📊', label:'My Reports'},
+    {id:'raise_ticket', icon:'🎫', label:'Raise a Ticket'},
   ],
 };
 
@@ -446,6 +452,8 @@ function setTitle(t) { document.getElementById('topbar-title').textContent = t; 
 // ── Router ────────────────────────────────────────────────────────────────────
 const SCREENS = {
   // admin
+  sys_health: screenSysHealth,
+  tickets:    screenTickets,
   users:      screenUsers,
   bot_health: screenBotHealth,
   database:   screenDatabase,
@@ -463,6 +471,8 @@ const SCREENS = {
   profiles: screenProfiles,
   // proctoring (recruiter + ta_manager)
   proctoring_review: screenProctoringReview,
+  // tickets (all non-admin)
+  raise_ticket: screenRaiseTicket,
 };
 
 function navigate(id, param) {
@@ -517,226 +527,279 @@ function mkChart(id, cfg) {
 
 const C_COLORS = ['#f15a22','#2563eb','#1d6e56','#b08423','#7c3aed','#0891b2','#db2777','#65a30d'];
 
-// ── SCREEN: Dashboard ─────────────────────────────────────────────────────────
+// ── SCREEN: Dashboard (routes to role-specific view) ──────────────────────────
 async function screenDashboard() {
   setTitle('Dashboard');
-  const d = await api('/api/dashboard');
-  if (!d) { showErr('Dashboard could not load. Retry.'); return; }
+  if (ME.role === 'admin') { screenSysHealth(); return; }
+  if (ME.role === 'ta_manager')    { await _dashTAManager(); return; }
+  if (ME.role === 'hiring_manager'){ await _dashHiringManager(); return; }
+  await _dashRecruiter();
+}
 
-  if (ME.role === 'admin') { screenUsers(); return; }
-
-  const g = d.gender_split || [];
-  const tot = g.reduce((s,x)=>s+parseInt(x.n||0),0);
-  const fn = g.find(x=>x.gender==='female')?.n||0;
-  const mn = g.find(x=>x.gender==='male')?.n||0;
-  const un = g.find(x=>x.gender==='undisclosed')?.n||0;
-  const fp = tot ? Math.round(fn/tot*100) : 0;
-  const mp = tot ? Math.round(mn/tot*100) : 0;
-  const up = 100-fp-mp;
-
-  // Pipeline data for charts
-  const pipeKeys   = ['apps_received','under_screening','screening_cleared','ai_interview','panel_interview','selected','offer_stage','joined'];
-  const pipeLabels = ['Applications','Under Screening','Screening Cleared','AI Interview','Panel Interview','Selected','Offer Stage','Joined'];
-  const pipeVals   = pipeKeys.map(k=>parseInt(d[k]||0));
-  const pipeBase   = pipeVals[0] || 1;  // avoid /0
-  const pipeRates  = pipeVals.map(v=>Math.round(v/pipeBase*100));
-  const pipeBgColors = pipeKeys.map((k,i)=>i===pipeKeys.length-1?'#1d6e56':i===0?'#2563eb':'#f15a22');
-
-  const stages = [
-    {k:'open_reqs',label:'Open Reqs'},{k:'apps_received',label:'Applications'},
+// ── Shared pipeline chart helpers ──────────────────────────────────────────
+function _pipeData(d) {
+  const keys   = ['apps_received','under_screening','screening_cleared','ai_interview','panel_interview','selected','offer_stage','joined'];
+  const labels = ['Applications','Under Screening','Screening Cleared','AI Interview','Panel Interview','Selected','Offer Stage','Joined'];
+  const vals   = keys.map(k=>parseInt(d[k]||0));
+  const base   = vals[0]||1;
+  const rates  = vals.map(v=>Math.round(v/base*100));
+  const colors = keys.map((_,i)=>i===keys.length-1?'#1d6e56':i===0?'#2563eb':'#f15a22');
+  return {keys,labels,vals,rates,colors};
+}
+function _mkFunnel(canvasId, labels, vals, colors) {
+  mkChart(canvasId,{type:'bar',data:{labels,datasets:[{label:'Candidates',data:vals,backgroundColor:colors,borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}},y:{ticks:{font:{size:11}}}}}});
+}
+function _mkCohort(canvasId, labels, rates) {
+  mkChart(canvasId,{type:'line',data:{labels,datasets:[{label:'Conversion %',data:rates,fill:true,tension:0.35,borderColor:'#f15a22',backgroundColor:'rgba(241,90,34,0.08)',pointBackgroundColor:'#f15a22',pointRadius:4,pointHoverRadius:6,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ctx.raw+'% of applications';}}}},scales:{y:{beginAtZero:true,max:100,ticks:{callback:function(v){return v+'%';}}},x:{ticks:{font:{size:10},maxRotation:30}}}}});
+}
+function _mkDiversityDonut(canvasId, fn, mn, un) {
+  const tot=fn+mn+un;
+  if(tot>0){
+    mkChart(canvasId,{type:'doughnut',data:{labels:['Female','Male','Undisclosed'],datasets:[{data:[fn,mn,un],backgroundColor:['#f15a22','#2563eb','#6b6760'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'},tooltip:{callbacks:{label:function(ctx){return ctx.label+': '+ctx.raw+' ('+(tot?Math.round(ctx.raw/tot*100):0)+'%)';}}}}}});
+  } else {
+    const el=document.getElementById(canvasId);
+    if(el)el.parentElement.innerHTML='<p class="empty" style="padding:30px 0">No candidate data yet.</p>';
+  }
+}
+function _genderVars(g) {
+  const tot=g.reduce((s,x)=>s+parseInt(x.n||0),0);
+  const fn=parseInt(g.find(x=>x.gender==='female')?.n||0);
+  const mn=parseInt(g.find(x=>x.gender==='male')?.n||0);
+  const un=parseInt(g.find(x=>x.gender==='undisclosed')?.n||0);
+  const fp=tot?Math.round(fn/tot*100):0;
+  const mp=tot?Math.round(mn/tot*100):0;
+  const up=100-fp-mp;
+  return {tot,fn,mn,un,fp,mp,up};
+}
+function _divHtml(fn,mn,un,fp,mp,up) {
+  return `<div class="div-bar" style="margin-top:8px">
+    ${fp>0?`<div class="seg female" style="width:${fp}%">${fp>8?fp+'%':''}</div>`:''}
+    ${mp>0?`<div class="seg male"   style="width:${mp}%">${mp>8?mp+'%':''}</div>`:''}
+    ${up>0?`<div class="seg unk"    style="width:${up}%">${up>8?up+'%':''}</div>`:''}
+  </div>
+  <div class="div-legend" style="margin-bottom:10px">
+    <span><span class="dot" style="background:var(--accent)"></span>Female ${fn}</span>
+    <span><span class="dot" style="background:#2563eb"></span>Male ${mn}</span>
+    <span><span class="dot" style="background:var(--muted)"></span>Undisclosed ${un}</span>
+  </div>
+  <div class="chart-wrap" style="height:160px"><canvas id="dash-div-donut"></canvas></div>`;
+}
+function _stageGrid(d, prefix) {
+  const stages=[
+    {k:'open_reqs',label:prefix+' Open Reqs'},{k:'apps_received',label:'Applications'},
     {k:'under_screening',label:'Under Screening'},{k:'screening_cleared',label:'Screening Cleared'},
     {k:'ai_interview',label:'AI Interview'},{k:'panel_interview',label:'Panel Interview'},
     {k:'selected',label:'Selected'},{k:'offer_stage',label:'Offer Stage'},
     {k:'joined',label:'Joined',cls:'joined'},
   ];
+  return stages.map(s=>`<div class="stage-card ${s.cls||''}"><div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div></div>`).join('')+
+    `<div class="stage-card ath"><div class="n">${d.avg_days_to_hire??'—'}<span style="font-size:12px;color:var(--muted)">d</span></div><div class="lbl">Avg time to hire</div></div>`;
+}
+function _reqRows(reqs) {
+  return (reqs||[]).map(r=>`<tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
+    <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong></td>
+    <td>${r.business_unit}</td><td>${r.band}</td>
+    <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+    <td>${r.in_pipeline}</td><td>${r.levels}</td></tr>`).join('');
+}
 
-  const stHtml = stages.map(s=>`
-    <div class="stage-card ${s.cls||''}">
-      <div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div>
-    </div>`).join('') +
-    `<div class="stage-card ath">
-       <div class="n">${d.avg_days_to_hire??'—'}<span style="font-size:12px;color:var(--muted)">d</span></div>
-       <div class="lbl">Avg time to hire</div>
-     </div>`;
-
-  const reqRows = (d.recent_reqs||[]).map(r=>`
-    <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
-      <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong></td>
-      <td>${r.business_unit}</td><td>${r.band}</td>
-      <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
-      <td>${r.in_pipeline}</td><td>${r.levels}</td>
-    </tr>`).join('');
-
-  // ── Role-specific extra sections ──────────────────────────────────────────
-  let extraHtml = '';
-
-  if (ME.role === 'ta_manager') {
-    // Recruiter load: table + bar chart
-    if ((d.recruiter_load||[]).length) {
-      extraHtml += `
-        <div class="two-col" style="margin-top:20px">
-          <div class="card">
-            <div class="card-title">Recruiter load</div>
-            <table><thead><tr><th>Recruiter</th><th>Open reqs</th><th>Applications</th></tr></thead>
-            <tbody>${d.recruiter_load.map(r=>'<tr><td>'+r.full_name+'</td><td>'+
-              (r.open_reqs||0)+'</td><td>'+(r.total_applications||0)+'</td></tr>').join('')}
-            </tbody></table>
-          </div>
-          <div class="card">
-            <div class="card-title">Recruiter comparison</div>
-            <div class="chart-wrap" style="height:200px"><canvas id="dash-rec-bar"></canvas></div>
-          </div>
-        </div>`;
-    }
-  }
-
-  if (ME.role === 'hiring_manager') {
-    const pending = (d.profiles_to_review||[]).length;
-    const totalP  = parseInt(d.apps_received||0);
-    const reviewed = Math.max(0, totalP - pending);
-    extraHtml += `
-      <div class="two-col" style="margin-top:20px">
-        <div class="card">
-          <div class="card-title">Profiles awaiting your review</div>
-          ${pending ? `<div class="chart-wrap" style="height:180px"><canvas id="dash-hm-donut"></canvas></div>
-            <p style="text-align:center;font-size:13px;margin-top:8px"><strong style="color:var(--accent)">${pending}</strong> pending · ${reviewed} reviewed</p>
-            <div style="margin-top:10px">${(d.profiles_to_review||[]).map(p=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+p.full_name+' — <em>'+p.req_title+'</em></span><button class="btn btn-primary btn-sm" onclick="navigate(\'profiles\')">Review</button></div>').join('')}</div>`
-            :'<p class="empty">No profiles pending review.</p>'}
-        </div>
-        <div class="card">
-          <div class="card-title">My pipeline overview</div>
-          <div class="chart-wrap" style="height:200px"><canvas id="dash-hm-pipeline"></canvas></div>
-        </div>
-      </div>`;
-  }
-
-  // ── Build full HTML ────────────────────────────────────────────────────────
-  document.getElementById('content').innerHTML = `
-    <div class="stage-grid">${stHtml}</div>
-
+// ── Recruiter Dashboard ────────────────────────────────────────────────────
+async function _dashRecruiter() {
+  setTitle('My Dashboard');
+  const d = await api('/api/dashboard');
+  if (!d) { showErr('Dashboard could not load. Retry.'); return; }
+  const {labels,vals,rates,colors} = _pipeData(d);
+  const {tot,fn,mn,un,fp,mp,up} = _genderVars(d.gender_split||[]);
+  const rr = _reqRows(d.recent_reqs);
+  document.getElementById('content').innerHTML=`
+    <div class="stage-grid">${_stageGrid(d,'My')}</div>
     <div class="two-col" style="margin-bottom:20px">
       <div class="card">
-        <div class="card-title">${ME.role==='ta_manager'?'All':'My'} requisitions</div>
-        ${reqRows?`<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${reqRows}</tbody></table>`:'<p class="empty">No requisitions yet.</p>'}
+        <div class="card-title">My Requisitions</div>
+        ${rr?`<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${rr}</tbody></table>`:'<p class="empty">No requisitions yet.</p>'}
       </div>
-      <div class="card">
-        <div class="card-title">Diversity (gender)</div>
-        <div class="div-bar" style="margin-top:8px">
-          ${fp>0?`<div class="seg female" style="width:${fp}%">${fp>8?fp+'%':''}</div>`:''}
-          ${mp>0?`<div class="seg male"   style="width:${mp}%">${mp>8?mp+'%':''}</div>`:''}
-          ${up>0?`<div class="seg unk"    style="width:${up}%">${up>8?up+'%':''}</div>`:''}
-        </div>
-        <div class="div-legend" style="margin-bottom:10px">
-          <span><span class="dot" style="background:var(--accent)"></span>Female ${fn}</span>
-          <span><span class="dot" style="background:#2563eb"></span>Male ${mn}</span>
-          <span><span class="dot" style="background:var(--muted)"></span>Undisclosed ${un}</span>
-        </div>
-        <div class="chart-wrap" style="height:160px"><canvas id="dash-div-donut"></canvas></div>
-      </div>
+      <div class="card"><div class="card-title">My Candidates — Diversity</div>${_divHtml(fn,mn,un,fp,mp,up)}</div>
     </div>
-
     <div class="two-col" style="margin-bottom:20px">
       <div class="card">
-        <div class="card-title">Pipeline funnel</div>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Candidates at each stage</p>
+        <div class="card-title">My Pipeline Funnel</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Candidates across my requisitions</p>
         <div class="chart-wrap" style="height:230px"><canvas id="dash-funnel"></canvas></div>
       </div>
       <div class="card">
-        <div class="card-title">Conversion cohort</div>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">% of applications that reached each stage</p>
+        <div class="card-title">My Conversion Cohort</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">% of my applications reaching each stage</p>
+        <div class="chart-wrap" style="height:230px"><canvas id="dash-cohort"></canvas></div>
+      </div>
+    </div>`;
+  _mkFunnel('dash-funnel',labels,vals,colors);
+  _mkCohort('dash-cohort',labels,rates);
+  _mkDiversityDonut('dash-div-donut',fn,mn,un);
+}
+
+// ── TA Manager Dashboard ───────────────────────────────────────────────────
+async function _dashTAManager() {
+  setTitle('Team Dashboard');
+  const d = await api('/api/dashboard');
+  if (!d) { showErr('Dashboard could not load. Retry.'); return; }
+  const {labels,vals,rates,colors} = _pipeData(d);
+  const {tot,fn,mn,un,fp,mp,up} = _genderVars(d.gender_split||[]);
+  const rr = _reqRows(d.recent_reqs);
+
+  const recLoad = d.recruiter_load||[];
+  const hmStats = d.hiring_manager_stats||[];
+
+  const recTableRows = recLoad.map(r=>`<tr>
+    <td>${r.full_name}</td>
+    <td>${r.open_reqs||0}</td>
+    <td>${r.total_applications||0}</td>
+    <td>${r.converted||0}</td>
+  </tr>`).join('');
+
+  const hmTableRows = hmStats.map(h=>`<tr>
+    <td>${h.full_name}</td>
+    <td>${h.assigned_reqs||0}</td>
+    <td><strong style="color:${h.pending_reviews>0?'var(--accent)':'inherit'}">${h.pending_reviews||0}</strong></td>
+    <td>${h.reviews_done||0}</td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="stage-grid">${_stageGrid(d,'Team')}</div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Recruiter Performance</div>
+        ${recTableRows?`<table><thead><tr><th>Recruiter</th><th>Open Reqs</th><th>Applications</th><th>Converted</th></tr></thead><tbody>${recTableRows}</tbody></table>`:'<p class="empty">No recruiters assigned yet.</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">Recruiter Comparison</div>
+        <div class="chart-wrap" style="height:200px"><canvas id="dash-rec-bar"></canvas></div>
+      </div>
+    </div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Hiring Manager Overview</div>
+        ${hmTableRows?`<table><thead><tr><th>Hiring Manager</th><th>Assigned Reqs</th><th>Pending Reviews</th><th>Reviews Done</th></tr></thead><tbody>${hmTableRows}</tbody></table>`:'<p class="empty">No hiring managers yet.</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">All Requisitions</div>
+        ${rr?`<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${rr}</tbody></table>`:'<p class="empty">No requisitions yet.</p>'}
+      </div>
+    </div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Team Pipeline Funnel</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">All candidates across all requisitions</p>
+        <div class="chart-wrap" style="height:230px"><canvas id="dash-funnel"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Team Conversion Cohort</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">% of all applications reaching each stage</p>
         <div class="chart-wrap" style="height:230px"><canvas id="dash-cohort"></canvas></div>
       </div>
     </div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card"><div class="card-title">Organisation-wide Diversity</div>${_divHtml(fn,mn,un,fp,mp,up)}</div>
+      <div class="card" style="display:flex;flex-direction:column;gap:10px">
+        <div class="card-title">Quick Actions</div>
+        <button class="btn btn-ghost" onclick="navigate('team')">Manage Team →</button>
+        <button class="btn btn-ghost" onclick="navigate('reports')">View Full Reports →</button>
+        <button class="btn btn-ghost" onclick="navigate('requisitions')">All Requisitions →</button>
+      </div>
+    </div>`;
 
-    ${extraHtml}`;
-
-  // ── Charts ─────────────────────────────────────────────────────────────────
-
-  // Diversity donut
-  if (tot > 0) {
-    mkChart('dash-div-donut', {
-      type: 'doughnut',
-      data: {
-        labels: ['Female','Male','Undisclosed'],
-        datasets: [{ data: [fn,mn,un], backgroundColor: ['#f15a22','#2563eb','#6b6760'], borderWidth: 0 }]
-      },
-      options: { responsive:true, maintainAspectRatio:false,
-        plugins: { legend:{ position:'bottom' }, tooltip:{ callbacks:{ label:function(ctx){ return ctx.label+': '+ctx.raw+' ('+(tot?Math.round(ctx.raw/tot*100):0)+'%)'; } } } }
-      }
-    });
-  } else {
-    const el=document.getElementById('dash-div-donut');
-    if(el){ el.parentElement.innerHTML='<p class="empty" style="padding:40px 0">No candidate data yet.</p>'; }
+  _mkFunnel('dash-funnel',labels,vals,colors);
+  _mkCohort('dash-cohort',labels,rates);
+  _mkDiversityDonut('dash-div-donut',fn,mn,un);
+  if (recLoad.length) {
+    mkChart('dash-rec-bar',{type:'bar',data:{labels:recLoad.map(r=>r.full_name),datasets:[{label:'Open Reqs',data:recLoad.map(r=>r.open_reqs||0),backgroundColor:'#f15a22',borderRadius:3},{label:'Applications',data:recLoad.map(r=>r.total_applications||0),backgroundColor:'#2563eb',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{ticks:{font:{size:11}}}}}});
   }
+}
 
-  // Pipeline funnel — horizontal bar
-  mkChart('dash-funnel', {
-    type: 'bar',
-    data: {
-      labels: pipeLabels,
-      datasets: [{ label:'Candidates', data:pipeVals, backgroundColor: pipeBgColors, borderRadius:3 }]
-    },
-    options: {
-      indexAxis:'y', responsive:true, maintainAspectRatio:false,
-      plugins: { legend:{ display:false } },
-      scales: { x:{ beginAtZero:true, ticks:{ stepSize:1 } }, y:{ ticks:{ font:{ size:11 } } } }
-    }
-  });
+// ── Hiring Manager Dashboard ───────────────────────────────────────────────
+async function _dashHiringManager() {
+  setTitle('My Dashboard');
+  const d = await api('/api/dashboard');
+  if (!d) { showErr('Dashboard could not load. Retry.'); return; }
 
-  // Conversion cohort — line chart showing drop-off
-  mkChart('dash-cohort', {
-    type: 'line',
-    data: {
-      labels: pipeLabels,
-      datasets: [{
-        label:'Conversion %', data:pipeRates,
-        fill:true, tension:0.35,
-        borderColor:'#f15a22', backgroundColor:'rgba(241,90,34,0.08)',
-        pointBackgroundColor:'#f15a22', pointRadius:4, pointHoverRadius:6,
-        borderWidth:2
-      }]
-    },
-    options: {
-      responsive:true, maintainAspectRatio:false,
-      plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label:function(ctx){ return ctx.raw+'% of applications'; } } } },
-      scales: { y:{ beginAtZero:true, max:100, ticks:{ callback:function(v){ return v+'%'; } } }, x:{ ticks:{ font:{ size:10 }, maxRotation:30 } } }
-    }
-  });
+  const pending   = (d.profiles_to_review||[]).length;
+  const conducted = parseInt(d.interviews_conducted||0);
+  const totalApps = parseInt(d.apps_received||0);
+  const reviewed  = Math.max(0, totalApps - pending);
 
-  // TA Manager: recruiter comparison bar
-  if (ME.role==='ta_manager' && (d.recruiter_load||[]).length) {
-    mkChart('dash-rec-bar', {
-      type:'bar',
-      data: {
-        labels: d.recruiter_load.map(function(r){ return r.full_name; }),
-        datasets: [
-          { label:'Open reqs', data:d.recruiter_load.map(function(r){ return r.open_reqs||0; }), backgroundColor:'#f15a22', borderRadius:3 },
-          { label:'Applications', data:d.recruiter_load.map(function(r){ return r.total_applications||0; }), backgroundColor:'#2563eb', borderRadius:3 }
-        ]
-      },
-      options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } }, scales:{ x:{ ticks:{ font:{ size:11 } } } } }
-    });
+  // HM-focused stage cards
+  const hmStages = [
+    {k:'open_reqs',    label:'My Positions'},
+    {k:'apps_received',label:'Total Applicants'},
+    {k:'panel_interview',label:'In Interview'},
+    {k:'selected',     label:'Selected'},
+    {k:'offer_stage',  label:'Offer Stage'},
+    {k:'joined',       label:'Joined', cls:'joined'},
+  ];
+  const stHtml = hmStages.map(s=>`<div class="stage-card ${s.cls||''}"><div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div></div>`).join('')+
+    `<div class="stage-card"><div class="n">${conducted}</div><div class="lbl">Interviews Conducted</div></div>`+
+    `<div class="stage-card"><div class="n">${pending}</div><div class="lbl">Pending Reviews</div></div>`;
+
+  // Profiles list
+  const profileRows = (d.profiles_to_review||[]).map(p=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+      <span><strong>${p.full_name}</strong> — <em>${p.req_title}</em></span>
+      <button class="btn btn-primary btn-sm" onclick="navigate('profiles')">Review</button>
+    </div>`).join('');
+
+  // Recent interviews
+  const intRows = (d.my_interviews||[]).map(i=>`<tr>
+    <td>${i.candidate_name}</td>
+    <td>${i.req_title}</td>
+    <td>${i.round_name||'—'}</td>
+    <td>${i.scheduled_at?new Date(i.scheduled_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td>
+    <td><span class="pill ${i.status}">${i.status}</span></td>
+  </tr>`).join('');
+
+  // Feedback outcomes data
+  const outcomes = d.feedback_outcomes||[];
+  const outcomeLabels = outcomes.map(o=>o.outcome);
+  const outcomeVals   = outcomes.map(o=>parseInt(o.n||0));
+  const outcomeTot    = outcomeVals.reduce((a,b)=>a+b,0);
+  const OC = ['#1d6e56','#f15a22','#2563eb','#6b6760','#c0392b'];
+
+  document.getElementById('content').innerHTML=`
+    <div class="stage-grid">${stHtml}</div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Profiles Awaiting Your Review</div>
+        ${pending
+          ? `<div class="chart-wrap" style="height:160px"><canvas id="dash-hm-donut"></canvas></div>
+             <p style="text-align:center;font-size:13px;margin-top:8px"><strong style="color:var(--accent)">${pending}</strong> pending &middot; ${reviewed} reviewed</p>
+             <div style="margin-top:10px">${profileRows}</div>`
+          : '<p class="empty">No profiles pending review.</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">My Interview Feedback Outcomes</div>
+        ${outcomeTot>0
+          ? '<div class="chart-wrap" style="height:200px"><canvas id="dash-hm-outcomes"></canvas></div>'
+          : '<p class="empty">No feedback recorded yet.</p>'}
+      </div>
+    </div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">My Pipeline Funnel</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Candidates in my positions</p>
+        <div class="chart-wrap" style="height:220px"><canvas id="dash-hm-pipeline"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Interviews</div>
+        ${intRows?`<table><thead><tr><th>Candidate</th><th>Position</th><th>Round</th><th>Scheduled</th><th>Status</th></tr></thead><tbody>${intRows}</tbody></table>`:'<p class="empty">No interviews yet.</p>'}
+      </div>
+    </div>`;
+
+  if (pending) {
+    mkChart('dash-hm-donut',{type:'doughnut',data:{labels:['Reviewed','Pending'],datasets:[{data:[reviewed,pending],backgroundColor:['#1d6e56','#f15a22'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
-
-  // Hiring Manager: pending review donut
-  if (ME.role==='hiring_manager' && (d.profiles_to_review||[]).length) {
-    const pending2 = (d.profiles_to_review||[]).length;
-    const totalP2  = parseInt(d.apps_received||0);
-    const reviewed2 = Math.max(0, totalP2 - pending2);
-    mkChart('dash-hm-donut', {
-      type:'doughnut',
-      data: {
-        labels:['Reviewed','Pending review'],
-        datasets:[{ data:[reviewed2,pending2], backgroundColor:['#1d6e56','#f15a22'], borderWidth:0 }]
-      },
-      options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom' } } }
-    });
-    mkChart('dash-hm-pipeline', {
-      type:'bar',
-      data:{ labels:pipeLabels, datasets:[{ label:'Candidates', data:pipeVals, backgroundColor:pipeBgColors, borderRadius:3 }] },
-      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ stepSize:1 } } } }
-    });
+  if (outcomeTot>0) {
+    mkChart('dash-hm-outcomes',{type:'doughnut',data:{labels:outcomeLabels,datasets:[{data:outcomeVals,backgroundColor:OC,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
+  const {labels,vals,colors} = _pipeData(d);
+  _mkFunnel('dash-hm-pipeline',labels,vals,colors);
 }
 
 // ── SCREEN: Requisitions ──────────────────────────────────────────────────────
@@ -2078,6 +2141,215 @@ function _fmtMs(ms) {
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 
+// ── SCREEN: Admin — System Health ────────────────────────────────────────────
+async function screenSysHealth() {
+  setTitle('System Health');
+  const d = await api('/api/admin/system-health');
+  if (!d) { showErr('Could not load system health.'); return; }
+
+  const uCounts = d.user_counts||[];
+  const tStats  = d.ticket_stats||[];
+  const pipe    = d.pipeline||{};
+  const lt      = d.login_trend||{today:0,yesterday:0};
+
+  const totalUsers = uCounts.reduce((s,x)=>s+parseInt(x.n||0),0);
+  const openTickets = tStats.find(t=>t.status==='open')?.n||0;
+
+  // User breakdown cards
+  const ucHtml = uCounts.map(u=>`
+    <div class="stat-box">
+      <div class="sv">${u.n}</div>
+      <div class="sl">${u.role.replace(/_/g,' ')}</div>
+    </div>`).join('');
+
+  // Ticket status table
+  const tRows = tStats.map(t=>`<tr>
+    <td><span class="pill ${t.status}">${t.status.replace(/_/g,' ')}</span></td>
+    <td><strong>${t.n}</strong></td>
+  </tr>`).join('');
+
+  // Recent tickets
+  const rtRows = (d.ticket_recent||[]).map(t=>`<tr>
+    <td style="font-size:12px">${new Date(t.created_at).toLocaleDateString('en-IN')}</td>
+    <td>${t.raised_by_name} <span style="font-size:11px;color:var(--muted)">(${(t.raised_by_role||'').replace(/_/g,' ')})</span></td>
+    <td><span class="pill">${t.category}</span></td>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.subject}</td>
+    <td><span class="pill ${t.status}">${t.status.replace(/_/g,' ')}</span></td>
+    <td><button class="btn btn-ghost btn-sm" onclick="navigate('tickets')">View</button></td>
+  </tr>`).join('');
+
+  // Recent logins
+  const llRows = (d.recent_logins||[]).slice(0,15).map(l=>`<tr>
+    <td style="font-size:11px">${new Date(l.logged_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'})}</td>
+    <td>${l.full_name}</td>
+    <td>${(l.user_role||'').replace(/_/g,' ')}</td>
+    <td style="font-size:11px;color:var(--muted)">${l.ip_address||'—'}</td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>System Health</h1></div>
+    <div class="stat-row">
+      <div class="stat-box"><div class="sv">${totalUsers}</div><div class="sl">Active users</div></div>
+      <div class="stat-box"><div class="sv" style="color:${openTickets>0?'var(--accent)':'inherit'}">${openTickets}</div><div class="sl">Open tickets</div></div>
+      <div class="stat-box"><div class="sv">${pipe.open_reqs||0}</div><div class="sl">Open reqs</div></div>
+      <div class="stat-box"><div class="sv">${pipe.total_apps||0}</div><div class="sl">Total applications</div></div>
+      <div class="stat-box"><div class="sv">${lt.today}</div><div class="sl">Logins today</div></div>
+      <div class="stat-box"><div class="sv">${lt.yesterday}</div><div class="sl">Logins yesterday</div></div>
+    </div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Users by Role</div>
+        <div class="stat-row" style="margin-top:8px">${ucHtml}</div>
+        <div class="chart-wrap" style="height:160px;margin-top:12px"><canvas id="sh-users-bar"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Ticket Status Breakdown</div>
+        ${tStats.length
+          ? `<div class="chart-wrap" style="height:180px"><canvas id="sh-tickets-pie"></canvas></div>
+             <table style="margin-top:10px"><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>${tRows}</tbody></table>`
+          : '<p class="empty">No tickets raised yet.</p>'}
+      </div>
+    </div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Recent Tickets</div>
+        ${rtRows?`<table><thead><tr><th>Date</th><th>Raised by</th><th>Category</th><th>Subject</th><th>Status</th><th></th></tr></thead><tbody>${rtRows}</tbody></table>`:'<p class="empty">No tickets yet.</p>'}
+        ${rtRows?`<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="navigate('tickets')">View all tickets →</button></div>`:''}
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Login Activity</div>
+        ${llRows?`<table><thead><tr><th>Time</th><th>User</th><th>Role</th><th>IP</th></tr></thead><tbody>${llRows}</tbody></table>`:'<p class="empty">No login history yet.</p>'}
+      </div>
+    </div>`;
+
+  if (uCounts.length) {
+    mkChart('sh-users-bar',{type:'bar',data:{labels:uCounts.map(u=>u.role.replace(/_/g,' ')),datasets:[{label:'Users',data:uCounts.map(u=>parseInt(u.n||0)),backgroundColor:'#f15a22',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+  }
+  if (tStats.length) {
+    const TC={'open':'#f15a22','in_progress':'#2563eb','resolved':'#1d6e56'};
+    mkChart('sh-tickets-pie',{type:'doughnut',data:{labels:tStats.map(t=>t.status.replace(/_/g,' ')),datasets:[{data:tStats.map(t=>parseInt(t.n||0)),backgroundColor:tStats.map(t=>TC[t.status]||'#6b6760'),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  }
+}
+
+// ── SCREEN: Admin — Support Tickets ──────────────────────────────────────────
+async function screenTickets() {
+  setTitle('Support Tickets');
+  const tickets = await api('/api/tickets');
+  if (!tickets) { showErr('Could not load tickets.'); return; }
+
+  const statusOrder = ['open','in_progress','resolved'];
+  const cats = [...new Set(tickets.map(t=>t.category))].sort();
+  let _filter = 'all';
+
+  function renderTickets(filter) {
+    const list = filter==='all' ? tickets : tickets.filter(t=>t.status===filter);
+    const rows = list.map(t=>`
+      <tr id="trow-${t.id}">
+        <td style="font-size:11px;color:var(--muted)">${new Date(t.created_at).toLocaleDateString('en-IN')}</td>
+        <td><strong>${t.raised_by_name}</strong><br><span style="font-size:11px;color:var(--muted)">${(t.raised_by_role||'').replace(/_/g,' ')}</span></td>
+        <td><span class="pill">${t.category.replace(/_/g,' ')}</span></td>
+        <td>
+          <div style="font-weight:600;font-size:13px">${t.subject}</div>
+          ${t.description?`<div style="font-size:12px;color:var(--muted);margin-top:3px">${t.description.slice(0,100)}${t.description.length>100?'…':''}</div>`:''}
+          ${t.reply?`<div style="font-size:12px;margin-top:6px;padding:6px 8px;background:var(--bg-subtle,#f5f4f2);border-radius:4px;border-left:3px solid #1d6e56"><strong>Admin reply:</strong> ${t.reply}</div>`:''}
+        </td>
+        <td><span class="pill ${t.status}">${t.status.replace(/_/g,' ')}</span></td>
+        <td>
+          <div style="display:flex;flex-direction:column;gap:6px;min-width:160px">
+            <textarea id="tr-reply-${t.id}" placeholder="Reply…" style="width:100%;padding:5px 7px;border:1px solid var(--border);border-radius:4px;font-size:12px;resize:vertical;min-height:50px">${t.reply||''}</textarea>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" onclick="ticketAction('${t.id}','in_progress')">In Progress</button>
+              <button class="btn btn-primary btn-sm" onclick="ticketAction('${t.id}','resolved')">Resolve</button>
+            </div>
+          </div>
+        </td>
+      </tr>`).join('');
+    document.getElementById('ticket-table-body').innerHTML = rows||'<tr><td colspan="6"><p class="empty">No tickets.</p></td></tr>';
+  }
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header">
+      <h1>Support Tickets</h1>
+      <div style="display:flex;gap:8px">
+        ${['all',...statusOrder].map(s=>`<button class="btn btn-ghost btn-sm" id="tf-${s}" onclick="window._filterTickets('${s}')">${s==='all'?'All':s.replace(/_/g,' ')}</button>`).join('')}
+      </div>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table><thead><tr><th>Date</th><th>Raised by</th><th>Category</th><th>Details</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="ticket-table-body"></tbody></table>
+    </div>`;
+
+  window._filterTickets = function(f) {
+    _filter = f;
+    ['all',...statusOrder].forEach(s=>document.getElementById('tf-'+s)?.classList.toggle('active',s===f));
+    renderTickets(f);
+  };
+  window.ticketAction = async function(id, status) {
+    const reply = document.getElementById('tr-reply-'+id)?.value||'';
+    const res = await api(`/api/tickets/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status,reply:reply||undefined})});
+    if (res) { flash('Ticket updated.'); screenTickets(); }
+  };
+  renderTickets('all');
+  document.getElementById('tf-all')?.classList.add('active');
+}
+
+// ── SCREEN: Raise a Ticket ────────────────────────────────────────────────────
+async function screenRaiseTicket() {
+  setTitle('Raise a Ticket');
+  const myTickets = await api('/api/tickets');
+
+  const myRows = (myTickets||[]).map(t=>`<tr>
+    <td style="font-size:11px">${new Date(t.created_at).toLocaleDateString('en-IN')}</td>
+    <td><span class="pill">${t.category.replace(/_/g,' ')}</span></td>
+    <td>
+      <div style="font-weight:600;font-size:13px">${t.subject}</div>
+      ${t.reply?`<div style="font-size:12px;margin-top:4px;padding:5px 8px;background:var(--bg-subtle,#f5f4f2);border-radius:4px;border-left:3px solid #1d6e56"><strong>Admin:</strong> ${t.reply}</div>`:''}
+    </td>
+    <td><span class="pill ${t.status}">${t.status.replace(/_/g,' ')}</span></td>
+  </tr>`).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>Raise a Ticket</h1></div>
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">New Ticket</div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Category</label>
+          <select id="tk-cat" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+            <option value="login_issue">Login Issue</option>
+            <option value="bug">Bug / Error</option>
+            <option value="data_issue">Data Issue</option>
+            <option value="feature_request">Feature Request</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Subject</label>
+          <input id="tk-sub" placeholder="Brief description of the issue" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <label>Details <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+          <textarea id="tk-desc" placeholder="Steps to reproduce, screenshots description, etc." style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;min-height:100px;resize:vertical"></textarea>
+        </div>
+        <button class="btn btn-primary" onclick="submitTicket()">Submit Ticket</button>
+      </div>
+      <div class="card">
+        <div class="card-title">My Tickets</div>
+        ${myRows?`<table><thead><tr><th>Date</th><th>Category</th><th>Subject / Admin Reply</th><th>Status</th></tr></thead><tbody>${myRows}</tbody></table>`:'<p class="empty">You haven\'t raised any tickets yet.</p>'}
+      </div>
+    </div>`;
+
+  window.submitTicket = async function() {
+    const cat  = document.getElementById('tk-cat').value;
+    const sub  = document.getElementById('tk-sub').value.trim();
+    const desc = document.getElementById('tk-desc').value.trim();
+    if (!sub) { flash('Please enter a subject.', false); return; }
+    const res = await api('/api/tickets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({category:cat,subject:sub,description:desc})});
+    if (res && res.id) { flash('Ticket raised. TA Admin has been notified.'); screenRaiseTicket(); }
+    else flash(res?.detail||'Could not raise ticket.',false);
+  };
+}
+
 // ── Post-OAuth redirect ───────────────────────────────────────────────────────
 const _qs=new URLSearchParams(window.location.search);
 if(_qs.get('connected')==='1'){history.replaceState({},'','/');flash('Google Calendar connected.');}
@@ -2097,7 +2369,7 @@ _resetIdle();
   try { buildNav(); } catch(e){ console.error('buildNav:',e); }
   refreshGCal().catch(()=>{});
   const hp=(location.hash||'').split(/[#\/]/);
-  const initId=hp[1]||(ME.role==='admin'?'users':'dashboard');
+  const initId=hp[1]||(ME.role==='admin'?'sys_health':'dashboard');
   const initParam=hp[2];
   try { runRoute(initId,initParam); } catch(e){ showErr(e.message); console.error('boot:',e); }
 })();

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ..db import query, query_one
@@ -18,7 +18,8 @@ class ChangePasswordIn(BaseModel):
 
 
 @router.post("/login")
-def login(body: LoginIn):
+def login(body: LoginIn, request: Request):
+
     user = query_one(
         "SELECT id, full_name, email, role, password_hash, is_active "
         "FROM app_user WHERE email = %s",
@@ -30,6 +31,16 @@ def login(body: LoginIn):
         raise HTTPException(401, "Account not set up — contact your admin")
     if not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Invalid email or password")
+    # Log login activity (best-effort — ignore if login_log table not yet created)
+    try:
+        ip = request.client.host if request and request.client else None
+        query(
+            "INSERT INTO login_log (user_id, user_role, ip_address) VALUES (%s, %s, %s)",
+            [user["id"], user["role"], ip],
+            fetch=False,
+        )
+    except Exception:
+        pass
     return {
         "token": create_token(dict(user)),
         "role": user["role"],

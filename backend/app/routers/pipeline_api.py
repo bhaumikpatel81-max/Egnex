@@ -150,7 +150,29 @@ def dashboard(user: dict = Depends(get_current_user)):
     if role in ("ta_manager", "admin"):
         counts["recruiter_load"] = query("SELECT * FROM v_recruiter_load", [])
 
-    # Hiring manager: profiles awaiting review
+    # TA Manager: hiring manager overview
+    if role == "ta_manager":
+        counts["hiring_manager_stats"] = query(
+            """
+            SELECT u.full_name, u.email,
+                   COUNT(DISTINCT r.id) AS assigned_reqs,
+                   SUM(CASE WHEN a.status = 'selected'
+                                 AND (a.hm_feedback IS NULL OR a.hm_feedback = '')
+                            THEN 1 ELSE 0 END)              AS pending_reviews,
+                   COUNT(DISTINCT CASE WHEN a.hm_feedback IS NOT NULL
+                                            AND a.hm_feedback != ''
+                                       THEN a.id END)       AS reviews_done
+            FROM app_user u
+            LEFT JOIN requisition r  ON r.hiring_manager_id = u.id
+            LEFT JOIN application a  ON a.requisition_id    = r.id
+            WHERE u.role = 'hiring_manager' AND u.is_active = true
+            GROUP BY u.id, u.full_name, u.email
+            ORDER BY pending_reviews DESC, u.full_name
+            """,
+            [],
+        )
+
+    # Hiring manager: profiles awaiting review + my interviews + feedback outcomes
     if role == "hiring_manager":
         counts["profiles_to_review"] = query(
             """
@@ -167,6 +189,46 @@ def dashboard(user: dict = Depends(get_current_user)):
             """,
             [uid],
         )
+        counts["my_interviews"] = query(
+            """
+            SELECT i.id, i.scheduled_at, i.mode,
+                   COALESCE(i.status, 'scheduled') AS status,
+                   c.full_name  AS candidate_name,
+                   r.title      AS req_title,
+                   rc.name      AS round_name
+            FROM interview i
+            JOIN application  a  ON a.id  = i.application_id
+            JOIN candidate    c  ON c.id  = a.candidate_id
+            JOIN requisition  r  ON r.id  = a.requisition_id
+            LEFT JOIN round_config rc ON rc.id = i.round_config_id
+            WHERE r.hiring_manager_id = %s
+            ORDER BY i.scheduled_at DESC LIMIT 10
+            """,
+            [uid],
+        )
+        counts["feedback_outcomes"] = query(
+            """
+            SELECT COALESCE(NULLIF(a.hm_feedback,''), 'pending') AS outcome,
+                   COUNT(*) AS n
+            FROM application a
+            JOIN requisition r ON r.id = a.requisition_id
+            WHERE r.hiring_manager_id = %s
+              AND a.status IN ('selected','offer_stage','offered','joined','rejected')
+            GROUP BY COALESCE(NULLIF(a.hm_feedback,''), 'pending')
+            ORDER BY n DESC
+            """,
+            [uid],
+        )
+        # Interviews conducted count (distinct applications with HM interview)
+        icount = query_one(
+            """SELECT COUNT(DISTINCT i.id) AS n
+               FROM interview i
+               JOIN application a  ON a.id = i.application_id
+               JOIN requisition r  ON r.id = a.requisition_id
+               WHERE r.hiring_manager_id = %s""",
+            [uid],
+        )
+        counts["interviews_conducted"] = int(icount["n"]) if icount else 0
 
     return counts
 

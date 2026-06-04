@@ -26,6 +26,7 @@ from .routers.pipeline_api import router as _pipeline_router
 from .routers.reports_api import router as _reports2_router
 from .routers.nexai_api import router as _nexai_router
 from .routers.proctoring_api import router as _proctoring_router
+from .routers.tickets_api import router as _tickets_router
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
@@ -36,6 +37,7 @@ app.include_router(_pipeline_router)
 app.include_router(_reports2_router)
 app.include_router(_nexai_router)
 app.include_router(_proctoring_router)
+app.include_router(_tickets_router)
 
 _UPLOADS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
