@@ -40,6 +40,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--page);color
 .card-title{font-size:14px;font-weight:600;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--border);color:var(--text)}
 .stage-grid{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
 .stage-card{background:#fff;border:1px solid var(--border);border-radius:6px;padding:14px 10px;text-align:center;flex:1;min-width:72px}
+.stage-card.dash-link{cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.stage-card.dash-link:hover{box-shadow:0 2px 10px rgba(0,0,0,.10);border-color:var(--accent)}
+.dash-link-row{cursor:pointer}
+.dash-link-row:hover td{background:var(--bg-hover,#faf9f7)}
+.filter-banner{display:flex;align-items:center;gap:12px;padding:8px 14px;background:#fff3ef;border:1px solid #fcd9c9;border-radius:6px;margin-bottom:14px;font-size:13px}
 .stage-card .n{font-size:26px;font-weight:700;line-height:1.1}
 .stage-card .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-top:3px;line-height:1.3}
 .stage-card.joined .n{color:var(--green)}
@@ -400,8 +405,7 @@ const NAV_DEF = {
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
     {id:'team',               icon:'👥', label:'Team'},
-    {id:'reports',            icon:'📊', label:'Reports'},
-    {id:'analytics',          icon:'📈', label:'Analytics'},
+    {id:'reports',            icon:'📊', label:'Reports & Analytics'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
@@ -480,6 +484,34 @@ function navigate(id, param) {
   runRoute(id, param);
 }
 
+// ── Authenticated file download ───────────────────────────────────────────────
+async function downloadAuth(url, filename) {
+  const token = localStorage.getItem('egnex_token');
+  try {
+    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    if (!res.ok) { flash('Download failed — ' + res.status, false); return; }
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  } catch(e) { flash('Download error: ' + e.message, false); }
+}
+
+// ── Drill-down navigation with filter state ───────────────────────────────────
+let _navFilter = {};
+// goFiltered(screenId, status, label, recruiterId, hmId)
+function goFiltered(screenId, status, label, recruiterId, hmId) {
+  _navFilter = {};
+  if (status)      _navFilter.status       = status;
+  if (label)       _navFilter.label        = label;
+  if (recruiterId) _navFilter.recruiter_id = recruiterId;
+  if (hmId)        _navFilter.hm_id        = hmId;
+  navigate(screenId);
+}
+
 function runRoute(id, param) {
   setActive(id);
   document.getElementById('content').innerHTML = '<p class="empty">Loading…</p>';
@@ -546,11 +578,25 @@ function _pipeData(d) {
   const colors = keys.map((_,i)=>i===keys.length-1?'#1d6e56':i===0?'#2563eb':'#f15a22');
   return {keys,labels,vals,rates,colors};
 }
-function _mkFunnel(canvasId, labels, vals, colors) {
-  mkChart(canvasId,{type:'bar',data:{labels,datasets:[{label:'Candidates',data:vals,backgroundColor:colors,borderRadius:3}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}},y:{ticks:{font:{size:11}}}}}});
+// Stage status mapping for funnel click (index → status)
+const _FUNNEL_STATUS = ['all','screening','screen_passed','ai_interview','interviewing','selected','offer_stage','joined'];
+const _FUNNEL_LABEL  = ['Applications','Under Screening','Screening Cleared','AI Interview','Panel Interview','Selected','Offer Stage','Joined'];
+
+function _funnelClickFn(event, elements) {
+  if (!elements.length) return;
+  const i = elements[0].index;
+  goFiltered('candidates', _FUNNEL_STATUS[i]||'all', _FUNNEL_LABEL[i]||'');
 }
-function _mkCohort(canvasId, labels, rates) {
-  mkChart(canvasId,{type:'line',data:{labels,datasets:[{label:'Conversion %',data:rates,fill:true,tension:0.35,borderColor:'#f15a22',backgroundColor:'rgba(241,90,34,0.08)',pointBackgroundColor:'#f15a22',pointRadius:4,pointHoverRadius:6,borderWidth:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ctx.raw+'% of applications';}}}},scales:{y:{beginAtZero:true,max:100,ticks:{callback:function(v){return v+'%';}}},x:{ticks:{font:{size:10},maxRotation:30}}}}});
+
+function _mkFunnel(canvasId, labels, vals, colors, withClick) {
+  const opts = {indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}},y:{ticks:{font:{size:11}}}}};
+  if (withClick) { opts.onClick = _funnelClickFn; opts.plugins.tooltip = {callbacks:{title:function(){return 'Click to drill down';}}}; document.getElementById(canvasId).style.cursor='pointer'; }
+  mkChart(canvasId,{type:'bar',data:{labels,datasets:[{label:'Candidates',data:vals,backgroundColor:colors,borderRadius:3}]},options:opts});
+}
+function _mkCohort(canvasId, labels, rates, withClick) {
+  const opts = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ctx.raw+'% of applications';}}}},scales:{y:{beginAtZero:true,max:100,ticks:{callback:function(v){return v+'%';}}},x:{ticks:{font:{size:10},maxRotation:30}}}};
+  if (withClick) { opts.onClick = _funnelClickFn; document.getElementById(canvasId).style.cursor='pointer'; }
+  mkChart(canvasId,{type:'line',data:{labels,datasets:[{label:'Conversion %',data:rates,fill:true,tension:0.35,borderColor:'#f15a22',backgroundColor:'rgba(241,90,34,0.08)',pointBackgroundColor:'#f15a22',pointRadius:4,pointHoverRadius:6,borderWidth:2}]},options:opts});
 }
 function _mkDiversityDonut(canvasId, fn, mn, un) {
   const tot=fn+mn+un;
@@ -584,6 +630,19 @@ function _divHtml(fn,mn,un,fp,mp,up) {
   </div>
   <div class="chart-wrap" style="height:160px"><canvas id="dash-div-donut"></canvas></div>`;
 }
+// stage-key → [screenId, status, label]
+const _STAGE_NAV = {
+  open_reqs:         ['requisitions','open',         'Open Requisitions'],
+  apps_received:     ['candidates',  'all',          'All Applications'],
+  under_screening:   ['candidates',  'screening',    'Under Screening'],
+  screening_cleared: ['candidates',  'screen_passed','Screening Cleared'],
+  ai_interview:      ['candidates',  'ai_interview', 'AI Interview'],
+  panel_interview:   ['candidates',  'interviewing', 'Panel Interview'],
+  selected:          ['candidates',  'selected',     'Selected'],
+  offer_stage:       ['candidates',  'offer_stage',  'Offer Stage'],
+  joined:            ['candidates',  'joined',       'Joined'],
+};
+
 function _stageGrid(d, prefix) {
   const stages=[
     {k:'open_reqs',label:prefix+' Open Reqs'},{k:'apps_received',label:'Applications'},
@@ -592,7 +651,11 @@ function _stageGrid(d, prefix) {
     {k:'selected',label:'Selected'},{k:'offer_stage',label:'Offer Stage'},
     {k:'joined',label:'Joined',cls:'joined'},
   ];
-  return stages.map(s=>`<div class="stage-card ${s.cls||''}"><div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div></div>`).join('')+
+  return stages.map(s=>{
+    const nav=_STAGE_NAV[s.k];
+    const click=nav?`onclick="goFiltered('${nav[0]}','${nav[1]}','${nav[2]}')" title="Click to view ${nav[2]}"`:'' ;
+    return `<div class="stage-card dash-link ${s.cls||''}" ${click}><div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div></div>`;
+  }).join('')+
     `<div class="stage-card ath"><div class="n">${d.avg_days_to_hire??'—'}<span style="font-size:12px;color:var(--muted)">d</span></div><div class="lbl">Avg time to hire</div></div>`;
 }
 function _reqRows(reqs) {
@@ -632,8 +695,8 @@ async function _dashRecruiter() {
         <div class="chart-wrap" style="height:230px"><canvas id="dash-cohort"></canvas></div>
       </div>
     </div>`;
-  _mkFunnel('dash-funnel',labels,vals,colors);
-  _mkCohort('dash-cohort',labels,rates);
+  _mkFunnel('dash-funnel',labels,vals,colors,true);
+  _mkCohort('dash-cohort',labels,rates,true);
   _mkDiversityDonut('dash-div-donut',fn,mn,un);
 }
 
@@ -649,15 +712,17 @@ async function _dashTAManager() {
   const recLoad = d.recruiter_load||[];
   const hmStats = d.hiring_manager_stats||[];
 
-  const recTableRows = recLoad.map(r=>`<tr>
-    <td>${r.full_name}</td>
+  const recTableRows = recLoad.map(r=>`<tr class="dash-link-row" title="Click to view ${r.full_name}'s candidates"
+      onclick="goFiltered('candidates',null,'${r.full_name.replace(/'/g,"\\'")}\\'s Candidates','${r.recruiter_id}')">
+    <td><span style="color:var(--accent);font-weight:600">${r.full_name}</span></td>
     <td>${r.open_reqs||0}</td>
     <td>${r.total_applications||0}</td>
     <td>${r.converted||0}</td>
   </tr>`).join('');
 
-  const hmTableRows = hmStats.map(h=>`<tr>
-    <td>${h.full_name}</td>
+  const hmTableRows = hmStats.map(h=>`<tr class="dash-link-row" title="Click to view ${h.full_name}'s requisitions"
+      onclick="goFiltered('requisitions',null,'${h.full_name.replace(/'/g,"\\'")}\\'s Requisitions',null,'${h.hm_id}')">
+    <td><span style="color:var(--accent);font-weight:600">${h.full_name}</span></td>
     <td>${h.assigned_reqs||0}</td>
     <td><strong style="color:${h.pending_reviews>0?'var(--accent)':'inherit'}">${h.pending_reviews||0}</strong></td>
     <td>${h.reviews_done||0}</td>
@@ -707,8 +772,8 @@ async function _dashTAManager() {
       </div>
     </div>`;
 
-  _mkFunnel('dash-funnel',labels,vals,colors);
-  _mkCohort('dash-cohort',labels,rates);
+  _mkFunnel('dash-funnel',labels,vals,colors,true);
+  _mkCohort('dash-cohort',labels,rates,true);
   _mkDiversityDonut('dash-div-donut',fn,mn,un);
   if (recLoad.length) {
     mkChart('dash-rec-bar',{type:'bar',data:{labels:recLoad.map(r=>r.full_name),datasets:[{label:'Open Reqs',data:recLoad.map(r=>r.open_reqs||0),backgroundColor:'#f15a22',borderRadius:3},{label:'Applications',data:recLoad.map(r=>r.total_applications||0),backgroundColor:'#2563eb',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{ticks:{font:{size:11}}}}}});
@@ -726,18 +791,18 @@ async function _dashHiringManager() {
   const totalApps = parseInt(d.apps_received||0);
   const reviewed  = Math.max(0, totalApps - pending);
 
-  // HM-focused stage cards
+  // HM-focused stage cards (each wired to its module)
   const hmStages = [
-    {k:'open_reqs',    label:'My Positions'},
-    {k:'apps_received',label:'Total Applicants'},
-    {k:'panel_interview',label:'In Interview'},
-    {k:'selected',     label:'Selected'},
-    {k:'offer_stage',  label:'Offer Stage'},
-    {k:'joined',       label:'Joined', cls:'joined'},
+    {k:'open_reqs',     label:'My Positions',   nav:"goFiltered('requisitions','open','Open Positions')"},
+    {k:'apps_received', label:'Total Applicants',nav:"goFiltered('candidates','all','All Applicants')"},
+    {k:'panel_interview',label:'In Interview',   nav:"goFiltered('candidates','interviewing','In Interview')"},
+    {k:'selected',      label:'Selected',        nav:"goFiltered('candidates','selected','Selected')"},
+    {k:'offer_stage',   label:'Offer Stage',     nav:"goFiltered('candidates','offer_stage','Offer Stage')"},
+    {k:'joined',        label:'Joined',cls:'joined',nav:"goFiltered('candidates','joined','Joined')"},
   ];
-  const stHtml = hmStages.map(s=>`<div class="stage-card ${s.cls||''}"><div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div></div>`).join('')+
-    `<div class="stage-card"><div class="n">${conducted}</div><div class="lbl">Interviews Conducted</div></div>`+
-    `<div class="stage-card"><div class="n">${pending}</div><div class="lbl">Pending Reviews</div></div>`;
+  const stHtml = hmStages.map(s=>`<div class="stage-card dash-link ${s.cls||''}" onclick="${s.nav}" title="Click to drill down"><div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div></div>`).join('')+
+    `<div class="stage-card dash-link" onclick="navigate('interviews')" title="View interviews"><div class="n">${conducted}</div><div class="lbl">Interviews Conducted</div></div>`+
+    `<div class="stage-card dash-link" onclick="navigate('profiles')" title="Review pending profiles"><div class="n">${pending}</div><div class="lbl">Pending Reviews</div></div>`;
 
   // Profiles list
   const profileRows = (d.profiles_to_review||[]).map(p=>`
@@ -799,24 +864,50 @@ async function _dashHiringManager() {
     mkChart('dash-hm-outcomes',{type:'doughnut',data:{labels:outcomeLabels,datasets:[{data:outcomeVals,backgroundColor:OC,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
   const {labels,vals,colors} = _pipeData(d);
-  _mkFunnel('dash-hm-pipeline',labels,vals,colors);
+  _mkFunnel('dash-hm-pipeline',labels,vals,colors,true);
 }
 
 // ── SCREEN: Requisitions ──────────────────────────────────────────────────────
 async function screenRequisitions() {
+  const filter = _navFilter; _navFilter = {};
   setTitle('Requisitions');
-  const rows = await api('/api/requisitions/full');
-  if (!rows) { showErr('Could not load requisitions.'); return; }
+  const allRows = await api('/api/requisitions/full');
+  if (!allRows) { showErr('Could not load requisitions.'); return; }
+
+  // Apply drill-down filters
+  let rows = allRows;
+  let filterLabel = null;
+  if (filter.hm_id) {
+    filterLabel = filter.label || 'Hiring Manager\'s Requisitions';
+    rows = allRows.filter(r => r.hiring_manager_id === filter.hm_id);
+  } else if (filter.status) {
+    filterLabel = filter.label || filter.status.replace(/_/g,' ');
+    rows = allRows.filter(r => r.status === filter.status);
+  }
 
   const canCreate = ['recruiter','ta_manager','admin'].includes(ME.role);
+
+  // Status pill counts always from the full set
   const sc = {open:0,on_hold:0,closed:0,draft:0};
-  rows.forEach(r => { if(sc[r.status]!==undefined) sc[r.status]++; });
+  allRows.forEach(r => { if(sc[r.status]!==undefined) sc[r.status]++; });
+
+  // Make status pills clickable to filter
+  const pills = Object.entries(sc).map(([s,n])=>`
+    <span class="pill ${s} dash-link" style="cursor:pointer" title="Show ${s} only"
+      onclick="goFiltered('requisitions','${s}','${s.replace(/_/g,' ')} Requisitions')">${s.replace(/_/g,' ')} ${n}</span>`).join('');
+
+  const banner = filterLabel ? `
+    <div class="filter-banner">
+      <span>Showing: <strong>${filterLabel}</strong> &nbsp;·&nbsp; ${rows.length} requisition${rows.length!==1?'s':''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="screenRequisitions()">✕ Clear filter</button>
+    </div>` : '';
 
   const tRows = rows.map(r=>`
     <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
       <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong></td>
       <td>${r.business_unit}</td><td>${r.band}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+      <td>${r.hiring_manager_name||'—'}</td>
       <td>${r.in_pipeline}</td><td>${r.levels} level${r.levels!==1?'s':''}</td>
     </tr>`).join('');
 
@@ -825,14 +916,12 @@ async function screenRequisitions() {
       <h1>Requisitions</h1>
       ${canCreate?'<button class="btn btn-primary" onclick="openReqModal()">+ New requisition</button>':''}
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:16px">
-      <span class="pill open">Open ${sc.open}</span>
-      <span class="pill on_hold">On hold ${sc.on_hold}</span>
-      <span class="pill closed">Closed ${sc.closed}</span>
-      <span class="pill draft">Draft ${sc.draft}</span>
-    </div>
+    ${banner}
+    <div style="display:flex;gap:8px;margin-bottom:16px">${pills}</div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${tRows?`<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${tRows}</tbody></table>`:'<p class="empty">No requisitions yet.</p>'}
+      ${tRows
+        ? `<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Hiring Manager</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${tRows}</tbody></table>`
+        : `<p class="empty">${filterLabel ? 'No requisitions match this filter.' : 'No requisitions yet.'}</p>`}
     </div>`;
 }
 
@@ -916,21 +1005,52 @@ async function kbDrop(e,col,toStatus,roundSeq){
 
 // ── SCREEN: Candidates ────────────────────────────────────────────────────────
 async function screenCandidates() {
+  const filter = _navFilter; _navFilter = {};
   setTitle('Candidates');
-  const rows = await api('/api/candidates');
+  let rows = await api('/api/candidates');
   if (!rows) { showErr('Could not load candidates.'); return; }
+
+  // Apply drill-down filters
+  let filterLabel = null;
+  if (filter.recruiter_id) {
+    filterLabel = filter.label || 'Recruiter\'s Candidates';
+    rows = rows.filter(r => r.recruiter_id === filter.recruiter_id);
+  } else if (filter.status && filter.status !== 'all') {
+    filterLabel = filter.label || filter.status.replace(/_/g,' ');
+    if (filter.status === 'offer_stage') {
+      rows = rows.filter(r => r.status === 'offer_stage' || r.status === 'offered');
+    } else if (filter.status === 'ai_interview') {
+      rows = rows.filter(r => r.combined_score != null || r.match_score != null);
+    } else {
+      rows = rows.filter(r => r.status === filter.status);
+    }
+  }
+
+  const banner = filterLabel ? `
+    <div class="filter-banner">
+      <span>Showing: <strong>${filterLabel}</strong> &nbsp;·&nbsp; ${rows.length} candidate${rows.length!==1?'s':''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="screenCandidates()">✕ Clear filter</button>
+    </div>` : '';
+
   const tRows = rows.map(r=>`
-    <tr><td>${r.full_name}</td>
-    <td style="font-size:12px;color:var(--muted)">${r.email}</td>
-    <td>${r.gender||'—'}</td><td>${r.requisition}</td>
-    <td>${r.match_score!=null?Math.round(r.match_score):'—'}</td>
-    <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
-    <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+    <tr>
+      <td>${r.full_name}</td>
+      <td style="font-size:12px;color:var(--muted)">${r.email}</td>
+      <td>${r.gender||'—'}</td>
+      <td>${r.requisition}</td>
+      <td style="font-size:12px;color:var(--muted)">${r.recruiter_name||'—'}</td>
+      <td>${r.match_score!=null?Math.round(r.match_score):'—'}</td>
+      <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
+      <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
     </tr>`).join('');
+
   document.getElementById('content').innerHTML = `
     <div class="page-header"><h1>Candidates</h1></div>
+    ${banner}
     <div class="card" style="padding:0;overflow:hidden">
-      ${tRows?`<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Match</th><th>Combined</th><th>Stage</th></tr></thead><tbody>${tRows}</tbody></table>`:'<p class="empty">No candidates yet.</p>'}
+      ${tRows
+        ? `<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Recruiter</th><th>Match</th><th>Combined</th><th>Stage</th></tr></thead><tbody>${tRows}</tbody></table>`
+        : `<p class="empty">${filterLabel ? 'No candidates match this filter.' : 'No candidates yet.'}</p>`}
     </div>`;
 }
 
@@ -1156,11 +1276,11 @@ async function screenTeam(){
 let _period='yearly', _year=new Date().getFullYear();
 
 async function screenTAReports(){
-  setTitle('Reports');
+  setTitle('Reports & Analytics');
   const yr=_year;
   document.getElementById('content').innerHTML=`
-    <div class="page-header"><h1>TA Manager Reports &mdash; ${yr}</h1>
-      <a class="btn btn-green" href="/api/reports2/ta/excel?period=${_period}&year=${yr}" download>⬇ Download Excel</a>
+    <div class="page-header"><h1>Reports &amp; Analytics &mdash; ${yr}</h1>
+      <button class="btn btn-green" onclick="downloadAuth('/api/reports2/ta/excel?period=${_period}&year=${yr}','egnex_ta_report_${yr}_${_period}.xlsx')">⬇ Download Excel</button>
     </div>
     <div class="period-bar">
       ${['weekly','monthly','quarterly','half_yearly','yearly'].map(p=>`<button class="period-btn${p===_period?' active':''}" onclick="setPeriod('${p}')">${p.split('_').join(' ')}</button>`).join('')}
@@ -1250,7 +1370,7 @@ async function screenMyReports(){
   const yr=_year;
   document.getElementById('content').innerHTML=`
     <div class="page-header"><h1>My Reports &mdash; ${yr}</h1>
-      <a class="btn btn-green" href="/api/reports2/recruiter/excel?period=${_period}&year=${yr}" download>⬇ Download Excel</a>
+      <button class="btn btn-green" onclick="downloadAuth('/api/reports2/recruiter/excel?period=${_period}&year=${yr}','egnex_my_report_${yr}_${_period}.xlsx')">⬇ Download Excel</button>
     </div>
     <div class="period-bar">
       ${['weekly','monthly','quarterly','half_yearly','yearly'].map(p=>`<button class="period-btn${p===_period?' active':''}" onclick="setPeriodMy('${p}')">${p.split('_').join(' ')}</button>`).join('')}

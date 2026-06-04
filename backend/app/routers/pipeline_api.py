@@ -154,7 +154,7 @@ def dashboard(user: dict = Depends(get_current_user)):
     if role == "ta_manager":
         counts["hiring_manager_stats"] = query(
             """
-            SELECT u.full_name, u.email,
+            SELECT u.id AS hm_id, u.full_name, u.email,
                    COUNT(DISTINCT r.id) AS assigned_reqs,
                    SUM(CASE WHEN a.status = 'selected'
                                  AND (a.hm_feedback IS NULL OR a.hm_feedback = '')
@@ -245,12 +245,15 @@ def list_requisitions_full(user: dict = Depends(get_current_user)):
             SELECT r.id, r.title, r.status, r.roll_type, r.fiscal_year,
                    r.is_p1, r.risk, r.hiring_location,
                    b.code AS band, bu.name AS business_unit,
+                   r.hiring_manager_id,
+                   hm.full_name AS hiring_manager_name,
                    (SELECT COUNT(*) FROM application  WHERE requisition_id = r.id) AS in_pipeline,
                    (SELECT COUNT(*) FROM round_config WHERE requisition_id = r.id) AS levels
             FROM requisition r
             JOIN requisition_recruiter rr ON rr.requisition_id = r.id AND rr.recruiter_id = %s
             JOIN band b          ON b.id = r.band_id
             JOIN business_unit bu ON bu.id = r.bu_id
+            LEFT JOIN app_user hm ON hm.id = r.hiring_manager_id
             ORDER BY r.created_at DESC
             """,
             [uid],
@@ -260,11 +263,14 @@ def list_requisitions_full(user: dict = Depends(get_current_user)):
         SELECT r.id, r.title, r.status, r.roll_type, r.fiscal_year,
                r.is_p1, r.risk, r.hiring_location,
                b.code AS band, bu.name AS business_unit,
+               r.hiring_manager_id,
+               hm.full_name AS hiring_manager_name,
                (SELECT COUNT(*) FROM application  WHERE requisition_id = r.id) AS in_pipeline,
                (SELECT COUNT(*) FROM round_config WHERE requisition_id = r.id) AS levels
         FROM requisition r
         JOIN band b          ON b.id = r.band_id
         JOIN business_unit bu ON bu.id = r.bu_id
+        LEFT JOIN app_user hm ON hm.id = r.hiring_manager_id
         ORDER BY r.created_at DESC
         """,
         [],
@@ -388,29 +394,44 @@ def kanban(req_id: str, _user: dict = Depends(get_current_user)):
 def list_candidates(user: dict = Depends(get_current_user)):
     role = user["role"]
     uid  = user["sub"]
+    # Recruiter LATERAL sub-select: owner recruiter of each requisition
+    _rec_lat = """
+        LEFT JOIN LATERAL (
+            SELECT rr2.recruiter_id, ru.full_name AS recruiter_name
+            FROM requisition_recruiter rr2
+            JOIN app_user ru ON ru.id = rr2.recruiter_id
+            WHERE rr2.requisition_id = r.id
+            ORDER BY rr2.is_owner DESC NULLS LAST
+            LIMIT 1
+        ) rc_info ON true
+    """
     if role == "recruiter":
         return query(
-            """
+            f"""
             SELECT c.id, c.full_name, c.email, c.gender,
                    r.title AS requisition, a.status,
-                   a.combined_score, a.match_score, a.id AS app_id
+                   a.combined_score, a.match_score, a.id AS app_id,
+                   rc_info.recruiter_id, rc_info.recruiter_name
             FROM candidate c
             JOIN application  a ON a.candidate_id = c.id
             JOIN requisition  r ON r.id = a.requisition_id
             JOIN requisition_recruiter rr
                  ON rr.requisition_id = r.id AND rr.recruiter_id = %s
+            {_rec_lat}
             ORDER BY a.combined_score DESC NULLS LAST
             """,
             [uid],
         )
     return query(
-        """
+        f"""
         SELECT c.id, c.full_name, c.email, c.gender,
                r.title AS requisition, a.status,
-               a.combined_score, a.match_score, a.id AS app_id
+               a.combined_score, a.match_score, a.id AS app_id,
+               rc_info.recruiter_id, rc_info.recruiter_name
         FROM candidate c
         JOIN application a ON a.candidate_id = c.id
         JOIN requisition r ON r.id = a.requisition_id
+        {_rec_lat}
         ORDER BY a.combined_score DESC NULLS LAST
         """,
         [],
