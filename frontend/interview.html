@@ -181,7 +181,7 @@ async function startInterview() {
   document.getElementById('start-btn').disabled = true;
   document.getElementById('start-btn').textContent = 'Starting…';
   const res = await apiPublic(
-    `/api/nexai/invite/start?token=${encodeURIComponent(_token)}`,
+    `/api/nexai/invite/begin?token=${encodeURIComponent(_token)}`,
     { method: 'POST' }
   );
   if (res._err) { showErr(res._err); return; }

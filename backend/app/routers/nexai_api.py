@@ -578,7 +578,7 @@ def validate_invite(token: str):
     }
 
 
-@router.post("/invite/start")
+@router.post("/invite/begin")
 def start_invited_session(token: str):
     """Public — candidate starts the NexAI session using their invite token."""
     invite = query_one(

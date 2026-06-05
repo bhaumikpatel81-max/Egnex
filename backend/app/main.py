@@ -118,7 +118,7 @@ _PUBLIC = {
     "/nexai-interview",
     # Candidate-facing NexAI interview endpoints — token-based, no JWT
     "/api/nexai/invite/validate",
-    "/api/nexai/invite/start",
+    "/api/nexai/invite/begin",
 }
 _PUBLIC_PREFIXES = (
     "/assets/",
