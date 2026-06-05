@@ -113,10 +113,16 @@ _RESUME_MIME = {
 }
 
 # Paths that do NOT require a JWT
-_PUBLIC = {"/", "/login", "/api/health", "/api/auth/login", "/nexai-interview"}
+_PUBLIC = {
+    "/", "/login", "/api/health", "/api/auth/login",
+    "/nexai-interview",
+    # Candidate-facing NexAI interview endpoints — token-based, no JWT
+    "/api/nexai/invite/validate",
+    "/api/nexai/invite/start",
+}
 _PUBLIC_PREFIXES = (
     "/assets/",
-    "/api/nexai/invite/",   # candidate-facing: validate, start, submit — token-based, no JWT
+    "/api/nexai/invite/submit/",   # /api/nexai/invite/submit/{session_id}
 )
 
 
