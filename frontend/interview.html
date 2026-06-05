@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Screening Interview — Egnex</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f4f1;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);max-width:600px;width:100%;padding:36px 32px}
+.logo{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+.logo img{height:36px}
+.logo span{font-size:20px;font-weight:700;color:#1a1a1a}
+h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#1a1a1a}
+.sub{font-size:13px;color:#6b6760;margin-bottom:24px}
+.info-box{background:#faf9f6;border:1px solid #e5e3de;border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:1.7}
+.info-box strong{color:#1a1a1a}
+.consent-box{background:#fffbf0;border:1px solid #f5d87a;border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;line-height:1.6}
+.consent-box ul{margin:10px 0 0 18px}
+.consent-box li{margin-bottom:4px}
+.check-row{display:flex;align-items:center;gap:10px;margin-bottom:20px;font-size:13px}
+.check-row input{width:16px;height:16px;cursor:pointer;accent-color:#f15a22}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 22px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:.15s}
+.btn-primary{background:#f15a22;color:#fff}.btn-primary:hover{background:#d44e1a}.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-ghost{background:transparent;color:#1a1a1a;border:1px solid #ddd}.btn-ghost:hover{background:#f5f4f1}
+.btn-full{width:100%}
+.status{text-align:center;font-size:13px;color:#6b6760;min-height:20px;margin:8px 0}
+.question-box{background:#f5f4f1;border-radius:8px;padding:16px;font-size:15px;line-height:1.6;margin:16px 0;min-height:60px;color:#1a1a1a}
+.q-num{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#f15a22;margin-bottom:6px}
+.controls{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.transcript{font-size:12px;color:#6b6760;background:#f5f4f1;border-radius:6px;padding:12px;margin-top:12px;max-height:120px;overflow-y:auto;line-height:1.5;display:none}
+.result-box{text-align:center;padding:24px 0}
+.result-score{font-size:52px;font-weight:800;color:#f15a22}
+.result-label{font-size:14px;color:#6b6760;margin-bottom:16px}
+.result-detail{font-size:13px;color:#1a1a1a;line-height:1.8;text-align:left;background:#faf9f6;border-radius:8px;padding:14px;margin-top:16px}
+.error-box{text-align:center;padding:40px 20px}
+.error-box h2{font-size:18px;color:#c0392b;margin-bottom:8px}
+.error-box p{font-size:13px;color:#6b6760}
+.orb-wrap{display:flex;justify-content:center;margin:16px 0}
+canvas#orb{border-radius:50%}
+.step{display:none}.step.active{display:block}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <img src="/assets/egnex-logo.png" onerror="this.style.display='none'">
+    <span>Egnex</span>
+  </div>
+
+  <!-- Step: Loading -->
+  <div class="step active" id="step-loading">
+    <p class="status">Validating your interview link…</p>
+  </div>
+
+  <!-- Step: Error -->
+  <div class="step" id="step-error">
+    <div class="error-box">
+      <h2>Link not valid</h2>
+      <p id="err-reason">This interview link is invalid or has expired.</p>
+    </div>
+  </div>
+
+  <!-- Step: Consent -->
+  <div class="step" id="step-consent">
+    <h1>AI Screening Interview</h1>
+    <p class="sub" id="consent-sub">You have been invited to an AI screening interview.</p>
+    <div class="info-box">
+      <strong>Position:</strong> <span id="info-job"></span><br>
+      <strong>Company:</strong> <span id="info-company"></span><br>
+      <strong>Candidate:</strong> <span id="info-name"></span>
+    </div>
+    <div class="consent-box">
+      <strong>Before you begin, please read carefully.</strong><br>
+      This AI screening session will:
+      <ul>
+        <li>Ask you up to 8 questions about your experience and skills</li>
+        <li>Record your spoken answers via your microphone</li>
+        <li>Score your responses automatically and share results with the hiring team</li>
+      </ul>
+      <br>
+      <strong>NexAI never auto-rejects.</strong> All scores are reviewed by a human recruiter before any decision is made.
+    </div>
+    <div class="check-row">
+      <input type="checkbox" id="consent-check" onchange="document.getElementById('start-btn').disabled=!this.checked">
+      <label for="consent-check">I have read the above and consent to this session being recorded and scored.</label>
+    </div>
+    <button class="btn btn-primary btn-full" id="start-btn" disabled onclick="startInterview()">Start Interview</button>
+  </div>
+
+  <!-- Step: Interview -->
+  <div class="step" id="step-interview">
+    <h1>AI Screening Interview</h1>
+    <p class="status" id="nx-status">Preparing your questions…</p>
+    <div class="orb-wrap"><canvas id="orb" width="120" height="120"></canvas></div>
+    <div id="nx-question-wrap">
+      <div class="q-num" id="nx-qnum"></div>
+      <div class="question-box" id="nx-question">Please wait…</div>
+    </div>
+    <div class="controls" id="nx-controls">
+      <button class="btn btn-primary" id="btn-speak" onclick="nxSpeak()" disabled>▶ Hear question</button>
+      <button class="btn btn-ghost" id="btn-listen" onclick="nxListen()" style="display:none">🎤 Record answer</button>
+      <button class="btn btn-ghost" id="btn-next" onclick="nxNext()" style="display:none">Next →</button>
+      <button class="btn btn-primary" id="btn-submit" onclick="nxSubmit()" style="display:none">Finish &amp; submit</button>
+    </div>
+    <div class="transcript" id="nx-transcript"></div>
+  </div>
+
+  <!-- Step: Complete -->
+  <div class="step" id="step-done">
+    <div class="result-box">
+      <div class="result-score" id="done-score">—</div>
+      <div class="result-label">out of 100</div>
+      <p style="font-size:14px;color:#1a1a1a;margin-bottom:8px">Thank you — your interview is complete.</p>
+      <p style="font-size:13px;color:#6b6760">Your responses have been submitted to the hiring team. You will be contacted with next steps shortly.</p>
+      <div class="result-detail" id="done-detail"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+const _token = new URLSearchParams(location.search).get('token');
+let _sessionId = null, _questions = [], _seq = 0, _transcript = [];
+let _synth = window.speechSynthesis, _recog = null;
+let _orbRaf = null, _orbPhase = 0, _orbState = 'idle';
+
+// ── Steps ────────────────────────────────────────────────────────────────────
+function showStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── API (no auth needed — token in URL param) ─────────────────────────────────
+async function apiPublic(path, opts={}) {
+  try {
+    const r = await fetch(path, opts);
+    if (!r.ok) {
+      let d = 'Server error';
+      try { const j = await r.json(); d = j.detail || d; } catch {}
+      return { _err: d };
+    }
+    return r.json();
+  } catch { return { _err: 'Network error' }; }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async function init() {
+  if (!_token) { showErr('No interview token found in the link.'); return; }
+  const res = await apiPublic(`/api/nexai/invite/validate?token=${encodeURIComponent(_token)}`);
+  if (res._err || !res.valid) { showErr(res.reason || res._err || 'Invalid link'); return; }
+  document.getElementById('info-job').textContent     = res.job_title  || '—';
+  document.getElementById('info-company').textContent = res.company    || '—';
+  document.getElementById('info-name').textContent    = res.candidate_name || '—';
+  document.getElementById('consent-sub').textContent  =
+    `Hi ${res.candidate_name || 'there'} — you have been invited to an AI screening interview.`;
+  showStep('step-consent');
+})();
+
+function showErr(reason) {
+  document.getElementById('err-reason').textContent = reason;
+  showStep('step-error');
+}
+
+// ── Start interview ───────────────────────────────────────────────────────────
+async function startInterview() {
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('start-btn').textContent = 'Starting…';
+  const res = await apiPublic(
+    `/api/nexai/invite/start?token=${encodeURIComponent(_token)}`,
+    { method: 'POST' }
+  );
+  if (res._err) { showErr(res._err); return; }
+  _sessionId = res.session_id;
+  _questions = res.questions || [];
+  _seq = 0; _transcript = [];
+  showStep('step-interview');
+  _startOrb();
+  loadQuestion();
+}
+
+// ── Question flow ─────────────────────────────────────────────────────────────
+function loadQuestion() {
+  if (_seq >= _questions.length) { showFinishBtn(); return; }
+  const q = _questions[_seq];
+  const total = _questions.length;
+  document.getElementById('nx-qnum').textContent = `Question ${_seq + 1} of ${total}`;
+  document.getElementById('nx-question').textContent = q.text;
+  document.getElementById('nx-status').textContent = 'Click "Hear question" to listen, then record your answer.';
+  document.getElementById('btn-speak').style.display  = '';
+  document.getElementById('btn-speak').disabled       = false;
+  document.getElementById('btn-listen').style.display = 'none';
+  document.getElementById('btn-next').style.display   = 'none';
+  document.getElementById('btn-submit').style.display = 'none';
+}
+
+function showFinishBtn() {
+  document.getElementById('btn-speak').style.display   = 'none';
+  document.getElementById('btn-listen').style.display  = 'none';
+  document.getElementById('btn-next').style.display    = 'none';
+  document.getElementById('btn-submit').style.display  = '';
+  document.getElementById('nx-qnum').textContent = '';
+  document.getElementById('nx-question').textContent = 'All questions answered. Click "Finish & submit" to complete your interview.';
+  document.getElementById('nx-status').textContent = 'Ready to submit.';
+  _orbSetState('idle');
+}
+
+// ── Speech synthesis ──────────────────────────────────────────────────────────
+function nxSpeak() {
+  const q = _questions[_seq];
+  if (!q) return;
+  _orbSetState('speaking');
+  document.getElementById('btn-speak').disabled = true;
+  document.getElementById('nx-status').textContent = 'Speaking…';
+  const utt = new SpeechSynthesisUtterance(q.text);
+  utt.rate = 0.95; utt.pitch = 1;
+  utt.onend = () => {
+    _orbSetState('idle');
+    document.getElementById('btn-listen').style.display = '';
+    document.getElementById('nx-status').textContent = 'Click "Record answer" to speak your response.';
+  };
+  _synth.cancel();
+  _synth.speak(utt);
+}
+
+// ── Speech recognition ────────────────────────────────────────────────────────
+function nxListen() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    const ans = prompt('Speech recognition not available in this browser. Please type your answer:') || '';
+    _saveAnswer(ans); return;
+  }
+  _recog = new SR();
+  _recog.lang = 'en-IN';
+  _recog.continuous = true;
+  _recog.interimResults = false;
+  _orbSetState('listening');
+  document.getElementById('btn-listen').disabled = true;
+  document.getElementById('nx-status').textContent = 'Recording… speak now. Click "Stop" when done.';
+  document.getElementById('btn-listen').textContent = '⏹ Stop recording';
+  document.getElementById('btn-listen').disabled = false;
+  document.getElementById('btn-listen').onclick = nxStopListen;
+  let full = '';
+  _recog.onresult = e => { for (let i=e.resultIndex;i<e.results.length;i++) full+=e.results[i][0].transcript+' '; };
+  _recog.onerror = () => { _orbSetState('idle'); _saveAnswer(full); };
+  _recog.onend = () => { _orbSetState('idle'); _saveAnswer(full); };
+  _recog.start();
+}
+
+function nxStopListen() {
+  if (_recog) { _recog.stop(); _recog = null; }
+}
+
+function _saveAnswer(text) {
+  const q = _questions[_seq];
+  const trimmed = text.trim();
+  _transcript.push({ seq: q.seq, question: q.text, answer: trimmed });
+  // Show in transcript log
+  const tEl = document.getElementById('nx-transcript');
+  tEl.style.display = 'block';
+  tEl.innerHTML += `<strong>Q${_seq+1}:</strong> ${trimmed || '<em>No answer recorded</em>'}<br>`;
+  tEl.scrollTop = tEl.scrollHeight;
+  document.getElementById('nx-status').textContent = trimmed ? 'Answer recorded.' : 'No answer recorded.';
+  document.getElementById('btn-listen').textContent = '🎤 Record answer';
+  document.getElementById('btn-listen').onclick = nxListen;
+  document.getElementById('btn-listen').style.display = 'none';
+  // Show next or finish
+  _seq++;
+  if (_seq < _questions.length) {
+    document.getElementById('btn-next').style.display = '';
+  } else {
+    showFinishBtn();
+  }
+}
+
+function nxNext() { loadQuestion(); }
+
+// ── Submit ────────────────────────────────────────────────────────────────────
+async function nxSubmit() {
+  document.getElementById('btn-submit').disabled = true;
+  document.getElementById('btn-submit').textContent = 'Submitting…';
+  document.getElementById('nx-status').textContent = 'Sending your responses…';
+  _orbSetState('idle');
+  const res = await apiPublic(
+    `/api/nexai/invite/submit/${_sessionId}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript: _transcript }),
+    }
+  );
+  if (res._err) {
+    document.getElementById('nx-status').textContent = 'Error submitting: ' + res._err;
+    document.getElementById('btn-submit').disabled = false;
+    document.getElementById('btn-submit').textContent = 'Retry submit';
+    return;
+  }
+  // Show result
+  const score = Math.round(res.raw_score ?? 0);
+  const detail = res.score_detail || {};
+  document.getElementById('done-score').textContent = score;
+  document.getElementById('done-score').style.color =
+    score >= 60 ? '#1d6e56' : score >= 40 ? '#d48806' : '#f15a22';
+  const qa = detail.questions_answered ?? '—';
+  const qt = detail.total_questions ?? '—';
+  document.getElementById('done-detail').innerHTML =
+    `Questions answered: <strong>${qa} / ${qt}</strong>`;
+  _stopOrb();
+  showStep('step-done');
+}
+
+// ── Orb animation ─────────────────────────────────────────────────────────────
+function _orbSetState(s) { _orbState = s; }
+function _stopOrb() { if (_orbRaf) { cancelAnimationFrame(_orbRaf); _orbRaf = null; } }
+function _startOrb() {
+  const canvas = document.getElementById('orb');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height, cx = W/2, cy = H/2;
+  function frame() {
+    _orbRaf = requestAnimationFrame(frame);
+    _orbPhase += 0.04;
+    ctx.clearRect(0, 0, W, H);
+    const base = _orbState === 'listening' ? 44 + Math.sin(_orbPhase * 3) * 8
+               : _orbState === 'speaking'  ? 44 + Math.sin(_orbPhase * 2) * 5
+               : 40 + Math.sin(_orbPhase) * 2;
+    const gr = ctx.createRadialGradient(cx-10, cy-10, 4, cx, cy, base);
+    gr.addColorStop(0, '#ff8c5a');
+    gr.addColorStop(0.5, '#f15a22');
+    gr.addColorStop(1, '#9c3a0e');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2); ctx.fill();
+    const hl = ctx.createRadialGradient(cx-14, cy-14, 0, cx-6, cy-6, base * 0.55);
+    hl.addColorStop(0, 'rgba(255,255,255,0.28)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = hl;
+    ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2); ctx.fill();
+  }
+  frame();
+}
+</script>
+</body>
+</html>

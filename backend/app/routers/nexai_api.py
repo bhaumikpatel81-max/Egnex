@@ -8,7 +8,9 @@ The face/avatar (14b) is intentionally NOT built here.
 import io
 import json
 import os
+import secrets
 import tempfile
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -17,6 +19,7 @@ from pydantic import BaseModel
 from ..db import query, query_one
 from ..auth_utils import get_current_user
 from ..services import avatar as _avatar_svc
+from ..services.connectors import send_email
 
 router = APIRouter(prefix="/api/nexai", tags=["nexai"])
 
@@ -293,6 +296,191 @@ def list_sessions(
         """,
         params,
     )
+
+
+# ── Candidate Invite Flow ─────────────────────────────────────────────────────
+
+@router.post("/invite/{app_id}", status_code=201)
+def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
+    """Recruiter sends an AI interview invite link to the candidate's email."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    app_row = query_one(
+        """SELECT a.id, a.status, c.full_name, c.email,
+                  r.title AS job_title, gc.name AS company
+           FROM application a
+           JOIN candidate   c  ON c.id = a.candidate_id
+           JOIN requisition r  ON r.id = a.requisition_id
+           JOIN business_unit bu ON bu.id = r.bu_id
+           JOIN group_company gc ON gc.id = bu.company_id
+           WHERE a.id = %s""",
+        [app_id],
+    )
+    if not app_row:
+        raise HTTPException(404, "Application not found")
+    if not app_row["email"]:
+        raise HTTPException(400, "Candidate has no email address on record")
+
+    token = secrets.token_urlsafe(32)
+    query(
+        """INSERT INTO nexai_invite (application_id, token, created_by)
+           VALUES (%s, %s, %s)""",
+        [app_id, token, user["sub"]],
+        fetch=False,
+    )
+
+    base_url = os.environ.get("APP_BASE_URL", "http://localhost:8000")
+    invite_url = f"{base_url}/nexai-interview?token={token}"
+
+    send_email(
+        app_row["email"],
+        f"AI Screening Interview Invitation — {app_row['job_title']} | {app_row['company']}",
+        (
+            f"Hi {app_row['full_name']},\n\n"
+            f"You have been shortlisted for an AI screening interview for the position of "
+            f"{app_row['job_title']} at {app_row['company']}.\n\n"
+            f"Please click the link below to begin your interview at your convenience:\n\n"
+            f"  {invite_url}\n\n"
+            f"This link is valid for 7 days and can only be used once.\n\n"
+            f"Best regards,\nEgnex Hiring Team"
+        ),
+    )
+
+    return {
+        "invite_url": invite_url,
+        "sent_to": app_row["email"],
+        "candidate_name": app_row["full_name"],
+        "job_title": app_row["job_title"],
+    }
+
+
+@router.get("/invite/validate")
+def validate_invite(token: str):
+    """Public — validate a candidate interview token before showing the interview page."""
+    row = query_one(
+        """SELECT ni.id, ni.expires_at, ni.used_at,
+                  c.full_name, r.title AS job_title, gc.name AS company,
+                  ni.application_id
+           FROM nexai_invite ni
+           JOIN application  a  ON a.id  = ni.application_id
+           JOIN candidate    c  ON c.id  = a.candidate_id
+           JOIN requisition  r  ON r.id  = a.requisition_id
+           JOIN business_unit bu ON bu.id = r.bu_id
+           JOIN group_company gc ON gc.id = bu.company_id
+           WHERE ni.token = %s""",
+        [token],
+    )
+    if not row:
+        return {"valid": False, "reason": "This interview link is invalid."}
+    if row["used_at"]:
+        return {"valid": False, "reason": "This interview link has already been used."}
+    exp = row["expires_at"]
+    if exp and exp.replace(tzinfo=None) < datetime.utcnow():
+        return {"valid": False, "reason": "This interview link has expired."}
+    return {
+        "valid": True,
+        "candidate_name": row["full_name"],
+        "job_title": row["job_title"],
+        "company": row["company"],
+        "application_id": str(row["application_id"]),
+    }
+
+
+@router.post("/invite/start")
+def start_invited_session(token: str):
+    """Public — candidate starts the NexAI session using their invite token."""
+    invite = query_one(
+        """SELECT ni.id, ni.application_id, ni.expires_at, ni.used_at
+           FROM nexai_invite ni WHERE ni.token = %s""",
+        [token],
+    )
+    if not invite:
+        raise HTTPException(400, "Invalid invite token")
+    if invite["used_at"]:
+        raise HTTPException(400, "This interview link has already been used")
+    exp = invite["expires_at"]
+    if exp and exp.replace(tzinfo=None) < datetime.utcnow():
+        raise HTTPException(400, "This interview link has expired")
+
+    # Mark token as used
+    query(
+        "UPDATE nexai_invite SET used_at = now() WHERE id = %s",
+        [invite["id"]], fetch=False,
+    )
+
+    app_row = query_one(
+        """SELECT a.id, a.requisition_id, r.key_skills, r.job_description
+           FROM application a JOIN requisition r ON r.id = a.requisition_id
+           WHERE a.id = %s""",
+        [invite["application_id"]],
+    )
+    if not app_row:
+        raise HTTPException(404, "Application not found")
+
+    questions = _generate_questions(app_row["key_skills"] or [], app_row["job_description"] or "")
+
+    existing = query_one(
+        "SELECT id FROM nexai_session WHERE application_id = %s",
+        [invite["application_id"]],
+    )
+    if existing:
+        query(
+            """UPDATE nexai_session
+               SET questions = %s::jsonb, status = 'in_progress',
+                   started_at = now(), transcript = NULL,
+                   raw_score = NULL, score_detail = NULL
+               WHERE id = %s""",
+            [json.dumps(questions), existing["id"]], fetch=False,
+        )
+        session_id = existing["id"]
+    else:
+        row = query_one(
+            """INSERT INTO nexai_session
+               (application_id, requisition_id, questions, status, started_at)
+               VALUES (%s, %s, %s::jsonb, 'in_progress', now()) RETURNING id""",
+            [invite["application_id"], app_row["requisition_id"], json.dumps(questions)],
+        )
+        session_id = row["id"]
+
+    return {"session_id": session_id, "questions": questions}
+
+
+@router.post("/invite/submit/{session_id}")
+def submit_invited_session(session_id: str, body: SubmitSessionIn):
+    """Public — candidate submits completed interview transcript."""
+    sess = query_one(
+        "SELECT id, application_id, questions FROM nexai_session WHERE id = %s",
+        [session_id],
+    )
+    if not sess:
+        raise HTTPException(404, "Session not found")
+
+    questions  = sess["questions"] if isinstance(sess["questions"], list) else []
+    transcript = [t.dict() for t in body.transcript]
+    raw_score, detail = _score_transcript(questions, transcript)
+
+    query(
+        """UPDATE nexai_session
+           SET transcript = %s::jsonb, raw_score = %s, score_detail = %s::jsonb,
+               status = 'completed', completed_at = now()
+           WHERE id = %s""",
+        [json.dumps(transcript), raw_score, json.dumps(detail), session_id],
+        fetch=False,
+    )
+
+    app_row = query_one(
+        "SELECT match_score FROM application WHERE id = %s",
+        [sess["application_id"]],
+    )
+    match    = float(app_row["match_score"] or 0) if app_row else 0
+    combined = round(0.4 * match + 0.6 * raw_score, 1)
+    query(
+        "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
+        [raw_score, combined, sess["application_id"]], fetch=False,
+    )
+
+    return {"session_id": session_id, "raw_score": raw_score, "score_detail": detail}
 
 
 @router.get("/health")

@@ -185,22 +185,98 @@ class ApplyIn(BaseModel):
     requisition_id: str
     full_name: str
     email: str
+    phone: str | None = None
     gender: str = "undisclosed"
     resume_text: str = ""
     years_experience: float | None = None
     source: str = "career_site"
 
 
+def _find_existing_candidate(email: str, phone: str | None):
+    """
+    Return an existing candidate row (id, full_name) if one matches by email
+    OR by normalised phone number.  Returns None if no match found.
+    """
+    from .services.resume_parser import normalize_phone
+    if email:
+        row = query_one(
+            "SELECT id, full_name FROM candidate WHERE lower(email) = %s",
+            [email.lower()],
+        )
+        if row:
+            return row, "email"
+    norm = normalize_phone(phone) if phone else None
+    if norm:
+        row = query_one(
+            """SELECT id, full_name FROM candidate
+               WHERE regexp_replace(COALESCE(phone,''), '[^0-9]', '', 'g') = %s
+               AND phone IS NOT NULL AND phone <> ''""",
+            [norm],
+        )
+        if row:
+            return row, "phone"
+    return None, None
+
+
+def _dedup_or_create_candidate(
+    full_name: str, email: str, phone: str | None,
+    gender: str, source: str, resume_url: str | None,
+    requisition_id: str,
+):
+    """
+    Look for an existing candidate by email / phone.
+    - If found AND already applied to this req → raise 409.
+    - If found but not yet applied → reuse the candidate, update resume if provided.
+    - If not found → insert new candidate.
+    Returns the candidate id.
+    """
+    existing, matched_by = _find_existing_candidate(email, phone)
+    if existing:
+        cand_id = existing["id"]
+        dup_app = query_one(
+            "SELECT id FROM application WHERE requisition_id = %s AND candidate_id = %s",
+            [requisition_id, cand_id],
+        )
+        if dup_app:
+            raise HTTPException(
+                409,
+                f"Candidate '{existing['full_name']}' has already applied to this "
+                f"requisition (duplicate detected by {matched_by}).",
+            )
+        # Reuse candidate; update resume URL if a new file was provided
+        if resume_url:
+            query(
+                "UPDATE candidate SET resume_url = %s WHERE id = %s",
+                [resume_url, cand_id],
+                fetch=False,
+            )
+        return cand_id
+
+    # New candidate
+    from .services.resume_parser import normalize_phone
+    norm_phone = normalize_phone(phone) if phone else None
+    row = query_one(
+        """INSERT INTO candidate (full_name, email, phone, gender, source, resume_url)
+           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+        [full_name, email.lower(), norm_phone, gender, source, resume_url],
+    )
+    return row["id"]
+
+
 @app.post("/api/apply")
 def apply(payload: ApplyIn):
-    """An external application arrives -> create candidate -> auto-screen."""
-    cand = query_one(
-        """INSERT INTO candidate (full_name, email, gender, source)
-           VALUES (%s, %s, %s, %s) RETURNING id""",
-        [payload.full_name, payload.email, payload.gender, payload.source],
+    """Text-paste application: create/reuse candidate → auto-screen."""
+    cand_id = _dedup_or_create_candidate(
+        full_name=payload.full_name,
+        email=payload.email,
+        phone=payload.phone,
+        gender=payload.gender,
+        source=payload.source,
+        resume_url=None,
+        requisition_id=payload.requisition_id,
     )
     app_row = pipeline.intake_and_screen(
-        payload.requisition_id, cand["id"], payload.resume_text, payload.years_experience
+        payload.requisition_id, cand_id, payload.resume_text, payload.years_experience
     )
     return {"application_id": app_row["id"], "match_score": app_row["match_score"],
             "breakdown": app_row["score_breakdown"]}
@@ -226,12 +302,13 @@ async def apply_upload(
     requisition_id: str = Form(...),
     full_name: str = Form(...),
     email: str = Form(...),
+    phone: str = Form(""),
     gender: str = Form("undisclosed"),
     years_experience: float = Form(None),
     source: str = Form("career_site"),
     file: UploadFile = File(...),
 ):
-    """File-upload path: extract text from PDF/Word, then auto-screen."""
+    """File-upload path: extract text from PDF/Word, dedup check, then auto-screen."""
     suffix = os.path.splitext(file.filename or "")[1].lower()
     if suffix not in _ALLOWED_RESUME_TYPES:
         raise HTTPException(
@@ -239,23 +316,24 @@ async def apply_upload(
         )
 
     file_bytes = await file.read()
-
-    # Extract resume text
     resume_text, warning = _parse_resume(file_bytes, file.filename or "")
 
-    # Save locally (swap this block for GCP Storage upload when credentials are available)
     saved_name = f"{_uuid.uuid4()}{suffix}"
     saved_path = os.path.join(_UPLOADS_DIR, saved_name)
     with open(saved_path, "wb") as fout:
         fout.write(file_bytes)
 
-    cand = query_one(
-        """INSERT INTO candidate (full_name, email, gender, source, resume_url)
-           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
-        [full_name, email.lower(), gender, source, saved_path],
+    cand_id = _dedup_or_create_candidate(
+        full_name=full_name,
+        email=email,
+        phone=phone or None,
+        gender=gender,
+        source=source,
+        resume_url=saved_path,
+        requisition_id=requisition_id,
     )
     app_row = pipeline.intake_and_screen(
-        requisition_id, cand["id"], resume_text, years_experience
+        requisition_id, cand_id, resume_text, years_experience
     )
     return {
         "application_id": app_row["id"],
@@ -486,6 +564,12 @@ if os.path.isdir(_FRONTEND_DIR):
     @app.get("/login", response_class=HTMLResponse)
     def login_page():
         with open(os.path.join(_FRONTEND_DIR, "login.html")) as f:
+            return HTMLResponse(content=f.read(), headers=_NO_CACHE)
+
+    @app.get("/nexai-interview", response_class=HTMLResponse)
+    def nexai_interview_page():
+        """Public candidate-facing AI interview page — accessed via invite token."""
+        with open(os.path.join(_FRONTEND_DIR, "interview.html")) as f:
             return HTMLResponse(content=f.read(), headers=_NO_CACHE)
 
     @app.get("/", response_class=HTMLResponse)

@@ -401,7 +401,10 @@ select{background-image:none}
       <div class="form-group"><label>Email</label><input id="am-email" type="email" placeholder="priya@example.com"></div>
     </div>
     <div class="form-row">
+      <div class="form-group"><label>Phone number</label><input id="am-phone" type="tel" placeholder="+91 98765 43210"></div>
       <div class="form-group"><label>Gender</label><select id="am-gender"><option value="female">Female</option><option value="male">Male</option><option value="undisclosed">Undisclosed</option></select></div>
+    </div>
+    <div class="form-row">
       <div class="form-group"><label>Years of experience</label><input id="am-years" type="number" placeholder="4"></div>
     </div>
     <div class="tabs">
@@ -432,6 +435,23 @@ select{background-image:none}
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="document.getElementById('chpw-modal').classList.remove('open')">Cancel</button>
       <button class="btn btn-primary" onclick="doChpw()">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── NexAI Invite Modal ── -->
+<div class="modal-bg" id="nexai-invite-modal" onclick="if(event.target===this)closeInviteModal()">
+  <div class="modal" style="max-width:420px">
+    <h2>Send AI Interview Invite</h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">An interview link will be emailed to the candidate. They can complete it at their own convenience.</p>
+    <div class="info-row" style="background:#faf9f6;border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px;line-height:1.8;margin-bottom:16px">
+      <strong id="inv-name"></strong><br>
+      <span style="color:var(--muted)" id="inv-email"></span>
+    </div>
+    <div id="inv-result" style="display:none;padding:12px;border-radius:6px;font-size:13px;margin-bottom:14px"></div>
+    <div class="modal-btns" id="inv-btns">
+      <button class="btn btn-ghost" onclick="closeInviteModal()">Cancel</button>
+      <button class="btn btn-primary" id="inv-send-btn" onclick="confirmSendInvite()">📧 Send invite</button>
     </div>
   </div>
 </div>
@@ -1475,7 +1495,12 @@ async function screenKanban(reqId) {
         ondragstart="kbDS(event)" ondragend="kbDE(event)">
         <div class="cname">${c.full_name}</div>
         <div class="cscore">Score: ${c.score!=null?Math.round(c.score):'—'} · ${c.gender||'—'}</div>
-        ${canNexAI&&col.status==='screen_passed'?`<button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="openNexAI('${c.app_id}',event)">🤖 AI Interview</button>`:''}
+        ${canApply&&col.status==='screening'?`
+          <div style="display:flex;gap:4px;margin-top:6px">
+            <button class="btn btn-green btn-sm" style="flex:1;font-size:11px" onclick="passScreening('${c.app_id}');event.stopPropagation()">Pass ✓</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:11px;color:#c0392b;border-color:#e8c5c0" onclick="rejectScreening('${c.app_id}');event.stopPropagation()">✕</button>
+          </div>`:''}
+        ${canNexAI&&col.status==='screen_passed'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%" onclick="sendNexAIInvite('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}','${(c.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`:''}
       </div>`).join('');
     return `
       <div class="kb-col">
@@ -1516,6 +1541,22 @@ async function kbDrop(e,col,toStatus,roundSeq){
   if(res){flash(`Moved to ${toStatus}`);screenKanban(_kanbanReqId);}
 }
 
+// ── Candidate stage actions ───────────────────────────────────────────────────
+async function passScreening(appId){
+  const res=await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_status:'screen_passed',actor_id:ME.sub})});
+  if(res){flash('Moved to Screening Cleared.');
+    // Refresh whichever screen is currently showing
+    if(_kanbanReqId) screenKanban(_kanbanReqId); else screenCandidates();
+  }
+}
+async function rejectScreening(appId){
+  if(!confirm('Reject this candidate at screening stage?')) return;
+  const res=await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_status:'screen_rejected',actor_id:ME.sub})});
+  if(res){flash('Candidate rejected at screening.');
+    if(_kanbanReqId) screenKanban(_kanbanReqId); else screenCandidates();
+  }
+}
+
 // ── SCREEN: Candidates ────────────────────────────────────────────────────────
 async function screenCandidates() {
   const filter = _navFilter; _navFilter = {};
@@ -1545,24 +1586,40 @@ async function screenCandidates() {
       <button class="btn btn-ghost btn-sm" onclick="screenCandidates()">✕ Clear filter</button>
     </div>` : '';
 
-  const tRows = rows.map(r=>`
-    <tr>
-      <td>${r.full_name}</td>
+  const canAct=['recruiter','ta_manager','admin'].includes(ME.role);
+  const tRows = rows.map(r=>{
+    let actions='';
+    if(canAct){
+      if(r.status==='screening'){
+        actions=`<div style="display:flex;gap:4px">
+          <button class="btn btn-green btn-sm" onclick="passScreening('${r.app_id}')">Pass</button>
+          <button class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#e8c5c0" onclick="rejectScreening('${r.app_id}')">Reject</button>
+        </div>`;
+      } else if(r.status==='screen_passed'){
+        actions=`<button class="btn btn-primary btn-sm" onclick="sendNexAIInvite('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}','${(r.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`;
+      } else if(r.req_id){
+        actions=`<button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>`;
+      }
+    }
+    return `<tr>
+      <td><strong>${r.full_name}</strong></td>
       <td style="font-size:12px;color:var(--muted)">${r.email}</td>
       <td>${r.gender||'—'}</td>
-      <td>${r.requisition}</td>
+      <td style="cursor:pointer;color:var(--accent)" onclick="navigate('kanban','${r.req_id}')">${r.requisition}</td>
       <td style="font-size:12px;color:var(--muted)">${r.recruiter_name||'—'}</td>
       <td>${r.match_score!=null?Math.round(r.match_score):'—'}</td>
       <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
-    </tr>`).join('');
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
 
   document.getElementById('content').innerHTML = `
     <div class="page-header"><h1>Candidates</h1></div>
     ${banner}
     <div class="card" style="padding:0;overflow:hidden">
       ${tRows
-        ? `<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Recruiter</th><th>Match</th><th>Combined</th><th>Stage</th></tr></thead><tbody>${tRows}</tbody></table>`
+        ? `<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Recruiter</th><th>Match</th><th>Combined</th><th>Stage</th><th>Actions</th></tr></thead><tbody>${tRows}</tbody></table>`
         : `<p class="empty">${filterLabel ? 'No candidates match this filter.' : 'No candidates yet.'}</p>`}
     </div>`;
 }
@@ -2179,6 +2236,58 @@ async function openReqModal(){
 }
 function closeReqModal(){document.getElementById('req-modal').classList.remove('open');}
 
+// ── NexAI Invite helpers ─────────────────────────────────────────────────────
+let _inviteAppId=null;
+function sendNexAIInvite(appId, name, email, event){
+  if(event) event.stopPropagation();
+  _inviteAppId=appId;
+  document.getElementById('inv-name').textContent=name||'Candidate';
+  document.getElementById('inv-email').textContent=email||'(no email on record)';
+  document.getElementById('inv-result').style.display='none';
+  document.getElementById('inv-btns').style.display='';
+  document.getElementById('inv-send-btn').disabled=false;
+  document.getElementById('inv-send-btn').textContent='📧 Send invite';
+  document.getElementById('nexai-invite-modal').classList.add('open');
+}
+function closeInviteModal(){document.getElementById('nexai-invite-modal').classList.remove('open');}
+async function confirmSendInvite(){
+  const btn=document.getElementById('inv-send-btn');
+  btn.disabled=true;btn.textContent='Sending…';
+  const resEl=document.getElementById('inv-result');
+  resEl.style.display='none';
+
+  let raw,res;
+  try{
+    raw=await fetch(`/api/nexai/invite/${_inviteAppId}`,{
+      method:'POST',
+      headers:{Authorization:`Bearer ${_tok}`}
+    });
+    res=await raw.json();
+  }catch(e){
+    resEl.style.background='#fdf0f0';resEl.style.border='1px solid #f5c6c6';
+    resEl.innerHTML=`<span style="color:#c0392b">⚠ Network error: ${e.message}</span>`;
+    resEl.style.display='block';
+    btn.disabled=false;btn.textContent='📧 Retry';
+    return;
+  }
+
+  if(raw.ok && res.invite_url){
+    resEl.style.background='#f0faf5';resEl.style.border='1px solid #b7e4cd';
+    resEl.innerHTML=`
+      <strong style="color:#1d6e56">✓ Invite sent to ${res.sent_to}</strong><br>
+      <span style="color:var(--muted);font-size:12px;display:block;margin-top:6px">Share this link if email is not yet configured:</span>
+      <a href="${res.invite_url}" target="_blank" style="color:var(--accent);word-break:break-all;font-size:12px">${res.invite_url}</a>`;
+    document.getElementById('inv-btns').innerHTML='<button class="btn btn-ghost" onclick="closeInviteModal()">Close</button>';
+  } else {
+    // Show the actual server error detail
+    const detail = res?.detail || `HTTP ${raw.status} — check server logs`;
+    resEl.style.background='#fdf0f0';resEl.style.border='1px solid #f5c6c6';
+    resEl.innerHTML=`<span style="color:#c0392b">⚠ ${detail}</span>`;
+    btn.disabled=false;btn.textContent='📧 Retry';
+  }
+  resEl.style.display='block';
+}
+
 // ── Assign Recruiter helpers ─────────────────────────────────────────────────
 let _assignReqId=null;
 async function openAssignModal(reqId, reqTitle){
@@ -2271,7 +2380,7 @@ async function submitReq(){
 let _applyMode='file';
 async function openApplyModal(reqId){
   document.getElementById('am-result').style.display='none';
-  ['am-name','am-email','am-years'].forEach(id=>document.getElementById(id).value='');
+  ['am-name','am-email','am-phone','am-years'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('am-file').value='';
   document.getElementById('am-text').value='';
   const ps=document.getElementById('am-parse-status');if(ps){ps.style.display='none';ps.textContent='';}
@@ -2300,9 +2409,11 @@ async function _autoFillFromResume(input){
     if(r.ok) res=await r.json();
   }catch{}
   if(res){
-    if(res.full_name&&!document.getElementById('am-name').value) document.getElementById('am-name').value=res.full_name;
-    if(res.email&&!document.getElementById('am-email').value) document.getElementById('am-email').value=res.email;
-    statusEl.textContent=res.full_name||res.email?'Details auto-filled from resume.':'Resume uploaded — fill in details manually.';
+    const filled=[];
+    if(res.full_name&&!document.getElementById('am-name').value){document.getElementById('am-name').value=res.full_name;filled.push('name');}
+    if(res.email&&!document.getElementById('am-email').value){document.getElementById('am-email').value=res.email;filled.push('email');}
+    if(res.phone&&!document.getElementById('am-phone').value){document.getElementById('am-phone').value=res.phone;filled.push('phone');}
+    statusEl.textContent=filled.length?`Auto-filled: ${filled.join(', ')}.`:'Resume uploaded — fill in details manually.';
   } else {
     statusEl.textContent='Could not auto-parse — fill details manually.';
   }
@@ -2319,6 +2430,7 @@ async function submitApply(){
     const email=document.getElementById('am-email').value.trim();
     if(!name){_showApplyErr('Candidate name is required.');return;}
     if(!email||!email.includes('@')){_showApplyErr('Valid email is required.');return;}
+    const phone=document.getElementById('am-phone').value.trim();
     const gender=document.getElementById('am-gender').value;
     const years=document.getElementById('am-years').value;
     let res,rawErr=null;
@@ -2327,8 +2439,8 @@ async function submitApply(){
       if(!file){_showApplyErr('Select a resume file first.');return;}
       const fd=new FormData();
       fd.append('requisition_id',_reqId);fd.append('full_name',name);fd.append('email',email);
+      if(phone) fd.append('phone',phone);
       fd.append('gender',gender);if(years)fd.append('years_experience',years);fd.append('file',file);
-      // Use raw fetch to capture server error messages properly
       let r;
       try{r=await fetch('/api/apply/upload',{method:'POST',headers:{Authorization:`Bearer ${_tok}`},body:fd});}
       catch{_showApplyErr('Network error — check your connection.');return;}
@@ -2341,7 +2453,7 @@ async function submitApply(){
       const text=document.getElementById('am-text').value.trim();
       if(!text){_showApplyErr('Paste resume text first.');return;}
       res=await api('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({requisition_id:_reqId,full_name:name,email,gender,
+        body:JSON.stringify({requisition_id:_reqId,full_name:name,email,phone:phone||null,gender,
           years_experience:parseFloat(years)||null,resume_text:text})});
       if(!res){_showApplyErr('Submission failed. Check console for details.');return;}
     }

@@ -43,6 +43,24 @@ def import_from_jobboard(source: str, profile_url: str) -> dict:
     )
 
 
+def normalize_phone(phone: str) -> str | None:
+    """
+    Strip formatting and country codes from a phone number, returning 10 digits
+    for Indian mobiles or at least 8 digits for others.  Returns None if the
+    input is blank or produces fewer than 8 digits.
+    """
+    import re
+    if not phone:
+        return None
+    digits = re.sub(r'[^\d]', '', phone)
+    # +91 / 0 prefix → strip to 10-digit Indian mobile
+    if len(digits) == 12 and digits.startswith('91'):
+        digits = digits[2:]
+    elif len(digits) == 11 and digits.startswith('0'):
+        digits = digits[1:]
+    return digits if len(digits) >= 8 else None
+
+
 def extract_contact_info(text: str) -> dict:
     """
     Heuristic extraction of name, email, and phone from raw resume text.
@@ -54,20 +72,28 @@ def extract_contact_info(text: str) -> dict:
     email_match = re.search(r'[\w.+\-]+@[\w\-]+\.[a-zA-Z]{2,}', text)
     email = email_match.group().lower() if email_match else None
 
-    # Phone — 10-digit Indian mobile or international with country code
-    phone_match = re.search(
-        r'(?:\+91[\s\-]?)?[6-9]\d{9}|(?:\+\d{1,3}[\s\-]?)?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}',
-        text,
-    )
-    phone = re.sub(r'\s+', '', phone_match.group()) if phone_match else None
+    # Phone — tries Indian mobile (6–9 start, 10 digits) first, then generic
+    phone_raw = None
+    # Indian mobile: optional +91 / 0 prefix, then 10 digits starting 6-9
+    m = re.search(r'(?:(?:\+91|0)[\s\-]?)?([6-9]\d{2}[\s\-]?\d{3}[\s\-]?\d{4})', text)
+    if m:
+        phone_raw = m.group(0).strip()
+    else:
+        # Generic international: +CC (nnn) nnn-nnnn style
+        m2 = re.search(r'(?:\+\d{1,3}[\s\-]?)?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}', text)
+        if m2:
+            phone_raw = m2.group(0).strip()
 
-    # Name — look for the first short line (2-5 words, all letters/spaces, no numbers)
+    phone = normalize_phone(phone_raw) if phone_raw else None
+    # Return the original formatted string for display; backend normalizes for dedup
+    phone_display = phone_raw if phone else None
+
+    # Name — first short line (2-5 words, only letters/hyphens, no numbers)
     name = None
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or len(stripped) > 60:
             continue
-        # Skip lines that look like section headers or contain numbers/special chars
         if re.search(r'[\d@#/\\|<>{}]', stripped):
             continue
         words = stripped.split()
@@ -75,7 +101,7 @@ def extract_contact_info(text: str) -> dict:
             name = stripped.title()
             break
 
-    return {"full_name": name, "email": email, "phone": phone}
+    return {"full_name": name, "email": email, "phone": phone_display}
 
 
 def extract_text(file_bytes: bytes, filename: str) -> tuple:

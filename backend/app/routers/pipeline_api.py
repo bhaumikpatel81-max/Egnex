@@ -549,7 +549,7 @@ def kanban(req_id: str, _user: dict = Depends(get_current_user)):
         """
         SELECT a.id AS app_id, a.status, a.current_round,
                COALESCE(a.combined_score, a.match_score) AS score,
-               c.full_name, c.gender
+               c.full_name, c.gender, c.email
         FROM application a
         JOIN candidate c ON c.id = a.candidate_id
         WHERE a.requisition_id = %s
@@ -665,7 +665,7 @@ def list_candidates(user: dict = Depends(get_current_user)):
         return query(
             f"""
             SELECT c.id, c.full_name, c.email, c.gender,
-                   r.title AS requisition, a.status,
+                   r.id AS req_id, r.title AS requisition, a.status,
                    a.combined_score, a.match_score, a.id AS app_id,
                    rc_info.recruiter_id, rc_info.recruiter_name
             FROM candidate c
@@ -674,21 +674,21 @@ def list_candidates(user: dict = Depends(get_current_user)):
             JOIN requisition_recruiter rr
                  ON rr.requisition_id = r.id AND rr.recruiter_id = %s
             {_rec_lat}
-            ORDER BY a.combined_score DESC NULLS LAST
+            ORDER BY a.applied_at DESC
             """,
             [uid],
         )
     return query(
         f"""
         SELECT c.id, c.full_name, c.email, c.gender,
-               r.title AS requisition, a.status,
+               r.id AS req_id, r.title AS requisition, a.status,
                a.combined_score, a.match_score, a.id AS app_id,
                rc_info.recruiter_id, rc_info.recruiter_name
         FROM candidate c
         JOIN application a ON a.candidate_id = c.id
         JOIN requisition r ON r.id = a.requisition_id
         {_rec_lat}
-        ORDER BY a.combined_score DESC NULLS LAST
+        ORDER BY a.applied_at DESC
         """,
         [],
     )
