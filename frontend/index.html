@@ -574,6 +574,7 @@ const NAV_DEF = {
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
     {id:'team',               icon:'👥', label:'Team'},
+    {id:'nexai_tracker',      icon:'🤖', label:'NexAI Tracker'},
     {id:'reports',            icon:'📊', label:'Reports & Analytics'},
     {id:'database',           icon:'📁', label:'CV Database'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
@@ -584,6 +585,7 @@ const NAV_DEF = {
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
     {id:'candidates',         icon:'👤', label:'Candidates'},
+    {id:'nexai_tracker',      icon:'🤖', label:'NexAI Tracker'},
     {id:'interviews',         icon:'📅', label:'Interviews'},
     {id:'database',           icon:'📁', label:'CV Database'},
     {id:'my_reports',         icon:'📊', label:'My Reports'},
@@ -653,6 +655,8 @@ const SCREENS = {
   nexai_sessions: screenNexAISessions,
   // settings (admin + ta_manager)
   settings: screenSettings,
+  // nexai tracker (ta_manager + recruiter)
+  nexai_tracker: screenNexAITracker,
 };
 
 function navigate(id, param) {
@@ -826,6 +830,62 @@ const _STAGE_NAV = {
   offer_stage:       ['candidates',  'offer_stage',  'Offer Stage'],
   joined:            ['candidates',  'joined',       'Joined'],
 };
+
+function _nexaiInviteSummaryHtml(tracker) {
+  if (!tracker) return '';
+  const s = tracker.summary || {};
+  const invites = tracker.invites || [];
+  // Last 5 most-recent invites for the mini-table
+  const recent = invites.slice(0, 5);
+
+  function pill(st) {
+    const map = {
+      pending:     '<span class="pill interviewing" style="font-size:10px">Pending</span>',
+      in_progress: '<span class="pill open" style="font-size:10px">In Progress</span>',
+      completed:   '<span class="pill joined" style="font-size:10px">Completed</span>',
+      expired:     '<span class="pill on_hold" style="font-size:10px">Expired</span>',
+    };
+    return map[st] || st;
+  }
+
+  const miniRows = recent.map(r => `
+    <tr style="cursor:pointer" onclick="navigate('nexai_tracker')">
+      <td>${r.candidate_name}</td>
+      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.requisition}</td>
+      <td>${pill(r.invite_status)}</td>
+      <td style="font-weight:700;color:${r.raw_score!=null?(r.raw_score>=60?'#1d6e56':r.raw_score>=40?'#d48806':'#c0392b'):'var(--muted)'}">${r.raw_score!=null?Math.round(r.raw_score)+'%':'—'}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="card" style="margin-bottom:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:0">🤖 NexAI Interview Pipeline</div>
+        <button class="btn btn-ghost btn-sm" onclick="navigate('nexai_tracker')">View full tracker →</button>
+      </div>
+      <!-- Summary stat strip -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:${recent.length?'16px':'0'}">
+        ${[
+          {label:'Total Invited', val:s.total||0, color:'#1a1a1a', sub:''},
+          {label:'Pending',       val:s.pending||0, color:'#d48806', sub:'Not opened yet'},
+          {label:'In Progress',   val:s.in_progress||0, color:'#2563eb', sub:'Interview started'},
+          {label:'Completed',     val:s.completed||0, color:'#1d6e56', sub:'Score available'},
+          {label:'Expired',       val:s.expired||0, color:'#9b9893', sub:'7-day limit passed'},
+        ].map(c=>`
+          <div style="text-align:center;padding:10px 8px;background:#faf9f6;border-radius:8px;cursor:pointer" onclick="navigate('nexai_tracker')">
+            <div style="font-size:24px;font-weight:800;color:${c.color}">${c.val}</div>
+            <div style="font-size:11px;font-weight:600;color:var(--muted);margin-top:2px">${c.label}</div>
+            ${c.sub?`<div style="font-size:10px;color:var(--muted)">${c.sub}</div>`:''}
+          </div>`).join('')}
+      </div>
+      <!-- Mini recent-invites table -->
+      ${recent.length ? `
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px">Recent invites</div>
+        <table style="font-size:12px">
+          <thead><tr><th>Candidate</th><th>Requisition</th><th>Status</th><th>Score</th></tr></thead>
+          <tbody>${miniRows}</tbody>
+        </table>` : ''}
+    </div>`;
+}
 
 function _stageGrid(d, prefix) {
   const stages=[
@@ -1069,7 +1129,7 @@ function _renderNexAICharts(nx, dist, recent, byRec) {
 // ── Recruiter Dashboard ────────────────────────────────────────────────────
 async function _dashRecruiter() {
   setTitle('My Dashboard');
-  const d = await api('/api/dashboard');
+  const [d, tracker] = await Promise.all([api('/api/dashboard'), api('/api/nexai/invite-tracker')]);
   if (!d) { showErr('Dashboard could not load. Retry.'); return; }
   const {labels,vals,rates,colors} = _pipeData(d);
   const {tot,fn,mn,un,fp,mp,up} = _genderVars(d.gender_split||[]);
@@ -1078,6 +1138,7 @@ async function _dashRecruiter() {
 
   document.getElementById('content').innerHTML=`
     <div class="stage-grid">${_stageGrid(d,'My')}</div>
+    ${_nexaiInviteSummaryHtml(tracker)}
     <div class="two-col" style="margin-bottom:20px">
       <div class="card">
         <div class="card-title">My Requisitions</div>
@@ -1108,7 +1169,7 @@ async function _dashRecruiter() {
 // ── TA Manager Dashboard ───────────────────────────────────────────────────
 async function _dashTAManager() {
   setTitle('Team Dashboard');
-  const d = await api('/api/dashboard');
+  const [d, tracker] = await Promise.all([api('/api/dashboard'), api('/api/nexai/invite-tracker')]);
   if (!d) { showErr('Dashboard could not load. Retry.'); return; }
   const {labels,vals,rates,colors} = _pipeData(d);
   const {tot,fn,mn,un,fp,mp,up} = _genderVars(d.gender_split||[]);
@@ -1135,6 +1196,7 @@ async function _dashTAManager() {
 
   document.getElementById('content').innerHTML=`
     <div class="stage-grid">${_stageGrid(d,'Team')}</div>
+    ${_nexaiInviteSummaryHtml(tracker)}
     <div class="two-col" style="margin-bottom:20px">
       <div class="card">
         <div class="card-title">Recruiter Performance</div>
@@ -2063,6 +2125,112 @@ async function screenTeam(){
         ?`<table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active Reqs</th><th>Assigned Requisitions</th></tr></thead><tbody>${rows}</tbody></table>`
         :'<p class="empty">No team members.</p>'}
     </div>`;
+}
+
+// ── SCREEN: NexAI Tracker ────────────────────────────────────────────────────
+async function screenNexAITracker(){
+  setTitle('NexAI Tracker');
+  const data=await api('/api/nexai/invite-tracker');
+  if(!data){showErr('Could not load NexAI tracker.');return;}
+  const s=data.summary||{};
+  const rows=data.invites||[];
+
+  function statusPill(st){
+    const map={pending:'<span class="pill interviewing">Pending</span>',
+               in_progress:'<span class="pill open">In Progress</span>',
+               completed:'<span class="pill joined">Completed</span>',
+               expired:'<span class="pill on_hold">Expired</span>'};
+    return map[st]||st;
+  }
+  function fmt(dt){
+    if(!dt) return '—';
+    return new Date(dt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  }
+  function scoreColor(n){
+    if(n==null) return 'var(--muted)';
+    return n>=60?'#1d6e56':n>=40?'#d48806':'#c0392b';
+  }
+
+  const tRows=rows.map(r=>`
+    <tr>
+      <td>
+        <strong>${r.candidate_name}</strong><br>
+        <span style="font-size:11px;color:var(--muted)">${r.candidate_email||''}</span>
+      </td>
+      <td style="cursor:pointer;color:var(--accent)" onclick="navigate('kanban','${r.req_id}')">${r.requisition}</td>
+      <td>${statusPill(r.invite_status)}</td>
+      <td style="font-size:12px">${fmt(r.invited_at)}</td>
+      <td style="font-size:12px">${r.used_at?fmt(r.used_at):'—'}</td>
+      <td style="font-size:12px">${r.completed_at?fmt(r.completed_at):'—'}</td>
+      <td style="font-weight:700;color:${scoreColor(r.raw_score)}">${r.raw_score!=null?Math.round(r.raw_score)+'%':'—'}</td>
+      <td>
+        ${r.invite_status==='pending'||r.invite_status==='expired'
+          ?`<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="resendInvite('${r.app_id}','${(r.candidate_name||'').replace(/'/g,"\\'")}','${(r.candidate_email||'').replace(/'/g,"\\'")}')">Resend</button>`
+          :r.invite_status==='completed'
+            ?`<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>`
+            :''}
+      </td>
+    </tr>`).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>NexAI Tracker</h1></div>
+
+    <!-- Summary cards -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:24px">
+      <div class="card" style="text-align:center;padding:16px 12px">
+        <div style="font-size:28px;font-weight:800;color:#1a1a1a">${s.total||0}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Total Invited</div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px 12px">
+        <div style="font-size:28px;font-weight:800;color:#d48806">${s.pending||0}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Pending</div>
+        <div style="font-size:10px;color:var(--muted)">Link not yet opened</div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px 12px">
+        <div style="font-size:28px;font-weight:800;color:#2563eb">${s.in_progress||0}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">In Progress</div>
+        <div style="font-size:10px;color:var(--muted)">Interview started</div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px 12px">
+        <div style="font-size:28px;font-weight:800;color:#1d6e56">${s.completed||0}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Completed</div>
+        <div style="font-size:10px;color:var(--muted)">Score available</div>
+      </div>
+      <div class="card" style="text-align:center;padding:16px 12px">
+        <div style="font-size:28px;font-weight:800;color:#9b9893">${s.expired||0}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Expired</div>
+        <div style="font-size:10px;color:var(--muted)">7-day limit passed</div>
+      </div>
+    </div>
+
+    <!-- Detail table -->
+    <div class="card" style="padding:0;overflow:hidden">
+      ${tRows
+        ?`<table>
+            <thead><tr>
+              <th>Candidate</th><th>Requisition</th><th>Status</th>
+              <th>Invite Sent</th><th>Link Opened</th><th>Completed</th>
+              <th>AI Score</th><th>Action</th>
+            </tr></thead>
+            <tbody>${tRows}</tbody>
+           </table>`
+        :'<p class="empty">No AI interview invites sent yet. Go to Candidates → screen a candidate → click "Send AI Invite".</p>'}
+    </div>`;
+}
+
+async function resendInvite(appId, name, email){
+  if(!confirm(`Resend AI interview invite to ${name} (${email})?`)) return;
+  let raw,res;
+  try{
+    raw=await fetch(`/api/nexai/resend-invite/${appId}`,{method:'POST',headers:{Authorization:`Bearer ${_tok}`}});
+    res=await raw.json();
+  }catch(e){flash('Network error',false);return;}
+  if(raw.ok&&res.invite_url){
+    flash(`Invite resent to ${res.sent_to}`);
+    screenNexAITracker();
+  } else {
+    flash(res?.detail||'Failed to resend invite.',false);
+  }
 }
 
 // ── SCREEN: Settings (TA Manager / Admin) ────────────────────────────────────

@@ -104,8 +104,11 @@ _RESUME_MIME = {
 }
 
 # Paths that do NOT require a JWT
-_PUBLIC = {"/", "/login", "/api/health", "/api/auth/login"}
-_PUBLIC_PREFIXES = ("/assets/",)
+_PUBLIC = {"/", "/login", "/api/health", "/api/auth/login", "/nexai-interview"}
+_PUBLIC_PREFIXES = (
+    "/assets/",
+    "/api/nexai/invite/",   # candidate-facing: validate, start, submit — token-based, no JWT
+)
 
 
 @app.middleware("http")
@@ -602,16 +605,16 @@ _NO_CACHE = {
 if os.path.isdir(_FRONTEND_DIR):
     @app.get("/login", response_class=HTMLResponse)
     def login_page():
-        with open(os.path.join(_FRONTEND_DIR, "login.html")) as f:
+        with open(os.path.join(_FRONTEND_DIR, "login.html"), encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers=_NO_CACHE)
 
     @app.get("/nexai-interview", response_class=HTMLResponse)
     def nexai_interview_page():
         """Public candidate-facing AI interview page — accessed via invite token."""
-        with open(os.path.join(_FRONTEND_DIR, "interview.html")) as f:
+        with open(os.path.join(_FRONTEND_DIR, "interview.html"), encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers=_NO_CACHE)
 
     @app.get("/", response_class=HTMLResponse)
     def index():
-        with open(os.path.join(_FRONTEND_DIR, "index.html")) as f:
+        with open(os.path.join(_FRONTEND_DIR, "index.html"), encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers=_NO_CACHE)

@@ -56,8 +56,8 @@ canvas#orb{border-radius:50%}
   <!-- Step: Error -->
   <div class="step" id="step-error">
     <div class="error-box">
-      <h2>Link not valid</h2>
-      <p id="err-reason">This interview link is invalid or has expired.</p>
+      <h2 id="err-title">Link not valid</h2>
+      <p id="err-reason" style="white-space:pre-line">This interview link is invalid or has expired.</p>
     </div>
   </div>
 
@@ -141,13 +141,26 @@ async function apiPublic(path, opts={}) {
       return { _err: d };
     }
     return r.json();
-  } catch { return { _err: 'Network error' }; }
+  } catch(e) {
+    // Connection refused = server not running
+    if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('fetch'))) {
+      return { _err: 'server_down' };
+    }
+    return { _err: 'Network error: ' + e.message };
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async function init() {
   if (!_token) { showErr('No interview token found in the link.'); return; }
   const res = await apiPublic(`/api/nexai/invite/validate?token=${encodeURIComponent(_token)}`);
+  if (res._err === 'server_down') {
+    showErr(
+      'The interview server is not reachable right now.\n\n' +
+      'Please ask the hiring team to check that their Egnex server is running, then try opening this link again.'
+    );
+    return;
+  }
   if (res._err || !res.valid) { showErr(res.reason || res._err || 'Invalid link'); return; }
   document.getElementById('info-job').textContent     = res.job_title  || '—';
   document.getElementById('info-company').textContent = res.company    || '—';
@@ -157,7 +170,8 @@ async function apiPublic(path, opts={}) {
   showStep('step-consent');
 })();
 
-function showErr(reason) {
+function showErr(reason, title) {
+  document.getElementById('err-title').textContent = title || 'Cannot load interview';
   document.getElementById('err-reason').textContent = reason;
   showStep('step-error');
 }

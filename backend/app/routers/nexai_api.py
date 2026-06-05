@@ -298,6 +298,74 @@ def list_sessions(
     )
 
 
+# ── NexAI Invite Tracker ─────────────────────────────────────────────────────
+
+@router.get("/invite-tracker")
+def invite_tracker(user: dict = Depends(get_current_user)):
+    """
+    Returns all NexAI invites with status breakdown.
+    Recruiters see only their requisitions; TA managers / admins see all.
+    """
+    role = user["role"]
+    uid  = user["sub"]
+
+    scope_join  = ""
+    scope_where = ""
+    params: list = []
+
+    if role == "recruiter":
+        scope_join  = "JOIN requisition_recruiter rr_s ON rr_s.requisition_id = r.id AND rr_s.recruiter_id = %s"
+        params.append(uid)
+    elif role not in ("ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    rows = query(
+        f"""
+        SELECT
+            ni.id            AS invite_id,
+            ni.invited_at,
+            ni.expires_at,
+            ni.used_at,
+            c.full_name      AS candidate_name,
+            c.email          AS candidate_email,
+            r.id             AS req_id,
+            r.title          AS requisition,
+            a.id             AS app_id,
+            ns.id            AS session_id,
+            ns.status        AS session_status,
+            ns.started_at,
+            ns.completed_at,
+            ns.raw_score,
+            ub.full_name     AS invited_by,
+            CASE
+              WHEN ns.status = 'completed'    THEN 'completed'
+              WHEN ni.used_at IS NOT NULL      THEN 'in_progress'
+              WHEN ni.expires_at < now()       THEN 'expired'
+              ELSE 'pending'
+            END              AS invite_status
+        FROM nexai_invite ni
+        JOIN application  a  ON a.id  = ni.application_id
+        JOIN candidate    c  ON c.id  = a.candidate_id
+        JOIN requisition  r  ON r.id  = a.requisition_id
+        {scope_join}
+        LEFT JOIN nexai_session  ns ON ns.application_id = a.id
+        LEFT JOIN app_user       ub ON ub.id = ni.created_by
+        ORDER BY ni.invited_at DESC
+        """,
+        params,
+    )
+
+    # Build summary counts
+    counts = {"total": 0, "pending": 0, "in_progress": 0, "completed": 0, "expired": 0}
+    for r in (rows or []):
+        counts["total"] += 1
+        s = r.get("invite_status", "pending")
+        if s in counts:
+            counts[s] += 1
+
+    return {"summary": counts, "invites": rows or []}
+
+
 # ── Candidate Invite Flow ─────────────────────────────────────────────────────
 
 @router.post("/invite/{app_id}", status_code=201)
@@ -452,6 +520,24 @@ def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
         "candidate_name": name,
         "job_title": job,
     }
+
+
+@router.post("/resend-invite/{app_id}", status_code=201)
+def resend_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
+    """
+    Creates a fresh invite token for an application and resends the email.
+    Used for expired or pending-too-long invites.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    # Expire any previous unused invite for this application
+    query(
+        """UPDATE nexai_invite SET expires_at = now() - interval '1 second'
+           WHERE application_id = %s AND used_at IS NULL""",
+        [app_id], fetch=False,
+    )
+    # Delegate to the main invite creator
+    return create_nexai_invite(app_id, user)
 
 
 @router.get("/invite/validate")
