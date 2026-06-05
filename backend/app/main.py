@@ -9,6 +9,15 @@ import os
 import uuid as _uuid
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
+
+# Load .env.prod at startup — set all credentials there, never commit real passwords
+_ROOT = Path(__file__).resolve().parents[2]   # egnex/
+_env_file = _ROOT / ".env.prod"
+if _env_file.exists():
+    from dotenv import load_dotenv
+    load_dotenv(_env_file, override=False)
+    print(f"[config] Loaded env from {_env_file.name}")
 
 from fastapi import FastAPI, HTTPException, Request, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
