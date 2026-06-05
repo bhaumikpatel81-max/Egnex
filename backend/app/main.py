@@ -129,8 +129,15 @@ _PUBLIC_PREFIXES = (
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path in _PUBLIC or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+    print(f"[MW] {request.method} {path}", flush=True)
+    # Candidate-facing interview flow — always public, no JWT needed
+    if path.startswith("/api/nexai/invite") or path == "/nexai-interview":
+        print(f"[MW] PASS (nexai invite): {path}", flush=True)
         return await call_next(request)
+    if path in _PUBLIC or any(path.startswith(p) for p in _PUBLIC_PREFIXES):
+        print(f"[MW] PASS (public): {path}", flush=True)
+        return await call_next(request)
+    print(f"[MW] BLOCK: {path}", flush=True)
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
