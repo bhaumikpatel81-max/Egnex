@@ -149,12 +149,161 @@ def schedule_meeting(recruiter_id: str, candidate_email: str,
 
 
 # ------------------------------------------------------------------ #
-#  GMAIL  (stub — Phase 4)                                             #
+#  EMAIL  (SMTP — reads SMTP_USER / SMTP_PASSWORD from env)            #
 # ------------------------------------------------------------------ #
 
-def send_email(to_email: str, subject: str, body: str) -> dict:
-    """STUB: replace body with Gmail API call."""
-    return {"sent": True, "to": to_email, "subject": subject}
+def _load_email_cfg() -> dict:
+    """
+    Load all email config from system_settings (DB first, env vars as fallback).
+    Returns a dict with keys: sendgrid_api_key, user, password, host, port,
+    from_name, base_url.
+    """
+    db: dict = {}
+    try:
+        from ..db import query as _q
+        rows = _q("SELECT key, value FROM system_settings")
+        db = {r["key"]: (r["value"] or "").strip() for r in (rows or [])}
+    except Exception as exc:
+        print(f"[email] WARNING: could not read system_settings: {exc}")
+
+    def _g(key, env_key, default=""):
+        return (db.get(key) or os.environ.get(env_key, default) or "").strip()
+
+    raw_pass = _g("smtp_password", "SMTP_PASSWORD")
+    return {
+        "sendgrid_api_key": _g("sendgrid_api_key", "SENDGRID_API_KEY"),
+        "user":      _g("smtp_user",      "SMTP_USER"),
+        "password":  raw_pass.replace(" ", ""),   # strip spaces from App Passwords
+        "host":      _g("smtp_host",      "SMTP_HOST",      "smtp.gmail.com"),
+        "port":      int(_g("smtp_port",  "SMTP_PORT",      "587") or "587"),
+        "from_name": _g("smtp_from_name", "SMTP_FROM_NAME", "Egnex Hiring"),
+        "base_url":  _g("app_base_url",   "APP_BASE_URL",   "http://localhost:8000"),
+    }
+
+# keep old name as alias so existing callers don't break
+_load_smtp_settings = _load_email_cfg
+
+
+def _send_via_sendgrid(api_key: str, from_email: str, from_name: str,
+                       to_email: str, subject: str, body: str, html: str = None):
+    """Send transactional email via SendGrid HTTP API."""
+    import requests as _req
+
+    payload = {
+        "personalizations": [{"to": [{"email": to_email}]}],
+        "from":     {"email": from_email, "name": from_name},
+        "reply_to": {"email": from_email, "name": from_name},
+        "subject":  subject,
+        "content":  [{"type": "text/plain", "value": body}],
+        # Mark as transactional — uses SendGrid's dedicated transactional IP pool
+        # which has much better inbox placement than the shared marketing pool
+        "categories": ["transactional", "interview_invite"],
+        # Disable click/open tracking — tracked links look like phishing to spam filters
+        "tracking_settings": {
+            "click_tracking":    {"enable": False},
+            "open_tracking":     {"enable": False},
+            "subscription_tracking": {"enable": False},
+        },
+        "mail_settings": {
+            "sandbox_mode": {"enable": False},
+        },
+    }
+    if html:
+        payload["content"].append({"type": "text/html", "value": html})
+
+    resp = _req.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        json=payload,
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=15,
+    )
+    if resp.status_code not in (200, 202):
+        raise RuntimeError(
+            f"SendGrid returned {resp.status_code}: {resp.text[:300]}"
+        )
+    print(f"[email] SendGrid sent TO: {to_email} | status: {resp.status_code}")
+
+
+def _send_smtp(cfg: dict, to_email: str, msg_obj) -> None:
+    """Inner SMTP send — tries TLS (587) first, then SSL (465) as fallback."""
+    import smtplib
+
+    host = cfg["host"]
+    port = cfg["port"]
+    user = cfg["user"]
+    pwd  = cfg["password"]
+    tls_err_msg = ""
+
+    # Primary: STARTTLS on port 587
+    try:
+        with smtplib.SMTP(host, port, timeout=8) as s:
+            s.ehlo(); s.starttls(); s.ehlo()
+            s.login(user, pwd)
+            s.sendmail(user, [to_email], msg_obj.as_string())
+        return
+    except smtplib.SMTPAuthenticationError:
+        raise
+    except Exception as exc:
+        tls_err_msg = str(exc)
+        print(f"[email] TLS port {port} failed ({exc}), trying SSL 465…")
+
+    # Fallback: SSL on port 465
+    try:
+        with smtplib.SMTP_SSL(host, 465, timeout=8) as s:
+            s.ehlo()
+            s.login(user, pwd)
+            s.sendmail(user, [to_email], msg_obj.as_string())
+    except Exception as ssl_err:
+        raise RuntimeError(
+            f"TLS port {port}: {tls_err_msg} | SSL port 465: {ssl_err}"
+        )
+
+
+def send_email(to_email: str, subject: str, body: str, html: str = None) -> dict:
+    """
+    Send email.  Priority:
+      1. SendGrid HTTP API  (set sendgrid_api_key in Settings — works on all networks)
+      2. Gmail / SMTP       (set smtp_user + smtp_password in Settings)
+      3. Stub               (logs to console only — neither is configured)
+    """
+    import smtplib
+
+    cfg = _load_email_cfg()
+
+    # ── 1. SendGrid ──────────────────────────────────────────────────────────
+    if cfg["sendgrid_api_key"]:
+        from_email = cfg["user"] or "noreply@egnex.io"
+        _send_via_sendgrid(
+            cfg["sendgrid_api_key"], from_email, cfg["from_name"],
+            to_email, subject, body, html,
+        )
+        return {"sent": True, "to": to_email, "via": "sendgrid"}
+
+    # ── 2. SMTP ───────────────────────────────────────────────────────────────
+    if cfg["user"] and cfg["password"]:
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = f"{cfg['from_name']} <{cfg['user']}>"
+        msg["To"]      = to_email
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        if html:
+            msg.attach(MIMEText(html, "html", "utf-8"))
+        try:
+            _send_smtp(cfg, to_email, msg)
+            print(f"[email] SMTP sent TO: {to_email}")
+            return {"sent": True, "to": to_email, "via": "smtp"}
+        except smtplib.SMTPAuthenticationError:
+            raise RuntimeError(
+                "Gmail rejected the App Password — check Settings."
+            )
+        except Exception as exc:
+            raise RuntimeError(str(exc)) from exc
+
+    # ── 3. Stub ───────────────────────────────────────────────────────────────
+    print(f"[email] Not configured — skipping send TO: {to_email} | {subject}")
+    return {"sent": False, "stub": True, "to": to_email}
 
 
 # ------------------------------------------------------------------ #

@@ -333,25 +333,124 @@ def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
     base_url = os.environ.get("APP_BASE_URL", "http://localhost:8000")
     invite_url = f"{base_url}/nexai-interview?token={token}"
 
-    send_email(
-        app_row["email"],
-        f"AI Screening Interview Invitation — {app_row['job_title']} | {app_row['company']}",
-        (
-            f"Hi {app_row['full_name']},\n\n"
-            f"You have been shortlisted for an AI screening interview for the position of "
-            f"{app_row['job_title']} at {app_row['company']}.\n\n"
-            f"Please click the link below to begin your interview at your convenience:\n\n"
-            f"  {invite_url}\n\n"
-            f"This link is valid for 7 days and can only be used once.\n\n"
-            f"Best regards,\nEgnex Hiring Team"
-        ),
+    name    = app_row["full_name"]
+    job     = app_row["job_title"]
+    company = app_row["company"]
+
+    plain = (
+        f"Hi {name},\n\n"
+        f"Congratulations! You have been shortlisted for an AI Screening Interview "
+        f"for the position of {job} at {company}.\n\n"
+        f"Please use the link below to attend your interview at your convenience:\n\n"
+        f"  {invite_url}\n\n"
+        f"The interview takes approximately 10-15 minutes. "
+        f"You will need a microphone and a quiet environment.\n\n"
+        f"Important:\n"
+        f"- This link is valid for 7 days\n"
+        f"- It can only be used once\n"
+        f"- NexAI never auto-rejects — all scores are reviewed by a human recruiter\n\n"
+        f"Best regards,\nEgnex Hiring Team | {company}"
     )
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f4f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f4f1;padding:32px 16px">
+  <tr><td align="center">
+  <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);max-width:600px;width:100%">
+
+    <!-- Header -->
+    <tr><td style="background:#1a1a1a;padding:22px 32px">
+      <span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px">Egnex</span>
+      <span style="font-size:24px;font-weight:800;color:#f15a22">.</span>
+      <span style="font-size:12px;color:#9b9893;margin-left:12px;vertical-align:middle">One Click Hire</span>
+    </td></tr>
+
+    <!-- Orange accent bar -->
+    <tr><td style="background:#f15a22;height:4px;font-size:0">&nbsp;</td></tr>
+
+    <!-- Body -->
+    <tr><td style="padding:36px 32px">
+      <p style="font-size:15px;color:#1a1a1a;margin:0 0 6px">Hi <strong>{name}</strong>,</p>
+      <p style="font-size:15px;color:#444444;line-height:1.6;margin:0 0 24px">
+        Congratulations! You have been shortlisted for an <strong>AI Screening Interview</strong>.
+        Please find the details below:
+      </p>
+
+      <!-- Job card -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#faf9f6;border:1px solid #e5e3de;border-radius:8px;margin-bottom:28px">
+        <tr><td style="padding:16px 20px">
+          <p style="font-size:18px;font-weight:700;color:#1a1a1a;margin:0 0 4px">{job}</p>
+          <p style="font-size:13px;color:#6b6760;margin:0">{company}</p>
+        </td></tr>
+      </table>
+
+      <!-- What to expect -->
+      <p style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#f15a22;margin:0 0 10px">What to expect</p>
+      <table cellpadding="0" cellspacing="0" style="margin-bottom:28px">
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🎤&nbsp; Up to 8 spoken questions about your experience &amp; skills</td></tr>
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">⏱&nbsp; Takes approximately <strong>10–15 minutes</strong></td></tr>
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🔇&nbsp; Find a quiet place with a working microphone</td></tr>
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">✅&nbsp; NexAI <strong>never auto-rejects</strong> — all scores reviewed by a human recruiter</td></tr>
+      </table>
+
+      <!-- CTA Button -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0">
+        <tr><td align="center">
+          <a href="{invite_url}"
+             style="display:inline-block;background:#f15a22;color:#ffffff;padding:16px 48px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:700;letter-spacing:.3px">
+            Start My AI Interview
+          </a>
+        </td></tr>
+        <tr><td align="center" style="padding-top:14px">
+          <span style="font-size:12px;color:#9b9893">Or paste this link in your browser:</span><br>
+          <a href="{invite_url}" style="font-size:12px;color:#f15a22;word-break:break-all">{invite_url}</a>
+        </td></tr>
+      </table>
+
+      <hr style="border:none;border-top:1px solid #e5e3de;margin:28px 0">
+
+      <!-- Notice -->
+      <table cellpadding="0" cellspacing="0">
+        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">⏳&nbsp; This link is valid for <strong>7 days</strong> and can only be used <strong>once</strong>.</td></tr>
+        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">📧&nbsp; Reply to this email if you have any questions.</td></tr>
+      </table>
+    </td></tr>
+
+    <!-- Footer -->
+    <tr><td style="background:#f5f4f1;padding:16px 32px;text-align:center;border-top:1px solid #e5e3de">
+      <p style="font-size:11px;color:#9b9893;margin:0">
+        Powered by <strong>Egnex One Click Hire</strong> &nbsp;·&nbsp; {company}<br>
+        This is an automated message — please do not reply directly to this address.
+      </p>
+    </td></tr>
+
+  </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+    try:
+        send_email(
+            app_row["email"],
+            f"AI Interview Invitation: {job} — {company}",
+            plain,
+            html=html,
+        )
+        email_sent = True
+    except Exception as exc:
+        # Don't block the invite — link is still usable even if email fails
+        print(f"[nexai-invite] Email delivery failed: {exc}")
+        email_sent = False
 
     return {
         "invite_url": invite_url,
         "sent_to": app_row["email"],
-        "candidate_name": app_row["full_name"],
-        "job_title": app_row["job_title"],
+        "email_sent": email_sent,
+        "candidate_name": name,
+        "job_title": job,
     }
 
 

@@ -568,6 +568,7 @@ const NAV_DEF = {
     {id:'bot_health', icon:'🤖', label:'Bot Health'},
     {id:'database',   icon:'📁', label:'CV Database'},
     {id:'sys_logs',   icon:'📋', label:'System Logs'},
+    {id:'settings',   icon:'⚙️', label:'Settings'},
   ],
   ta_manager: [
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
@@ -577,6 +578,7 @@ const NAV_DEF = {
     {id:'database',           icon:'📁', label:'CV Database'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
+    {id:'settings',           icon:'⚙️', label:'Settings'},
   ],
   recruiter: [
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
@@ -649,6 +651,8 @@ const SCREENS = {
   raise_ticket: screenRaiseTicket,
   // nexai sessions drill-down (accessible via dashboard links only)
   nexai_sessions: screenNexAISessions,
+  // settings (admin + ta_manager)
+  settings: screenSettings,
 };
 
 function navigate(id, param) {
@@ -2061,6 +2065,137 @@ async function screenTeam(){
     </div>`;
 }
 
+// ── SCREEN: Settings (TA Manager / Admin) ────────────────────────────────────
+async function screenSettings(){
+  setTitle('Settings');
+  const cfg=await api('/api/admin/settings');
+  if(!cfg){showErr('Could not load settings.');return;}
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>Settings</h1></div>
+
+    <!-- Email / SMTP -->
+    <div class="card" style="max-width:580px;margin-bottom:20px">
+      <div class="card-title" style="margin-bottom:4px">Email Configuration</div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:16px">Used for AI interview invites. Configure either SendGrid <strong>or</strong> Gmail SMTP.</p>
+
+      <!-- SendGrid (Recommended) -->
+      <div style="background:#f0faf5;border:1px solid #b7e4cd;border-radius:8px;padding:14px 16px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:700;color:#1d6e56">SendGrid</span>
+          <span style="font-size:10px;background:#1d6e56;color:#fff;padding:1px 7px;border-radius:10px;font-weight:600">RECOMMENDED</span>
+          <span style="font-size:11px;color:var(--muted)">Works on all networks · Free 100 emails/day</span>
+        </div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label>SendGrid API key</label>
+          <input id="cfg-sg-key" type="password" value="${cfg.sendgrid_api_key&&cfg.sendgrid_api_key!=='••••••••'?cfg.sendgrid_api_key:''}" placeholder="${cfg.sendgrid_api_key?'SG.•••••••• (saved — leave blank to keep)':'SG.xxxxxxxxxx...'}">
+          ${cfg.sendgrid_api_key?'<span style="font-size:11px;color:#1d6e56">API key saved.</span>':'<span style="font-size:11px;color:var(--muted)">Get free key at <strong>app.sendgrid.com</strong> → Settings → API Keys → Create.</span>'}
+        </div>
+      </div>
+
+      <!-- Display name + From address (shared) -->
+      <div class="form-row" style="margin-bottom:4px">
+        <div class="form-group">
+          <label>From email address</label>
+          <input id="cfg-smtp-user" value="${cfg.smtp_user||''}" placeholder="bhaumik2@amnex.com">
+        </div>
+        <div class="form-group">
+          <label>Display name</label>
+          <input id="cfg-smtp-name" value="${cfg.smtp_from_name||'Egnex Hiring'}" placeholder="Egnex Hiring">
+        </div>
+      </div>
+
+      <!-- Gmail SMTP (Alternative) -->
+      <details style="margin-bottom:12px">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer;padding:6px 0">Gmail SMTP (alternative — may be blocked on corporate networks)</summary>
+        <div style="padding:12px 0 0">
+          <div class="form-group">
+            <label>${cfg.smtp_password_set?'App password (blank = keep current)':'App password'}</label>
+            <input id="cfg-smtp-pass" type="password" placeholder="${cfg.smtp_password_set?'(saved)':'Paste 16-char Gmail App Password'}">
+            <span style="font-size:11px;color:var(--muted)">Google Account → Security → App passwords (2-Step must be ON)</span>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>SMTP host</label><input id="cfg-smtp-host" value="${cfg.smtp_host||'smtp.gmail.com'}"></div>
+            <div class="form-group"><label>SMTP port</label><input id="cfg-smtp-port" type="number" value="${cfg.smtp_port||'587'}"></div>
+          </div>
+        </div>
+      </details>
+
+      <div class="form-group" style="margin-bottom:12px">
+        <label>App base URL</label>
+        <input id="cfg-base-url" value="${cfg.app_base_url||'http://localhost:8000'}" placeholder="https://egnex.yourcompany.com">
+        <span style="font-size:11px;color:var(--muted)">Used in interview invite links sent to candidates.</span>
+      </div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
+        <button class="btn btn-ghost" onclick="testEmail()" id="test-email-btn">Send test email</button>
+        <span id="settings-msg" style="font-size:13px;flex:1"></span>
+      </div>
+    </div>
+
+    <!-- SendGrid setup guide if not configured -->
+    ${!cfg.sendgrid_api_key?`
+    <div class="card" style="max-width:580px;background:#f0faf5;border:1px solid #b7e4cd">
+      <div class="card-title" style="margin-bottom:10px;color:#1d6e56">How to set up SendGrid (free, 5 minutes)</div>
+      <ol style="font-size:13px;color:#444;line-height:2.2;padding-left:20px">
+        <li>Go to <strong><a href="https://sendgrid.com" target="_blank" style="color:var(--accent)">sendgrid.com</a></strong> → Sign up for free</li>
+        <li>Complete email verification (they'll ask you to verify your sender)</li>
+        <li>Go to <strong>Settings → API Keys → Create API Key</strong></li>
+        <li>Name: <strong>Egnex</strong> · Access: <strong>Full Access</strong> → Create</li>
+        <li>Copy the key (starts with <code>SG.</code>)</li>
+        <li>Paste into the <strong>SendGrid API key</strong> field above → Save settings → Send test email</li>
+      </ol>
+    </div>`:''}`;
+}
+
+async function saveSettings(){
+  const msg=document.getElementById('settings-msg');
+  msg.textContent='Saving…';msg.style.color='var(--muted)';
+  const body={
+    smtp_user:      document.getElementById('cfg-smtp-user').value.trim(),
+    smtp_from_name: document.getElementById('cfg-smtp-name').value.trim(),
+    smtp_host:      (document.getElementById('cfg-smtp-host')||{value:''}).value.trim(),
+    smtp_port:      (document.getElementById('cfg-smtp-port')||{value:''}).value.trim(),
+    app_base_url:   document.getElementById('cfg-base-url').value.trim(),
+  };
+  const sgKey=document.getElementById('cfg-sg-key').value.trim();
+  if(sgKey) body.sendgrid_api_key=sgKey;
+  const pass=(document.getElementById('cfg-smtp-pass')||{value:''}).value;
+  if(pass) body.smtp_password=pass;
+  const res=await api('/api/admin/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(res?.ok){
+    msg.textContent='Saved successfully.';msg.style.color='#1d6e56';
+    document.getElementById('test-email-btn').disabled=false;
+    setTimeout(()=>{msg.textContent='';},3000);
+  } else {
+    msg.textContent='Save failed.';msg.style.color='#c0392b';
+  }
+}
+
+async function testEmail(){
+  const btn=document.getElementById('test-email-btn');
+  const msgEl=document.getElementById('settings-msg');
+  btn.disabled=true;btn.textContent='Sending…';
+  msgEl.textContent='';
+  let raw,res;
+  try{
+    raw=await fetch('/api/admin/settings/test-email',{method:'POST',headers:{Authorization:`Bearer ${_tok}`}});
+    res=await raw.json();
+  }catch(e){
+    msgEl.innerHTML='<span style="color:#c0392b">Network error — is the server running?</span>';
+    btn.disabled=false;btn.textContent='Send test email';return;
+  }
+  if(raw.ok&&res.ok){
+    msgEl.innerHTML=`<span style="color:#1d6e56">✓ Test email sent to <strong>${res.sent_to}</strong> via ${res.method}. Check your inbox (and Promotions/Spam tabs).</span>`;
+  } else {
+    // Show the full SMTP error with line breaks
+    const detail=(res?.detail||'Test failed').replace(/\n/g,'<br>');
+    msgEl.innerHTML=`<span style="color:#c0392b">⚠ ${detail}</span>`;
+  }
+  btn.disabled=false;btn.textContent='Send test email';
+}
+
 // ── SCREEN: TA Manager Reports ────────────────────────────────────────────────
 let _period='yearly', _year=new Date().getFullYear();
 
@@ -2272,11 +2407,16 @@ async function confirmSendInvite(){
   }
 
   if(raw.ok && res.invite_url){
-    resEl.style.background='#f0faf5';resEl.style.border='1px solid #b7e4cd';
+    const emailOk = res.email_sent !== false;
+    resEl.style.background = emailOk ? '#f0faf5' : '#fffbf0';
+    resEl.style.border      = emailOk ? '1px solid #b7e4cd' : '1px solid #f5d87a';
     resEl.innerHTML=`
-      <strong style="color:#1d6e56">✓ Invite sent to ${res.sent_to}</strong><br>
-      <span style="color:var(--muted);font-size:12px;display:block;margin-top:6px">Share this link if email is not yet configured:</span>
-      <a href="${res.invite_url}" target="_blank" style="color:var(--accent);word-break:break-all;font-size:12px">${res.invite_url}</a>`;
+      <strong style="color:${emailOk?'#1d6e56':'#92670a'}">${emailOk?'✓ Email sent to':'⚠ Email not sent —'} ${res.sent_to}</strong>
+      ${!emailOk?'<br><span style="font-size:12px;color:var(--muted)">SMTP not configured yet (see setup below). Share the link manually:</span>':''}
+      <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,.03);border-radius:4px">
+        <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Interview link — copy &amp; share with candidate:</span>
+        <a href="${res.invite_url}" target="_blank" style="color:var(--accent);word-break:break-all;font-size:12px">${res.invite_url}</a>
+      </div>`;
     document.getElementById('inv-btns').innerHTML='<button class="btn btn-ghost" onclick="closeInviteModal()">Close</button>';
   } else {
     // Show the actual server error detail

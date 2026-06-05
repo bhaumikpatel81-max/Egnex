@@ -63,6 +63,13 @@ def _auto_migrate():
         # CTC split columns (added 2026-06)
         "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS budgeted_fixed    NUMERIC",
         "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS budgeted_variable NUMERIC",
+        # System settings — admin-configurable key/value store (added 2026-06)
+        """CREATE TABLE IF NOT EXISTS system_settings (
+            key        TEXT PRIMARY KEY,
+            value      TEXT NOT NULL DEFAULT '',
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by UUID REFERENCES app_user(id)
+        )""",
     ]
     for sql in migrations:
         try:
