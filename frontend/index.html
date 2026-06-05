@@ -2578,10 +2578,14 @@ async function confirmSendInvite(){
     const emailOk = res.email_sent !== false;
     resEl.style.background = emailOk ? '#f0faf5' : '#fffbf0';
     resEl.style.border      = emailOk ? '1px solid #b7e4cd' : '1px solid #f5d87a';
+    const emailErrDetail = res.email_error
+      ? `<br><span style="font-size:11px;color:#c0392b">Error: ${res.email_error}</span>
+         <br><span style="font-size:11px;color:var(--muted)">Go to <strong>Settings → Send test email</strong> to diagnose.</span>`
+      : `<br><span style="font-size:11px;color:var(--muted)">Email not configured — go to <strong>⚙️ Settings</strong> to set up SendGrid.</span>`;
     resEl.innerHTML=`
       <strong style="color:${emailOk?'#1d6e56':'#92670a'}">${emailOk?'✓ Email sent to':'⚠ Email not sent —'} ${res.sent_to}</strong>
-      ${!emailOk?'<br><span style="font-size:12px;color:var(--muted)">SMTP not configured yet (see setup below). Share the link manually:</span>':''}
-      <div style="margin-top:8px;padding:8px;background:rgba(0,0,0,.03);border-radius:4px">
+      ${!emailOk ? emailErrDetail : ''}
+      <div style="margin-top:10px;padding:8px;background:rgba(0,0,0,.03);border-radius:4px">
         <span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Interview link — copy &amp; share with candidate:</span>
         <a href="${res.invite_url}" target="_blank" style="color:var(--accent);word-break:break-all;font-size:12px">${res.invite_url}</a>
       </div>`;

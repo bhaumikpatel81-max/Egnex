@@ -398,7 +398,11 @@ def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
         fetch=False,
     )
 
-    base_url = os.environ.get("APP_BASE_URL", "http://localhost:8000")
+    # Read base_url from DB Settings (Admin → Settings → App Base URL)
+    # Falls back to env var, then to localhost:8080 default
+    from ..services.connectors import _load_email_cfg
+    base_url = (_load_email_cfg().get("base_url") or
+                os.environ.get("APP_BASE_URL", "http://localhost:8080")).rstrip("/")
     invite_url = f"{base_url}/nexai-interview?token={token}"
 
     name    = app_row["full_name"]
@@ -508,15 +512,17 @@ def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
             html=html,
         )
         email_sent = True
+        email_error = None
     except Exception as exc:
-        # Don't block the invite — link is still usable even if email fails
-        print(f"[nexai-invite] Email delivery failed: {exc}")
         email_sent = False
+        email_error = str(exc)
+        print(f"[nexai-invite] Email delivery failed: {exc}")
 
     return {
         "invite_url": invite_url,
         "sent_to": app_row["email"],
         "email_sent": email_sent,
+        "email_error": email_error if not email_sent else None,
         "candidate_name": name,
         "job_title": job,
     }
