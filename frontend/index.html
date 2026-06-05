@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#0c0d10">
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -124,6 +128,123 @@ tr:hover td{background:#faf8f5}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
 .badge-green{background:#dff0eb;color:var(--green)}.badge-orange{background:#fdeedd;color:var(--gold)}.badge-red{background:#fde8e4;color:#8b2a1a}
 @media(max-width:768px){.form-row,.two-col,.chart-grid,.stat-row{grid-template-columns:1fr}}
+
+/* ── Cross-browser base ──────────────────────────────────────────────────────*/
+*{-webkit-tap-highlight-color:transparent}
+a,button,[role="button"]{touch-action:manipulation}
+select{background-image:none}
+
+/* ── iOS height fix ──────────────────────────────────────────────────────────*/
+@supports(height:100dvh){body{height:100dvh}}
+@supports(-webkit-touch-callout:none){
+  body{height:-webkit-fill-available}
+  #sidebar{min-height:-webkit-fill-available}
+}
+
+/* ── Mobile nav button (hidden on desktop) ───────────────────────────────────*/
+#menu-btn{display:none;background:none;border:none;cursor:pointer;padding:6px 8px;color:var(--text);font-size:22px;line-height:1;flex-shrink:0;touch-action:manipulation;-webkit-appearance:none}
+#sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:299}
+
+/* ── Tablet (769–1024px) ─────────────────────────────────────────────────────*/
+@media(min-width:769px) and (max-width:1024px){
+  #sidebar{width:170px;min-width:170px}
+  .nav-item{padding:10px 14px;font-size:12px}
+  #content{padding:20px 22px}
+  .stat-row{grid-template-columns:repeat(3,1fr)}
+  .stage-card .n{font-size:22px}
+}
+
+/* ── Mobile (≤768px) ─────────────────────────────────────────────────────────*/
+@media(max-width:768px){
+  body{height:auto;min-height:100vh;overflow-x:hidden;overflow-y:auto;display:block}
+
+  /* Sidebar → fixed slide-in drawer */
+  #sidebar{
+    position:fixed;top:0;left:0;bottom:0;height:100%;
+    width:240px;min-width:240px;z-index:300;
+    transform:translateX(-100%);
+    transition:transform .25s cubic-bezier(.4,0,.2,1);
+    will-change:transform;overflow-y:auto
+  }
+  #sidebar.mob-open{transform:translateX(0)}
+  #sidebar-overlay.mob-open{display:block}
+  #menu-btn{display:flex;align-items:center;justify-content:center}
+
+  /* Main column takes full width */
+  #main{width:100%;overflow:visible;min-height:100vh}
+  #content{overflow-y:visible;padding:12px 14px;padding-bottom:env(safe-area-inset-bottom,12px)}
+
+  /* Topbar */
+  #topbar{padding:0 10px 0 6px;gap:8px}
+  #topbar .screen-title{font-size:14px}
+  #gcal-indicator{display:none} /* hide GCal indicator on mobile */
+  .user-chip .uname{display:none} /* hide name, keep avatar only */
+
+  /* Stage grid: horizontal pill scroll */
+  .stage-grid{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:8px;scrollbar-width:none;gap:6px;margin-right:-14px;padding-right:14px}
+  .stage-grid::-webkit-scrollbar{display:none}
+  .stage-card{min-width:80px;flex-shrink:0}
+  .stage-card .n{font-size:22px}
+
+  /* Stat grid: 2 cols on mobile */
+  .stat-row{grid-template-columns:repeat(2,1fr)}
+
+  /* All 2-col grids stack */
+  .form-row,.two-col,.chart-grid{grid-template-columns:1fr}
+
+  /* Tables: scrollable inside their cards */
+  .card{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{min-width:480px}
+
+  /* Page header */
+  .page-header{flex-direction:column;align-items:flex-start;gap:8px;margin-bottom:16px}
+  .page-header h1{font-size:18px}
+
+  /* Modals: bottom sheet */
+  .modal-bg.open{align-items:flex-end;padding:0}
+  .modal{max-width:100%;width:100%;border-radius:12px 12px 0 0;max-height:88vh;margin:0;padding:20px 18px}
+  .modal-btns{flex-direction:column-reverse;gap:8px}
+  .modal-btns button{width:100%;justify-content:center}
+
+  /* Touch-friendly targets */
+  .nav-item{padding:13px 20px;min-height:48px}
+  .btn{min-height:40px}
+  .btn-sm{padding:7px 12px;min-height:34px}
+
+  /* Period bar wrap */
+  .period-bar{flex-wrap:wrap;gap:6px}
+  .period-btn{font-size:11px;padding:5px 10px}
+
+  /* Filter banner stacks */
+  .filter-banner{flex-direction:column;align-items:flex-start;gap:8px;padding:10px 12px}
+
+  /* Kanban */
+  .kanban{-webkit-overflow-scrolling:touch}
+  .kb-col{min-width:160px}
+
+  /* Inline buttons wrap */
+  .inline-btns{flex-wrap:wrap}
+
+  /* Chart wraps shrink gracefully */
+  .chart-wrap{height:200px!important}
+
+  /* Tabs wrap */
+  .tabs{flex-wrap:wrap}
+}
+
+/* ── iOS: prevent input zoom (font-size must be ≥16px) ──────────────────────*/
+@media screen and (-webkit-min-device-pixel-ratio:0) and (max-width:768px){
+  input[type="text"],input[type="email"],input[type="password"],
+  input[type="number"],input[type="tel"],input[type="search"],
+  input[type="url"],select,textarea{font-size:16px!important}
+}
+
+/* ── Very small phones (≤400px) ──────────────────────────────────────────────*/
+@media(max-width:400px){
+  #content{padding:10px}
+  .stage-card{min-width:70px}
+  .stat-box .sv{font-size:22px}
+}
 /* NexAI */
 .nexai-orb-wrap{display:flex;flex-direction:column;align-items:center;margin:8px 0 4px}
 #nexai-orb{display:block;border-radius:50%;background:transparent}
@@ -202,6 +323,7 @@ tr:hover td{background:#faf8f5}
   </div>
 </div>
 
+<div id="sidebar-overlay" aria-hidden="true"></div>
 <div id="sidebar">
   <div class="logo-area"><img src="/assets/egnex-logo.png" alt="Egnex"></div>
   <nav id="sidenav"></nav>
@@ -209,6 +331,7 @@ tr:hover td{background:#faf8f5}
 
 <div id="main">
   <div id="topbar">
+    <button id="menu-btn" aria-label="Open navigation menu" aria-expanded="false">&#9776;</button>
     <div class="screen-title" id="topbar-title">Dashboard</div>
     <div id="gcal-indicator"><span class="gcal-dot" id="gcal-dot"></span><span id="gcal-text">Calendar</span></div>
     <div class="user-chip">
@@ -228,20 +351,27 @@ tr:hover td{background:#faf8f5}
       <div class="form-group"><label>Fiscal year</label><input id="rf-fy" placeholder="FY25-26"></div>
     </div>
     <div class="form-row">
+      <div class="form-group"><label>Group company</label><select id="rf-gc" onchange="_filterBU()"></select></div>
       <div class="form-group"><label>Business unit</label><select id="rf-bu"></select></div>
+    </div>
+    <div class="form-row">
       <div class="form-group"><label>Band</label><select id="rf-band"></select></div>
-    </div>
-    <div class="form-row">
       <div class="form-group"><label>Roll type</label><select id="rf-roll"><option value="on_roll">On-roll</option><option value="off_roll">Off-roll</option></select></div>
-      <div class="form-group"><label>Openings</label><input id="rf-openings" type="number" value="1" min="1"></div>
     </div>
     <div class="form-row">
+      <div class="form-group"><label>Openings</label><input id="rf-openings" type="number" value="1" min="1"></div>
       <div class="form-group"><label>Min experience (yrs)</label><input id="rf-exp" type="number" placeholder="3"></div>
-      <div class="form-group"><label>Budgeted CTC (₹)</label><input id="rf-ctc" type="number" placeholder="1800000"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Budgeted Fixed CTC (₹)</label><input id="rf-ctc-fixed" type="number" placeholder="1800000" oninput="_calcCTC()"></div>
+      <div class="form-group"><label>Budgeted Variable CTC (₹)</label><input id="rf-ctc-variable" type="number" placeholder="200000" oninput="_calcCTC()"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Budgeted Total CTC (₹)</label><input id="rf-ctc-total" type="number" placeholder="0" readonly style="background:var(--bg-alt,#f5f5f5);color:var(--muted);cursor:not-allowed"></div>
+      <div class="form-group"><label>Risk</label><select id="rf-risk"><option value="">None</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Hiring location</label><input id="rf-loc" placeholder="Ahmedabad"></div>
-      <div class="form-group"><label>Risk</label><select id="rf-risk"><option value="">None</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></div>
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:4px">
       <input id="rf-p1" type="checkbox" style="width:auto">
@@ -278,7 +408,11 @@ tr:hover td{background:#faf8f5}
       <div class="tab active" id="am-tab-file" onclick="setApplyMode('file')">Upload resume</div>
       <div class="tab" id="am-tab-text" onclick="setApplyMode('text')">Paste text</div>
     </div>
-    <div id="am-file-area" class="form-group"><label>Resume (PDF or Word)</label><input id="am-file" type="file" accept=".pdf,.docx,.doc" style="padding:6px;cursor:pointer"></div>
+    <div id="am-file-area" class="form-group">
+      <label>Resume (PDF or Word)</label>
+      <input id="am-file" type="file" accept=".pdf,.docx,.doc" style="padding:6px;cursor:pointer" onchange="_autoFillFromResume(this)">
+      <span id="am-parse-status" style="font-size:11px;color:var(--muted);margin-top:3px;display:none"></span>
+    </div>
     <div id="am-text-area" class="form-group" style="display:none"><label>Resume text</label><textarea id="am-text" rows="4" placeholder="Python, PostgreSQL…"></textarea></div>
     <div id="am-result" style="display:none;margin-top:12px;padding:14px;background:#faf9f6;border-radius:4px;border:1px solid var(--border)"></div>
     <div class="modal-btns">
@@ -298,6 +432,20 @@ tr:hover td{background:#faf8f5}
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="document.getElementById('chpw-modal').classList.remove('open')">Cancel</button>
       <button class="btn btn-primary" onclick="doChpw()">Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Assign Recruiter Modal ── -->
+<div class="modal-bg" id="assign-modal" onclick="if(event.target===this)closeAssignModal()">
+  <div class="modal" style="max-width:400px">
+    <h2>Assign Recruiter</h2>
+    <p id="assign-req-title" style="font-size:13px;color:var(--muted);margin-bottom:12px"></p>
+    <div id="assign-current" style="margin-bottom:12px"></div>
+    <div class="form-group"><label>Add recruiter</label><select id="assign-recruiter-sel"></select></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeAssignModal()">Close</button>
+      <button class="btn btn-primary" onclick="submitAssign()">Assign</button>
     </div>
   </div>
 </div>
@@ -398,7 +546,7 @@ const NAV_DEF = {
     {id:'tickets',    icon:'🎫', label:'Support Tickets'},
     {id:'users',      icon:'👥', label:'Users & Access'},
     {id:'bot_health', icon:'🤖', label:'Bot Health'},
-    {id:'database',   icon:'🗄️', label:'Database'},
+    {id:'database',   icon:'📁', label:'CV Database'},
     {id:'sys_logs',   icon:'📋', label:'System Logs'},
   ],
   ta_manager: [
@@ -406,6 +554,7 @@ const NAV_DEF = {
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
     {id:'team',               icon:'👥', label:'Team'},
     {id:'reports',            icon:'📊', label:'Reports & Analytics'},
+    {id:'database',           icon:'📁', label:'CV Database'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
@@ -414,6 +563,7 @@ const NAV_DEF = {
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
     {id:'candidates',         icon:'👤', label:'Candidates'},
     {id:'interviews',         icon:'📅', label:'Interviews'},
+    {id:'database',           icon:'📁', label:'CV Database'},
     {id:'my_reports',         icon:'📊', label:'My Reports'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
@@ -477,6 +627,8 @@ const SCREENS = {
   proctoring_review: screenProctoringReview,
   // tickets (all non-admin)
   raise_ticket: screenRaiseTicket,
+  // nexai sessions drill-down (accessible via dashboard links only)
+  nexai_sessions: screenNexAISessions,
 };
 
 function navigate(id, param) {
@@ -510,6 +662,14 @@ function goFiltered(screenId, status, label, recruiterId, hmId) {
   if (recruiterId) _navFilter.recruiter_id = recruiterId;
   if (hmId)        _navFilter.hm_id        = hmId;
   navigate(screenId);
+}
+// NexAI drill-down: status='completed'|'pending'|'failed'|null, scoreMin/Max optional
+function goNexAI(label, nexaiStatus, scoreMin, scoreMax) {
+  _navFilter = { label: label||'AI Sessions' };
+  if (nexaiStatus) _navFilter.nexai_status = nexaiStatus;
+  if (scoreMin != null) _navFilter.score_min = scoreMin;
+  if (scoreMax != null) _navFilter.score_max = scoreMax;
+  navigate('nexai_sessions');
 }
 
 function runRoute(id, param) {
@@ -666,6 +826,222 @@ function _reqRows(reqs) {
     <td>${r.in_pipeline}</td><td>${r.levels}</td></tr>`).join('');
 }
 
+// ── NexAI shared helpers ──────────────────────────────────────────────────
+const _NX_BUCKETS = ['0-19','20-39','40-59','60-79','80-100'];
+const _NX_BUCKET_COLORS = ['#c0392b','#e67e22','#f39c12','#27ae60','#1d6e56'];
+
+function _scoreColor(score) {
+  if (score == null) return 'var(--muted)';
+  if (score >= 80) return '#1d6e56';
+  if (score >= 60) return '#27ae60';
+  if (score >= 40) return '#e67e22';
+  return '#c0392b';
+}
+function _scorePill(score) {
+  if (score == null) return '<span style="color:var(--muted)">—</span>';
+  const c = _scoreColor(score);
+  const label = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Average' : 'Low';
+  return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:${c}20;color:${c}">${Math.round(score)} <span style="font-weight:400">${label}</span></span>`;
+}
+
+// Returns the HTML string for a full NexAI section
+function _nexAIHtml(prefix, nx, dist, recent, byRec) {
+  nx = nx || {};
+  const total     = parseInt(nx.total||0);
+  const completed = parseInt(nx.completed||0);
+  const failed    = parseInt(nx.failed||0);
+  const pending   = parseInt(nx.pending||0);
+  const avgScore  = nx.avg_score     != null ? parseFloat(nx.avg_score).toFixed(1) : '—';
+  const highScore = parseInt(nx.high_scorers||0);
+  const passRate  = nx.pass_rate     != null ? parseFloat(nx.pass_rate).toFixed(0)+'%' : '—';
+
+  // Score dist map
+  const distMap = {};
+  (dist||[]).forEach(r => { distMap[r.bucket] = parseInt(r.n||0); });
+  const distVals = _NX_BUCKETS.map(b => distMap[b]||0);
+
+  // Funnel: started → completed → passed (≥50) → high (≥70)
+  const passed = (dist||[]).filter(r=>r.bucket==='60-79'||r.bucket==='80-100').reduce((s,r)=>s+parseInt(r.n||0),0)
+               + (dist||[]).filter(r=>r.bucket==='40-59').reduce((s,r)=>s+parseInt(r.n||0),0);
+  // Actually pass = score≥50 = 60-79 + 80-100 + half of 40-59 roughly... let's use high_scorers from api
+  // Simpler: use completed, high_scorers, and compute passed from score_dist (60-79 + 80-100)
+  const passedCnt = (distMap['60-79']||0) + (distMap['80-100']||0);
+  const nxFunnelVals  = [total, completed, passedCnt, highScore];
+  const nxFunnelLabels= ['Started','Completed','Score ≥ 60','Score ≥ 70'];
+
+  // Recent sessions table
+  const recentRows = (recent||[]).map(r=>`<tr>
+    <td>${r.candidate_name}</td>
+    <td style="font-size:12px;color:var(--muted)">${r.req_title}</td>
+    <td>${_scorePill(r.raw_score)}</td>
+    <td><span class="pill ${r.status}">${r.status}</span></td>
+    <td style="font-size:11px;color:var(--muted)">${r.created_at?new Date(r.created_at).toLocaleDateString('en-IN'):''}</td>
+  </tr>`).join('');
+
+  // TA Manager: by-recruiter breakdown table
+  const byRecRows = (byRec||[]).map(r=>`<tr>
+    <td>${r.recruiter_name}</td>
+    <td>${r.total||0}</td>
+    <td>${r.completed||0}</td>
+    <td>${r.avg_score!=null?`<span style="font-weight:600;color:${_scoreColor(r.avg_score)}">${parseFloat(r.avg_score).toFixed(1)}</span>`:'—'}</td>
+    <td>${r.high_scorers||0}</td>
+  </tr>`).join('');
+
+  return `
+    <div style="display:flex;align-items:center;gap:12px;margin:8px 0 16px">
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+      <span style="font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap">NexAI Screening</span>
+      <div style="flex:1;height:1px;background:var(--border)"></div>
+    </div>
+
+    <div class="stage-grid" style="margin-bottom:20px">
+      <div class="stage-card dash-link" onclick="goNexAI('All AI Sessions',null,null,null)" title="View all AI sessions">
+        <div class="n" style="color:var(--accent)">${total}</div><div class="lbl">AI Sessions Started</div></div>
+      <div class="stage-card dash-link" onclick="goNexAI('Completed Sessions','completed',null,null)" title="View completed sessions">
+        <div class="n" style="color:#1d6e56">${completed}</div><div class="lbl">Completed</div></div>
+      <div class="stage-card" title="Average score — click High Scorers to drill down">
+        <div class="n" style="color:${avgScore!=='—'?_scoreColor(parseFloat(avgScore)):'var(--text)'}">${avgScore}</div><div class="lbl">Avg AI Score</div></div>
+      <div class="stage-card dash-link" onclick="goNexAI('High Scorers ≥70','completed',70,null)" title="View candidates who scored ≥70">
+        <div class="n" style="color:#1d6e56">${highScore}</div><div class="lbl">High Scorers ≥70</div></div>
+      <div class="stage-card dash-link" onclick="goNexAI('Passed (Score ≥50)','completed',50,null)" title="View candidates who passed (score ≥50)">
+        <div class="n">${passRate}</div><div class="lbl">Pass Rate ≥50</div></div>
+    </div>
+
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Score Distribution</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Completed sessions by score band</p>
+        ${completed>0
+          ? '<div class="chart-wrap" style="height:180px"><canvas id="nx-score-dist"></canvas></div>'
+          : '<p class="empty">No completed sessions yet.</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">Session Status</div>
+        ${total>0
+          ? '<div class="chart-wrap" style="height:180px"><canvas id="nx-status-donut"></canvas></div>'
+          : '<p class="empty">No AI sessions yet.</p>'}
+      </div>
+    </div>
+
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">NexAI Quality Funnel</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Candidates progressing through AI quality gates</p>
+        <div class="chart-wrap" style="height:160px"><canvas id="nx-funnel"></canvas></div>
+      </div>
+      <div class="card">
+        ${byRec
+          ? `<div class="card-title">NexAI by Recruiter</div>
+             ${byRecRows
+               ? `<table><thead><tr><th>Recruiter</th><th>Sessions</th><th>Done</th><th>Avg Score</th><th>High (≥70)</th></tr></thead><tbody>${byRecRows}</tbody></table>`
+               : '<p class="empty">No sessions yet.</p>'}`
+          : `<div class="card-title">${prefix} Recent AI Sessions</div>
+             ${recentRows
+               ? `<table><thead><tr><th>Candidate</th><th>Position</th><th>Score</th><th>Status</th><th>Date</th></tr></thead><tbody>${recentRows}</tbody></table>`
+               : '<p class="empty">No AI sessions yet for your candidates.</p>'}`}
+      </div>
+    </div>
+
+    ${byRec && recentRows ? `
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-title">Recent AI Sessions</div>
+      <table><thead><tr><th>Candidate</th><th>Position</th><th>Score</th><th>Status</th><th>Date</th></tr></thead><tbody>${recentRows}</tbody></table>
+    </div>` : ''}`;
+}
+
+// Render NexAI charts — must be called after innerHTML is set
+function _renderNexAICharts(nx, dist, recent, byRec) {
+  nx = nx || {};
+  const total     = parseInt(nx.total||0);
+  const completed = parseInt(nx.completed||0);
+  const failed    = parseInt(nx.failed||0);
+  const pending   = parseInt(nx.pending||0);
+  const highScore = parseInt(nx.high_scorers||0);
+
+  const distMap = {};
+  (dist||[]).forEach(r => { distMap[r.bucket] = parseInt(r.n||0); });
+  const distVals = _NX_BUCKETS.map(b => distMap[b]||0);
+
+  const passedCnt = (distMap['60-79']||0) + (distMap['80-100']||0);
+  const nxFunnelVals   = [total, completed, passedCnt, highScore];
+  const nxFunnelLabels = ['Started','Completed','Score ≥ 60','Score ≥ 70'];
+
+  // Score bucket → [min, max] for drill-down
+  const _BUCKET_RANGES = [[0,19],[20,39],[40,59],[60,79],[80,100]];
+
+  if (completed > 0) {
+    const sdEl = document.getElementById('nx-score-dist');
+    if (sdEl) sdEl.style.cursor = 'pointer';
+    mkChart('nx-score-dist',{
+      type:'bar',
+      data:{
+        labels: _NX_BUCKETS,
+        datasets:[{label:'Candidates',data:distVals,backgroundColor:_NX_BUCKET_COLORS,borderRadius:4}]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{title:()=>'Click to view these candidates'}}},
+        scales:{y:{beginAtZero:true,ticks:{stepSize:1}},x:{ticks:{font:{size:11}}}},
+        onClick:function(ev,els){
+          if(!els.length) return;
+          const i=els[0].index;
+          const [mn,mx]=_BUCKET_RANGES[i];
+          goNexAI('Score '+_NX_BUCKETS[i],'completed',mn,mx);
+        }
+      }
+    });
+  }
+
+  if (total > 0) {
+    const sdEl = document.getElementById('nx-status-donut');
+    if (sdEl) sdEl.style.cursor = 'pointer';
+    mkChart('nx-status-donut',{
+      type:'doughnut',
+      data:{
+        labels:['Completed','Pending / In Progress','Failed'],
+        datasets:[{data:[completed,pending,failed],backgroundColor:['#1d6e56','#f15a22','#c0392b'],borderWidth:0}]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom'},tooltip:{callbacks:{title:()=>'Click to drill down'}}},
+        onClick:function(ev,els){
+          if(!els.length) return;
+          const sm=['completed','pending','failed'];
+          const lm=['Completed Sessions','Pending / In Progress','Failed Sessions'];
+          goNexAI(lm[els[0].index],sm[els[0].index],null,null);
+        }
+      }
+    });
+  }
+
+  // NexAI quality funnel — always render, always clickable
+  const fEl = document.getElementById('nx-funnel');
+  if (fEl) fEl.style.cursor = 'pointer';
+  mkChart('nx-funnel',{
+    type:'bar',
+    data:{
+      labels:nxFunnelLabels,
+      datasets:[{label:'Candidates',data:nxFunnelVals,backgroundColor:['#2563eb','#f15a22','#27ae60','#1d6e56'],borderRadius:4}]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{title:()=>'Click to drill down'}}},
+      scales:{y:{beginAtZero:true,ticks:{stepSize:1}},x:{ticks:{font:{size:11}}}},
+      onClick:function(ev,els){
+        if(!els.length) return;
+        const fMap=[
+          [null,  null, null, 'All AI Sessions'],
+          ['completed', null, null, 'Completed Sessions'],
+          ['completed', 60,   null, 'Score ≥ 60'],
+          ['completed', 70,   null, 'Score ≥ 70'],
+        ];
+        const [st,mn,mx,lbl]=fMap[els[0].index]||fMap[0];
+        goNexAI(lbl, st, mn, mx);
+      }
+    }
+  });
+}
+
 // ── Recruiter Dashboard ────────────────────────────────────────────────────
 async function _dashRecruiter() {
   setTitle('My Dashboard');
@@ -674,6 +1050,8 @@ async function _dashRecruiter() {
   const {labels,vals,rates,colors} = _pipeData(d);
   const {tot,fn,mn,un,fp,mp,up} = _genderVars(d.gender_split||[]);
   const rr = _reqRows(d.recent_reqs);
+  const nx = d.nexai_summary||{};
+
   document.getElementById('content').innerHTML=`
     <div class="stage-grid">${_stageGrid(d,'My')}</div>
     <div class="two-col" style="margin-bottom:20px">
@@ -694,10 +1072,13 @@ async function _dashRecruiter() {
         <p style="font-size:11px;color:var(--muted);margin-bottom:6px">% of my applications reaching each stage</p>
         <div class="chart-wrap" style="height:230px"><canvas id="dash-cohort"></canvas></div>
       </div>
-    </div>`;
+    </div>
+    ${_nexAIHtml('My', nx, d.nexai_score_dist, d.nexai_recent, null)}`;
+
   _mkFunnel('dash-funnel',labels,vals,colors,true);
   _mkCohort('dash-cohort',labels,rates,true);
   _mkDiversityDonut('dash-div-donut',fn,mn,un);
+  _renderNexAICharts(nx, d.nexai_score_dist, d.nexai_recent, null);
 }
 
 // ── TA Manager Dashboard ───────────────────────────────────────────────────
@@ -770,7 +1151,8 @@ async function _dashTAManager() {
         <button class="btn btn-ghost" onclick="navigate('reports')">View Full Reports →</button>
         <button class="btn btn-ghost" onclick="navigate('requisitions')">All Requisitions →</button>
       </div>
-    </div>`;
+    </div>
+    ${_nexAIHtml('Team', d.nexai_summary, d.nexai_score_dist, d.nexai_recent, d.nexai_by_recruiter)}`;
 
   _mkFunnel('dash-funnel',labels,vals,colors,true);
   _mkCohort('dash-cohort',labels,rates,true);
@@ -778,6 +1160,7 @@ async function _dashTAManager() {
   if (recLoad.length) {
     mkChart('dash-rec-bar',{type:'bar',data:{labels:recLoad.map(r=>r.full_name),datasets:[{label:'Open Reqs',data:recLoad.map(r=>r.open_reqs||0),backgroundColor:'#f15a22',borderRadius:3},{label:'Applications',data:recLoad.map(r=>r.total_applications||0),backgroundColor:'#2563eb',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{ticks:{font:{size:11}}}}}});
   }
+  _renderNexAICharts(d.nexai_summary, d.nexai_score_dist, d.nexai_recent, d.nexai_by_recruiter);
 }
 
 // ── Hiring Manager Dashboard ───────────────────────────────────────────────
@@ -791,80 +1174,202 @@ async function _dashHiringManager() {
   const totalApps = parseInt(d.apps_received||0);
   const reviewed  = Math.max(0, totalApps - pending);
 
-  // HM-focused stage cards (each wired to its module)
-  const hmStages = [
-    {k:'open_reqs',     label:'My Positions',   nav:"goFiltered('requisitions','open','Open Positions')"},
-    {k:'apps_received', label:'Total Applicants',nav:"goFiltered('candidates','all','All Applicants')"},
-    {k:'panel_interview',label:'In Interview',   nav:"goFiltered('candidates','interviewing','In Interview')"},
-    {k:'selected',      label:'Selected',        nav:"goFiltered('candidates','selected','Selected')"},
-    {k:'offer_stage',   label:'Offer Stage',     nav:"goFiltered('candidates','offer_stage','Offer Stage')"},
-    {k:'joined',        label:'Joined',cls:'joined',nav:"goFiltered('candidates','joined','Joined')"},
-  ];
-  const stHtml = hmStages.map(s=>`<div class="stage-card dash-link ${s.cls||''}" onclick="${s.nav}" title="Click to drill down"><div class="n">${d[s.k]??0}</div><div class="lbl">${s.label}</div></div>`).join('')+
-    `<div class="stage-card dash-link" onclick="navigate('interviews')" title="View interviews"><div class="n">${conducted}</div><div class="lbl">Interviews Conducted</div></div>`+
-    `<div class="stage-card dash-link" onclick="navigate('profiles')" title="Review pending profiles"><div class="n">${pending}</div><div class="lbl">Pending Reviews</div></div>`;
+  const nx   = d.nexai_summary || {};
+  const avgMin  = d.avg_interview_min  ? Math.round(d.avg_interview_min)  : null;
+  const totHrs  = d.total_interview_hrs || 0;
 
-  // Profiles list
+  // ── Stage cards — NO Selected / Offer Stage / Joined ──────────────────────
+  const stHtml =
+    `<div class="stage-card dash-link" onclick="goFiltered('requisitions','open','Open Positions')" title="My open positions"><div class="n">${d.open_reqs??0}</div><div class="lbl">My Positions</div></div>`+
+    `<div class="stage-card dash-link" onclick="goFiltered('candidates','all','All Applicants')" title="All applicants"><div class="n">${d.apps_received??0}</div><div class="lbl">Total Applicants</div></div>`+
+    `<div class="stage-card dash-link" onclick="goFiltered('candidates','screening','Under Screening')" title="Under AI/manual screening"><div class="n">${d.under_screening??0}</div><div class="lbl">Under Screening</div></div>`+
+    `<div class="stage-card dash-link" onclick="goFiltered('candidates','screen_passed','AI Screened')" title="Cleared AI screening"><div class="n">${nx.completed??0}</div><div class="lbl">AI Screened</div></div>`+
+    `<div class="stage-card dash-link" onclick="goFiltered('candidates','interviewing','In Panel Interview')" title="In panel interview"><div class="n">${d.panel_interview??0}</div><div class="lbl">In Panel Interview</div></div>`+
+    `<div class="stage-card dash-link" onclick="navigate('interviews')" title="Interviews conducted"><div class="n">${conducted}</div><div class="lbl">Interviews Conducted</div></div>`+
+    `<div class="stage-card" title="Avg time per interview">`+
+      `<div class="n" style="font-size:20px">${avgMin!=null?avgMin+'<span style="font-size:12px;color:var(--muted)">m</span>':'—'}</div>`+
+      `<div class="lbl">Avg Interview Time</div></div>`+
+    `<div class="stage-card dash-link" onclick="navigate('profiles')" title="Pending profile reviews" style="${pending>0?'border-color:var(--accent)':''}">`+
+      `<div class="n" style="${pending>0?'color:var(--accent)':''}">${pending}</div>`+
+      `<div class="lbl">Pending Reviews</div></div>`;
+
+  // ── NexAI summary values ───────────────────────────────────────────────────
+  const nxAvgScore   = nx.avg_score    != null ? parseFloat(nx.avg_score).toFixed(1)    : '—';
+  const nxAvgMin     = nx.avg_session_min != null ? parseFloat(nx.avg_session_min).toFixed(0)+'m' : '—';
+  const nxTotal      = parseInt(nx.total||0);
+  const nxCompleted  = parseInt(nx.completed||0);
+  const nxFailed     = parseInt(nx.failed||0);
+  const nxPending    = parseInt(nx.pending||0);
+
+  // ── HM-specific funnel: Applied → Screening → AI Interview → Panel only ───
+  const hmFunnelLabels = ['Applications','Under Screening','AI Screened','Panel Interview'];
+  const hmFunnelVals   = [
+    parseInt(d.apps_received||0),
+    parseInt(d.under_screening||0),
+    nxCompleted,
+    parseInt(d.panel_interview||0),
+  ];
+  const hmFunnelColors = ['#2563eb','#f15a22','#f15a22','#f15a22'];
+  const hmFunnelBase   = hmFunnelVals[0]||1;
+  const hmFunnelRates  = hmFunnelVals.map(v=>Math.round(v/hmFunnelBase*100));
+
+  // ── Skills summary ─────────────────────────────────────────────────────────
+  const skills = d.skills_summary||[];
+
+  // ── Profiles list ──────────────────────────────────────────────────────────
   const profileRows = (d.profiles_to_review||[]).map(p=>`
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
-      <span><strong>${p.full_name}</strong> — <em>${p.req_title}</em></span>
+      <span><strong>${p.full_name}</strong> — <em>${p.req_title}</em>
+        ${p.combined_score!=null?`<span style="margin-left:8px;font-weight:600;color:var(--accent)">${Math.round(p.combined_score)}</span>`:''}
+      </span>
       <button class="btn btn-primary btn-sm" onclick="navigate('profiles')">Review</button>
     </div>`).join('');
 
-  // Recent interviews
+  // ── Recent interviews ──────────────────────────────────────────────────────
   const intRows = (d.my_interviews||[]).map(i=>`<tr>
     <td>${i.candidate_name}</td>
-    <td>${i.req_title}</td>
+    <td style="font-size:12px;color:var(--muted)">${i.req_title}</td>
     <td>${i.round_name||'—'}</td>
-    <td>${i.scheduled_at?new Date(i.scheduled_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td>
+    <td style="font-size:12px">${i.duration_min ? i.duration_min+'m' : '—'}</td>
+    <td style="font-size:11px">${i.scheduled_at?new Date(i.scheduled_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td>
     <td><span class="pill ${i.status}">${i.status}</span></td>
   </tr>`).join('');
 
-  // Feedback outcomes data
+  // ── Feedback outcomes ──────────────────────────────────────────────────────
   const outcomes = d.feedback_outcomes||[];
-  const outcomeLabels = outcomes.map(o=>o.outcome);
-  const outcomeVals   = outcomes.map(o=>parseInt(o.n||0));
-  const outcomeTot    = outcomeVals.reduce((a,b)=>a+b,0);
+  const outLbls = outcomes.map(o=>o.outcome);
+  const outVals = outcomes.map(o=>parseInt(o.n||0));
+  const outTot  = outVals.reduce((a,b)=>a+b,0);
   const OC = ['#1d6e56','#f15a22','#2563eb','#6b6760','#c0392b'];
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   document.getElementById('content').innerHTML=`
     <div class="stage-grid">${stHtml}</div>
+
     <div class="two-col" style="margin-bottom:20px">
       <div class="card">
-        <div class="card-title">Profiles Awaiting Your Review</div>
-        ${pending
-          ? `<div class="chart-wrap" style="height:160px"><canvas id="dash-hm-donut"></canvas></div>
-             <p style="text-align:center;font-size:13px;margin-top:8px"><strong style="color:var(--accent)">${pending}</strong> pending &middot; ${reviewed} reviewed</p>
-             <div style="margin-top:10px">${profileRows}</div>`
-          : '<p class="empty">No profiles pending review.</p>'}
+        <div class="card-title">NexAI Screening Summary</div>
+        <div class="stage-grid" style="margin:8px 0 12px">
+          <div class="stage-card dash-link" onclick="goNexAI('All AI Sessions',null,null,null)" title="View all AI sessions"><div class="n" style="color:var(--accent)">${nxTotal}</div><div class="lbl">Total sessions</div></div>
+          <div class="stage-card dash-link" onclick="goNexAI('Completed Sessions','completed',null,null)" title="View completed sessions"><div class="n" style="color:#1d6e56">${nxCompleted}</div><div class="lbl">Completed</div></div>
+          <div class="stage-card" title="Avg AI score — click High Scorers to drill down"><div class="n" style="color:${nxAvgScore!=='—'?_scoreColor(parseFloat(nxAvgScore)):'var(--text)'}">${nxAvgScore}</div><div class="lbl">Avg AI score</div></div>
+          <div class="stage-card" title="Avg time per AI session"><div class="n">${nxAvgMin}</div><div class="lbl">Avg session time</div></div>
+        </div>
+        ${nxTotal>0
+          ? '<div class="chart-wrap" style="height:150px"><canvas id="dash-nexai-donut"></canvas></div>'
+          : '<p class="empty" style="margin-top:8px">No NexAI sessions yet for your positions.</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">Interview Time</div>
+        <div class="stage-grid" style="margin:8px 0 12px">
+          <div class="stage-card dash-link" onclick="navigate('interviews')" title="View interviews"><div class="n">${conducted}</div><div class="lbl">Total interviews</div></div>
+          <div class="stage-card"><div class="n">${avgMin!=null?avgMin+'m':'—'}</div><div class="lbl">Avg duration</div></div>
+          <div class="stage-card"><div class="n">${totHrs}</div><div class="lbl">Total hrs spent</div></div>
+        </div>
+        <div class="card-title" style="margin-top:12px">Recent Interviews</div>
+        ${intRows
+          ? `<div style="overflow-x:auto"><table style="font-size:12px"><thead><tr><th>Candidate</th><th>Position</th><th>Round</th><th>Duration</th><th>Scheduled</th><th>Status</th></tr></thead><tbody>${intRows}</tbody></table></div>`
+          : '<p class="empty">No interviews yet.</p>'}
+      </div>
+    </div>
+
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Interview Funnel</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Applied → Screened → AI Interview → Panel (post-panel actions managed by recruiter)</p>
+        <div class="chart-wrap" style="height:180px"><canvas id="dash-hm-funnel"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Interview Cohort</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">% of applicants reaching each interview stage</p>
+        <div class="chart-wrap" style="height:180px"><canvas id="dash-hm-cohort"></canvas></div>
+      </div>
+    </div>
+
+    <div class="two-col" style="margin-bottom:20px">
+      <div class="card">
+        <div class="card-title">Skills Being Interviewed</div>
+        ${skills.length
+          ? '<div class="chart-wrap" style="height:220px"><canvas id="dash-hm-skills"></canvas></div>'
+          : '<p class="empty">No key skills set on your requisitions yet.</p>'}
       </div>
       <div class="card">
         <div class="card-title">My Interview Feedback Outcomes</div>
-        ${outcomeTot>0
-          ? '<div class="chart-wrap" style="height:200px"><canvas id="dash-hm-outcomes"></canvas></div>'
+        ${outTot>0
+          ? '<div class="chart-wrap" style="height:180px"><canvas id="dash-hm-outcomes"></canvas></div>'
           : '<p class="empty">No feedback recorded yet.</p>'}
       </div>
     </div>
-    <div class="two-col" style="margin-bottom:20px">
-      <div class="card">
-        <div class="card-title">My Pipeline Funnel</div>
-        <p style="font-size:11px;color:var(--muted);margin-bottom:6px">Candidates in my positions</p>
-        <div class="chart-wrap" style="height:220px"><canvas id="dash-hm-pipeline"></canvas></div>
-      </div>
-      <div class="card">
-        <div class="card-title">Recent Interviews</div>
-        ${intRows?`<table><thead><tr><th>Candidate</th><th>Position</th><th>Round</th><th>Scheduled</th><th>Status</th></tr></thead><tbody>${intRows}</tbody></table>`:'<p class="empty">No interviews yet.</p>'}
-      </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <div class="card-title">Profiles Awaiting Your Review</div>
+      ${pending
+        ? `<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+             <div style="width:160px;flex-shrink:0"><canvas id="dash-hm-donut"></canvas></div>
+             <div style="flex:1">
+               <p style="font-size:13px;margin-bottom:10px"><strong style="color:var(--accent)">${pending}</strong> pending &nbsp;·&nbsp; ${reviewed} reviewed</p>
+               ${profileRows}
+             </div>
+           </div>`
+        : '<p class="empty">No profiles pending review.</p>'}
     </div>`;
 
+  // ── Charts ─────────────────────────────────────────────────────────────────
+
+  // NexAI status donut
+  if (nxTotal > 0) {
+    mkChart('dash-nexai-donut',{type:'doughnut',
+      data:{labels:['Completed','Pending / In Progress','Failed'],
+        datasets:[{data:[nxCompleted,nxPending,nxFailed],backgroundColor:['#1d6e56','#f15a22','#c0392b'],borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  }
+
+  // HM funnel (4 stages, click to drill down)
+  mkChart('dash-hm-funnel',{type:'bar',
+    data:{labels:hmFunnelLabels,datasets:[{label:'Candidates',data:hmFunnelVals,backgroundColor:hmFunnelColors,borderRadius:3}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{title:()=>'Click to drill down'}}},
+      scales:{x:{beginAtZero:true,ticks:{stepSize:1}},y:{ticks:{font:{size:11}}}},
+      onClick:function(event,elements){
+        if(!elements.length)return;
+        const map=['all','screening','screen_passed','interviewing'];
+        const lbl=['All Applicants','Under Screening','AI Screened','Panel Interview'];
+        const i=elements[0].index;
+        goFiltered('candidates',map[i],lbl[i]);
+      }
+    }
+  });
+  document.getElementById('dash-hm-funnel').style.cursor='pointer';
+
+  // HM cohort (4 stages)
+  mkChart('dash-hm-cohort',{type:'line',
+    data:{labels:hmFunnelLabels,datasets:[{label:'Conversion %',data:hmFunnelRates,fill:true,tension:0.35,borderColor:'#f15a22',backgroundColor:'rgba(241,90,34,0.08)',pointBackgroundColor:'#f15a22',pointRadius:4,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+'% of applicants'}}},
+      scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}},x:{ticks:{font:{size:10}}}}}
+  });
+
+  // Skills bar chart
+  if (skills.length) {
+    mkChart('dash-hm-skills',{type:'bar',
+      data:{labels:skills.map(s=>s.skill),datasets:[{label:'Positions requiring this skill',data:skills.map(s=>parseInt(s.n||0)),backgroundColor:'#2563eb',borderRadius:3}]},
+      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}},y:{ticks:{font:{size:11}}}}}
+    });
+  }
+
+  // Feedback outcomes donut
+  if (outTot > 0) {
+    mkChart('dash-hm-outcomes',{type:'doughnut',
+      data:{labels:outLbls,datasets:[{data:outVals,backgroundColor:OC,borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+  }
+
+  // Pending review donut
   if (pending) {
-    mkChart('dash-hm-donut',{type:'doughnut',data:{labels:['Reviewed','Pending'],datasets:[{data:[reviewed,pending],backgroundColor:['#1d6e56','#f15a22'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+    mkChart('dash-hm-donut',{type:'doughnut',
+      data:{labels:['Reviewed','Pending'],datasets:[{data:[reviewed,pending],backgroundColor:['#1d6e56','#f15a22'],borderWidth:0}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
-  if (outcomeTot>0) {
-    mkChart('dash-hm-outcomes',{type:'doughnut',data:{labels:outcomeLabels,datasets:[{data:outcomeVals,backgroundColor:OC,borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
-  }
-  const {labels,vals,colors} = _pipeData(d);
-  _mkFunnel('dash-hm-pipeline',labels,vals,colors,true);
 }
 
 // ── SCREEN: Requisitions ──────────────────────────────────────────────────────
@@ -981,12 +1486,20 @@ async function screenKanban(reqId) {
       </div>`;
   }).join('');
 
+  const canAssign = ME.role === 'ta_manager' || ME.role === 'admin';
+  const assignedRecs = await api(`/api/requisitions/${reqId}/recruiters`);
+  const assignedHtml = (assignedRecs||[]).length
+    ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Assigned: ${(assignedRecs||[]).map(r=>`<strong>${r.full_name}</strong>`).join(', ')}</div>`
+    : '';
+
   document.getElementById('content').innerHTML = `
     <div class="page-header">
       <h1>${det?.title||'Requisition'}</h1>
       <button class="btn btn-ghost btn-sm" onclick="navigate('requisitions')">← All requisitions</button>
+      ${canAssign?`<button class="btn btn-ghost btn-sm" onclick="openAssignModal('${reqId}','${(det?.title||'').replace(/'/g,"\\'")}')">Assign recruiter</button>`:''}
       ${canApply?`<button class="btn btn-primary" onclick="openApplyModal('${reqId}')">+ Submit application</button>`:''}
     </div>
+    ${assignedHtml}
     <div class="kanban">${colsHtml}</div>`;
 }
 
@@ -1196,11 +1709,13 @@ async function screenBotHealth(){
     <td>${s.completed_at?new Date(s.completed_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td></tr>`).join('');
   document.getElementById('content').innerHTML=`
     <div class="page-header"><h1>NexAI Bot Health</h1><span class="badge badge-green">Active</span></div>
-    <div class="stat-row">
-      <div class="stat-box"><div class="sv">${d.total_sessions}</div><div class="sl">Total sessions</div></div>
-      <div class="stat-box"><div class="sv">${d.completed_sessions}</div><div class="sl">Completed</div></div>
-      <div class="stat-box"><div class="sv">${d.avg_score??'—'}</div><div class="sl">Avg score</div></div>
-      <div class="stat-box"><div class="sv">${d.sessions_today}</div><div class="sl">Today</div></div>
+    <div class="stage-grid" style="margin-bottom:20px">
+      <div class="stage-card dash-link" onclick="goNexAI('All AI Sessions',null,null,null)" title="View all sessions"><div class="n" style="color:var(--accent)">${d.total_sessions}</div><div class="lbl">Total sessions</div></div>
+      <div class="stage-card dash-link" onclick="goNexAI('Completed Sessions','completed',null,null)" title="View completed sessions"><div class="n" style="color:#1d6e56">${d.completed_sessions}</div><div class="lbl">Completed</div></div>
+      <div class="stage-card" title="Average score across completed sessions"><div class="n" style="color:${d.avg_score!=null?_scoreColor(d.avg_score):'var(--text)'}">${d.avg_score??'—'}</div><div class="lbl">Avg score</div></div>
+      <div class="stage-card dash-link" onclick="goNexAI('Failed Sessions','failed',null,null)" title="View failed sessions"><div class="n" style="color:#c0392b">${d.failed_sessions}</div><div class="lbl">Failed</div></div>
+      <div class="stage-card dash-link" onclick="goNexAI('In Progress','pending',null,null)" title="View in-progress sessions"><div class="n" style="color:var(--gold)">${d.in_progress}</div><div class="lbl">In Progress</div></div>
+      <div class="stage-card dash-link" onclick="goNexAI('Sessions Today',null,null,null)" title="View today\'s sessions"><div class="n">${d.sessions_today}</div><div class="lbl">Today</div></div>
     </div>
     <div class="card">
       <div class="card-title">Model info</div>
@@ -1219,18 +1734,226 @@ async function screenBotHealth(){
 }
 
 // ── SCREEN: Admin — Database ──────────────────────────────────────────────────
-async function screenDatabase(){
-  setTitle('Database');
-  const d=await api('/api/admin/db-stats');
-  if(!d){showErr('Could not load DB stats.');return;}
-  document.getElementById('content').innerHTML=`
-    <div class="page-header"><h1>Database</h1></div>
-    <div class="card">
-      <div class="card-title">Table row counts</div>
-      <table><thead><tr><th>Table</th><th>Rows</th></tr></thead>
-      <tbody>${Object.entries(d).map(([t,n])=>`<tr><td><code>${t}</code></td><td>${n.toLocaleString()}</td></tr>`).join('')}</tbody>
-      </table>
+// ── SCREEN: CV / Candidate Database (Admin, TA Manager, Recruiter) ────────────
+let _cvAllRows = [];
+
+function _cvScopeLabel() {
+  if (ME.role === 'recruiter')  return 'My candidates only';
+  if (ME.role === 'ta_manager') return 'All team candidates';
+  return 'All candidates';
+}
+
+async function screenDatabase() {
+  setTitle('CV Database');
+  const d = await api('/api/cv-database');
+  if (!d) { showErr('Could not load CV database.'); return; }
+
+  _cvAllRows = d.candidates || [];
+  const s = d.summary || {};
+
+  const summaryCards = `
+    <div class="stage-grid" style="margin-bottom:20px">
+      <div class="stage-card"><div class="n">${s.total_candidates??0}</div><div class="lbl">Total Candidates</div></div>
+      <div class="stage-card"><div class="n">${s.total_applications??0}</div><div class="lbl">Applications</div></div>
+      <div class="stage-card"><div class="n" style="color:#1d6e56">${s.resumes_on_file??0}</div><div class="lbl">Resumes on File</div></div>
+      <div class="stage-card"><div class="n" style="color:${s.avg_score!=null?_scoreColor(parseFloat(s.avg_score)):'var(--text)'}">${s.avg_score??'—'}</div><div class="lbl">Avg Score</div></div>
+      <div class="stage-card joined"><div class="n">${s.total_joined??0}</div><div class="lbl">Joined</div></div>
     </div>`;
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header">
+      <div>
+        <h1>CV Database</h1>
+        <p style="font-size:12px;color:var(--muted);margin-top:3px">${_cvScopeLabel()}</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="cv-search" placeholder="Search name, email or position…"
+          style="padding:8px 12px;border:1px solid var(--border);border-radius:4px;font-size:13px;width:220px"
+          oninput="filterCVTable(this.value)" autocomplete="off">
+        <select id="cv-status-filter" onchange="filterCVTable(document.getElementById('cv-search').value)"
+          style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+          <option value="">All statuses</option>
+          <option value="applied">Applied</option>
+          <option value="screening">Screening</option>
+          <option value="screen_passed">Screening Cleared</option>
+          <option value="interviewing">Interviewing</option>
+          <option value="selected">Selected</option>
+          <option value="offer_stage">Offer Stage</option>
+          <option value="joined">Joined</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <button class="btn btn-ghost" onclick="downloadCVCsv()" title="Download filtered list as CSV">⬇ CSV</button>
+        <button class="btn btn-green" onclick="downloadCVExcel()" title="Download filtered list as Excel">⬇ Excel</button>
+      </div>
+    </div>
+    ${summaryCards}
+    <div class="card" style="padding:0;overflow:hidden">
+      <div id="cv-table-wrap"></div>
+    </div>`;
+
+  renderCVTable(_cvAllRows);
+}
+
+function filterCVTable(q) {
+  const status = document.getElementById('cv-status-filter')?.value || '';
+  q = (q || '').toLowerCase();
+  let rows = _cvAllRows;
+  if (q) rows = rows.filter(r =>
+    (r.full_name||'').toLowerCase().includes(q) ||
+    (r.email||'').toLowerCase().includes(q) ||
+    (r.latest_position||'').toLowerCase().includes(q)
+  );
+  if (status) rows = rows.filter(r => r.latest_status === status);
+  renderCVTable(rows);
+}
+
+function renderCVTable(rows) {
+  const tRows = rows.map(r => {
+    const score = r.best_score != null ? Math.round(r.best_score) : null;
+    const aiScore = r.ai_score != null ? Math.round(r.ai_score) : null;
+    const matchScore = r.match_score != null ? Math.round(r.match_score) : null;
+    const scoreHtml = score != null
+      ? `<span style="font-weight:700;color:${_scoreColor(score)}">${score}</span>`
+      : '—';
+    const aiHtml = aiScore != null
+      ? `<span style="font-size:11px;color:${_scoreColor(aiScore)}">${aiScore}</span>`
+      : '—';
+    const ext = r.resume_url ? (r.resume_url.split('.').pop()||'').toLowerCase() : '';
+    const resumeHtml = r.resume_url ? `
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:center">
+        ${ext==='pdf' ? `<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 9px"
+            onclick="viewResume('${r.resume_url.replace(/'/g,"\\'")}')">👁 View PDF</button>` : ''}
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 9px"
+          onclick="dlResume('${r.resume_url.replace(/'/g,"\\'")}','${r.full_name.replace(/'/g,"\\'")}')">⬇ ${ext.toUpperCase()||'File'}</button>
+      </div>` : '<span style="color:var(--muted);font-size:12px">—</span>';
+    const statusHtml = r.latest_status
+      ? `<span class="pill ${r.latest_status}">${r.latest_status.replace(/_/g,' ')}</span>`
+      : '<span style="color:var(--muted);font-size:12px">—</span>';
+    const regDate = r.registered_at
+      ? new Date(r.registered_at).toLocaleDateString('en-IN',{dateStyle:'medium'})
+      : '—';
+    const genderIcon = r.gender === 'female' ? '♀' : r.gender === 'male' ? '♂' : '○';
+
+    return `<tr>
+      <td>
+        <div style="font-weight:600;font-size:13px">${r.full_name}</div>
+        <div style="font-size:11px;color:var(--muted)">${r.email}</div>
+      </td>
+      <td style="font-size:12px;color:var(--muted)">${genderIcon} ${r.gender||'—'}</td>
+      <td style="font-size:12px">${r.latest_position||'—'}</td>
+      <td>${statusHtml}</td>
+      <td style="text-align:center">${scoreHtml}
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">Match: ${matchScore??'—'} · AI: ${aiHtml}</div>
+      </td>
+      <td style="text-align:center">${r.total_applications}</td>
+      <td style="text-align:center">${resumeHtml}</td>
+      <td style="font-size:11px;color:var(--muted)">${regDate}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('cv-table-wrap').innerHTML = rows.length
+    ? `<table>
+         <thead><tr>
+           <th>Candidate</th><th>Gender</th><th>Latest Position</th><th>Status</th>
+           <th style="text-align:center">Score</th>
+           <th style="text-align:center">Applications</th>
+           <th style="text-align:center">Resume</th>
+           <th>Registered</th>
+         </tr></thead>
+         <tbody>${tRows}</tbody>
+       </table>`
+    : '<p class="empty">No candidates match your search.</p>';
+}
+
+// ── Resume view / download (authenticated) ───────────────────────────────────
+function _resumeFilename(resumeUrl) {
+  if (!resumeUrl) return null;
+  // resume_url is stored as a filesystem path; grab just the filename
+  return resumeUrl.split(/[/\\]/).pop();
+}
+
+async function viewResume(resumeUrl) {
+  const fname = _resumeFilename(resumeUrl);
+  if (!fname) return;
+  const token = localStorage.getItem('egnex_token');
+  try {
+    const res = await fetch(`/api/resume/${encodeURIComponent(fname)}`, {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!res.ok) { flash('Could not load resume — ' + res.status, false); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch(e) { flash('Resume error: ' + e.message, false); }
+}
+
+async function dlResume(resumeUrl, candidateName) {
+  const fname = _resumeFilename(resumeUrl);
+  if (!fname) return;
+  const ext = fname.split('.').pop().toLowerCase();
+  const safeName = (candidateName || 'Resume').replace(/[^a-zA-Z0-9 _-]/g,'').trim();
+  await downloadAuth(`/api/resume/${encodeURIComponent(fname)}`, `${safeName}.${ext}`);
+}
+
+// ── CV Database downloads ─────────────────────────────────────────────────────
+function _cvFilteredRows() {
+  const q = (document.getElementById('cv-search')?.value || '').toLowerCase();
+  const st = document.getElementById('cv-status-filter')?.value || '';
+  let rows = _cvAllRows;
+  if (q)  rows = rows.filter(r => (r.full_name||'').toLowerCase().includes(q) || (r.email||'').toLowerCase().includes(q) || (r.latest_position||'').toLowerCase().includes(q));
+  if (st) rows = rows.filter(r => r.latest_status === st);
+  return rows;
+}
+
+function downloadCVCsv() {
+  const rows = _cvFilteredRows();
+  const headers = ['Name','Email','Gender','Source','Latest Position','Status','Best Score','AI Score','Match Score','Applications','Registered','Resume URL'];
+  const escape = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const lines = [
+    headers.join(','),
+    ...rows.map(r => [
+      r.full_name, r.email, r.gender||'', r.source||'',
+      r.latest_position||'', r.latest_status||'',
+      r.best_score!=null?Math.round(r.best_score):'',
+      r.ai_score!=null?Math.round(r.ai_score):'',
+      r.match_score!=null?Math.round(r.match_score):'',
+      r.total_applications||0,
+      r.registered_at?new Date(r.registered_at).toLocaleDateString('en-IN'):'',
+      r.resume_url||''
+    ].map(escape).join(','))
+  ];
+  const blob = new Blob([lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `egnex_cv_database_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+function downloadCVExcel() {
+  // Build an HTML table and use the Excel mime type — opens in Excel without a backend
+  const rows = _cvFilteredRows();
+  const headers = ['Name','Email','Gender','Source','Latest Position','Status','Best Score','AI Score','Match Score','Applications','Registered','Resume URL'];
+  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const tHead = '<tr>' + headers.map(h=>`<th style="background:#0c0d10;color:#fff;font-weight:bold">${h}</th>`).join('') + '</tr>';
+  const tBody = rows.map(r=>'<tr>'+[
+    r.full_name, r.email, r.gender||'—', r.source||'—',
+    r.latest_position||'—', r.latest_status||'—',
+    r.best_score!=null?Math.round(r.best_score):'—',
+    r.ai_score!=null?Math.round(r.ai_score):'—',
+    r.match_score!=null?Math.round(r.match_score):'—',
+    r.total_applications||0,
+    r.registered_at?new Date(r.registered_at).toLocaleDateString('en-IN'):'—',
+    r.resume_url||'—'
+  ].map(v=>`<td>${esc(v)}</td>`).join('')+'</tr>').join('');
+  const html = `<html><head><meta charset="utf-8"></head><body><table border="1">${tHead}${tBody}</table></body></html>`;
+  const blob = new Blob([html], {type:'application/vnd.ms-excel;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `egnex_cv_database_${new Date().toISOString().slice(0,10)}.xls`;
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
 // ── SCREEN: Admin — System Logs ───────────────────────────────────────────────
@@ -1255,20 +1978,29 @@ async function screenSysLogs(){
 // ── SCREEN: Team (TA Manager view) ────────────────────────────────────────────
 async function screenTeam(){
   setTitle('Team');
-  const users=await api('/api/admin/users');
-  if(!users){showErr('Could not load team.');return;}
-  const recruiters=users.filter(u=>['recruiter','ta_manager','hiring_manager'].includes(u.role)&&u.is_active);
-  const rows=recruiters.map(u=>`
-    <tr><td>${u.full_name}</td>
-    <td style="font-size:12px">${u.email}</td>
-    <td><span class="pill ${u.role==='recruiter'?'open':'interviewing'}">${u.role.replace(/_/g,' ')}</span></td>
-    <td><span class="pill open">Active</span></td></tr>`).join('');
+  const team=await api('/api/team');
+  if(!team){showErr('Could not load team.');return;}
+  const rows=team.map(u=>{
+    const reqs=(u.assigned_requisitions||[]);
+    const reqBadges=reqs.length
+      ? reqs.map(r=>`<span class="pill open" style="font-size:10px;padding:1px 7px;cursor:pointer" onclick="navigate('kanban','${r.req_id}')">${r.title}</span>`).join(' ')
+      : '<span style="font-size:12px;color:var(--muted)">—</span>';
+    return `<tr>
+      <td><strong>${u.full_name}</strong></td>
+      <td style="font-size:12px">${u.email}</td>
+      <td><span class="pill ${u.role==='recruiter'?'open':'interviewing'}">${u.role.replace(/_/g,' ')}</span></td>
+      <td style="text-align:center">${u.active_req_count||0}</td>
+      <td style="max-width:280px">${reqBadges}</td>
+    </tr>`;
+  }).join('');
   document.getElementById('content').innerHTML=`
     <div class="page-header"><h1>Team</h1>
       <button class="btn btn-ghost btn-sm" onclick="screenUsers()">Manage users →</button>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${rows?`<table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="empty">No team members.</p>'}
+      ${rows
+        ?`<table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active Reqs</th><th>Assigned Requisitions</th></tr></thead><tbody>${rows}</tbody></table>`
+        :'<p class="empty">No team members.</p>'}
     </div>`;
 }
 
@@ -1394,11 +2126,11 @@ async function screenHMReports(){
   const total=Object.values(outcomes).reduce((a,b)=>a+b,0);
   document.getElementById('content').innerHTML=`
     <div class="page-header"><h1>My Interview Reports</h1></div>
-    <div class="stat-row">
-      <div class="stat-box"><div class="sv">${d.interviews_taken}</div><div class="sl">Interviews taken</div></div>
-      <div class="stat-box"><div class="sv">${d.avg_feedback_turnaround_hours??'—'}</div><div class="sl">Avg feedback (hrs)</div></div>
-      <div class="stat-box"><div class="sv">${d.pending_reviews}</div><div class="sl">Pending reviews</div></div>
-      <div class="stat-box"><div class="sv">${outcomes.strong_yes||0}</div><div class="sl">Strong yes votes</div></div>
+    <div class="stage-grid" style="margin-bottom:20px">
+      <div class="stage-card dash-link" onclick="navigate('interviews')" title="View your interviews"><div class="n">${d.interviews_taken}</div><div class="lbl">Interviews taken</div></div>
+      <div class="stage-card" title="Average time from interview to feedback submission"><div class="n">${d.avg_feedback_turnaround_hours??'—'}</div><div class="lbl">Avg feedback (hrs)</div></div>
+      <div class="stage-card dash-link" onclick="navigate('profiles')" title="Review pending profiles" style="${d.pending_reviews>0?'border-color:var(--accent)':''}"><div class="n" style="${d.pending_reviews>0?'color:var(--accent)':''}">${d.pending_reviews}</div><div class="lbl">Pending reviews</div></div>
+      <div class="stage-card" title="Profiles you voted strong yes"><div class="n" style="color:#1d6e56">${outcomes.strong_yes||0}</div><div class="lbl">Strong yes votes</div></div>
     </div>
     <div class="card" style="max-width:400px">
       <div class="card-title">Interview outcomes</div>
@@ -1413,22 +2145,75 @@ async function screenHMReports(){
 
 // ── New Requisition helpers ───────────────────────────────────────────────────
 let _roundCount=0;
+let _allBUs=[];
+function _filterBU(){
+  const gc=document.getElementById('rf-gc').value;
+  const filtered=_allBUs.filter(b=>b.company===gc);
+  document.getElementById('rf-bu').innerHTML=filtered.map(b=>`<option value="${b.id}">${b.name}</option>`).join('');
+}
+function _calcCTC(){
+  const f=parseFloat(document.getElementById('rf-ctc-fixed').value)||0;
+  const v=parseFloat(document.getElementById('rf-ctc-variable').value)||0;
+  document.getElementById('rf-ctc-total').value=(f||v)?f+v:'';
+}
 async function openReqModal(){
   _roundCount=0;
   document.getElementById('rounds-list').innerHTML='';
   ['rf-title','rf-fy','rf-skills','rf-jd','rf-loc'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rf-openings').value='1';
-  ['rf-exp','rf-ctc'].forEach(id=>document.getElementById(id).value='');
+  ['rf-exp','rf-ctc-fixed','rf-ctc-variable','rf-ctc-total'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rf-p1').checked=false;
   document.getElementById('rf-risk').value='';
   const [bus,bands]=await Promise.all([api('/api/business-units'),api('/api/bands')]);
-  document.getElementById('rf-bu').innerHTML=(bus||[]).map(b=>`<option value="${b.id}">${b.name} (${b.company})</option>`).join('');
-  document.getElementById('rf-band').innerHTML=(bands||[]).filter(b=>b.is_active).map(b=>`<option value="${b.id}">${b.code} — ${b.description}</option>`).join('');
+  _allBUs=bus||[];
+  // Build unique group company list preserving order
+  const seen=new Set();
+  const companies=[];
+  _allBUs.forEach(b=>{if(!seen.has(b.company)){seen.add(b.company);companies.push(b.company);}});
+  document.getElementById('rf-gc').innerHTML=companies.map(c=>`<option value="${c}">${c}</option>`).join('');
+  _filterBU();
+  document.getElementById('rf-band').innerHTML=(bands||[]).filter(b=>b.is_active).map(b=>`<option value="${b.id}">${b.code}</option>`).join('');
   addRound('AI screening interview','bot_interview',true);
   addRound('Technical panel','panel',false);
   document.getElementById('req-modal').classList.add('open');
 }
 function closeReqModal(){document.getElementById('req-modal').classList.remove('open');}
+
+// ── Assign Recruiter helpers ─────────────────────────────────────────────────
+let _assignReqId=null;
+async function openAssignModal(reqId, reqTitle){
+  _assignReqId=reqId;
+  document.getElementById('assign-req-title').textContent=reqTitle;
+  // Load all active recruiters
+  const users=await api('/api/users');
+  const recruiters=(users||[]).filter(u=>u.role==='recruiter');
+  document.getElementById('assign-recruiter-sel').innerHTML=recruiters.map(r=>`<option value="${r.id}">${r.full_name}</option>`).join('');
+  // Show current assignees
+  const current=await api(`/api/requisitions/${reqId}/recruiters`);
+  const assignDiv=document.getElementById('assign-current');
+  if((current||[]).length){
+    assignDiv.innerHTML=`<div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:6px">Currently assigned</div>`+
+      (current||[]).map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:13px">${r.full_name}${r.is_owner?' <span style="font-size:11px;color:var(--accent)">(owner)</span>':''}</span>
+        ${!r.is_owner?`<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" onclick="removeAssign('${reqId}','${r.id}')">Remove</button>`:''}
+      </div>`).join('');
+  } else {
+    assignDiv.innerHTML='<p style="font-size:12px;color:var(--muted);margin-bottom:6px">No recruiters assigned yet.</p>';
+  }
+  document.getElementById('assign-modal').classList.add('open');
+}
+function closeAssignModal(){document.getElementById('assign-modal').classList.remove('open');}
+async function submitAssign(){
+  const recruiterId=document.getElementById('assign-recruiter-sel').value;
+  if(!recruiterId){flash('Select a recruiter.',false);return;}
+  const res=await api(`/api/requisitions/${_assignReqId}/assign-recruiter`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({recruiter_id:recruiterId})});
+  if(res?.ok){flash('Recruiter assigned.');closeAssignModal();screenKanban(_assignReqId);}
+  else flash(res?.detail||'Error assigning recruiter.',false);
+}
+async function removeAssign(reqId, recruiterId){
+  const res=await api(`/api/requisitions/${reqId}/recruiters/${recruiterId}`,{method:'DELETE'});
+  if(res?.ok){flash('Assignment removed.');openAssignModal(reqId,document.getElementById('assign-req-title').textContent);}
+}
 
 function addRound(name='',type='panel',isAuto=false){
   _roundCount++;
@@ -1462,12 +2247,15 @@ async function submitReq(){
     if(!name) return;
     rounds.push({sequence:i+1,name,round_type:el.querySelector('[data-round="type"]')?.value||'panel',is_auto:el.querySelector('[data-round="auto"]')?.value==='true'});
   });
+  const fixed=parseFloat(document.getElementById('rf-ctc-fixed').value)||null;
+  const variable=parseFloat(document.getElementById('rf-ctc-variable').value)||null;
   const body={
     title,bu_id:document.getElementById('rf-bu').value,band_id:document.getElementById('rf-band').value,
     roll_type:document.getElementById('rf-roll').value,openings:parseInt(document.getElementById('rf-openings').value)||1,
     fiscal_year:document.getElementById('rf-fy').value.trim()||null,
     min_experience:parseFloat(document.getElementById('rf-exp').value)||null,
-    budgeted_ctc:parseFloat(document.getElementById('rf-ctc').value)||null,
+    budgeted_fixed:fixed,budgeted_variable:variable,
+    budgeted_ctc:(fixed||variable)?((fixed||0)+(variable||0)):null,
     key_skills:skills,job_description:document.getElementById('rf-jd').value.trim()||null,
     is_p1:document.getElementById('rf-p1').checked,
     risk:document.getElementById('rf-risk').value||null,
@@ -1486,6 +2274,7 @@ async function openApplyModal(reqId){
   ['am-name','am-email','am-years'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('am-file').value='';
   document.getElementById('am-text').value='';
+  const ps=document.getElementById('am-parse-status');if(ps){ps.style.display='none';ps.textContent='';}
   const reqs=await api('/api/requisitions');
   document.getElementById('am-req').innerHTML=(reqs||[]).map(r=>`<option value="${r.id}"${r.id===reqId?' selected':''}>${r.title} — ${r.business_unit}</option>`).join('');
   setApplyMode('file');
@@ -1499,42 +2288,87 @@ function setApplyMode(m){
   document.getElementById('am-file-area').style.display=m==='file'?'':'none';
   document.getElementById('am-text-area').style.display=m==='text'?'':'none';
 }
+async function _autoFillFromResume(input){
+  const file=input.files[0];
+  if(!file) return;
+  const statusEl=document.getElementById('am-parse-status');
+  statusEl.textContent='Parsing resume…';statusEl.style.display='block';
+  const fd=new FormData();fd.append('file',file);
+  let res;
+  try{
+    const r=await fetch('/api/parse-resume-contact',{method:'POST',headers:{Authorization:`Bearer ${_tok}`},body:fd});
+    if(r.ok) res=await r.json();
+  }catch{}
+  if(res){
+    if(res.full_name&&!document.getElementById('am-name').value) document.getElementById('am-name').value=res.full_name;
+    if(res.email&&!document.getElementById('am-email').value) document.getElementById('am-email').value=res.email;
+    statusEl.textContent=res.full_name||res.email?'Details auto-filled from resume.':'Resume uploaded — fill in details manually.';
+  } else {
+    statusEl.textContent='Could not auto-parse — fill details manually.';
+  }
+}
+
 async function submitApply(){
   const btn=document.getElementById('am-submit-btn');
   btn.disabled=true;btn.textContent='Screening…';
   const resEl=document.getElementById('am-result');resEl.style.display='none';
+  let _reqId=null;
   try {
-    const reqId=document.getElementById('am-req').value;
-    const name=document.getElementById('am-name').value||'Unnamed';
-    const email=document.getElementById('am-email').value||'x@x.com';
+    _reqId=document.getElementById('am-req').value;
+    const name=document.getElementById('am-name').value.trim();
+    const email=document.getElementById('am-email').value.trim();
+    if(!name){_showApplyErr('Candidate name is required.');return;}
+    if(!email||!email.includes('@')){_showApplyErr('Valid email is required.');return;}
     const gender=document.getElementById('am-gender').value;
     const years=document.getElementById('am-years').value;
-    let res;
+    let res,rawErr=null;
     if(_applyMode==='file'){
       const file=document.getElementById('am-file').files[0];
-      if(!file){flash('Select a file first.',false);return;}
+      if(!file){_showApplyErr('Select a resume file first.');return;}
       const fd=new FormData();
-      fd.append('requisition_id',reqId);fd.append('full_name',name);fd.append('email',email);
+      fd.append('requisition_id',_reqId);fd.append('full_name',name);fd.append('email',email);
       fd.append('gender',gender);if(years)fd.append('years_experience',years);fd.append('file',file);
-      res=await api('/api/apply/upload',{method:'POST',body:fd});
+      // Use raw fetch to capture server error messages properly
+      let r;
+      try{r=await fetch('/api/apply/upload',{method:'POST',headers:{Authorization:`Bearer ${_tok}`},body:fd});}
+      catch{_showApplyErr('Network error — check your connection.');return;}
+      if(!r.ok){
+        let d='Server error';try{const j=await r.json();d=j.detail||d;}catch{}
+        _showApplyErr(d);return;
+      }
+      res=await r.json();
     }else{
+      const text=document.getElementById('am-text').value.trim();
+      if(!text){_showApplyErr('Paste resume text first.');return;}
       res=await api('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({requisition_id:reqId,full_name:name,email,gender,
-          years_experience:parseFloat(years)||null,resume_text:document.getElementById('am-text').value})});
+        body:JSON.stringify({requisition_id:_reqId,full_name:name,email,gender,
+          years_experience:parseFloat(years)||null,resume_text:text})});
+      if(!res){_showApplyErr('Submission failed. Check console for details.');return;}
     }
-    if(!res){return;}
-    if(res.detail){flash(res.detail,false);return;}
+    if(res.detail){_showApplyErr(res.detail);return;}
     const b=res.breakdown||{};
+    const scoreColor=res.match_score>=60?'#1d6e56':res.match_score>=40?'var(--gold)':'var(--accent)';
     resEl.innerHTML=`
-      <span style="font-size:26px;font-weight:700;color:var(--accent)">${res.match_score}</span><span style="font-size:12px;color:var(--muted)"> / 100</span>
-      <div style="margin-top:8px;font-size:13px">
-        Skills matched: <strong>${b.skills_matched_count??'—'}/${b.skills_total??'—'}</strong><br>
-        Matched: ${(b.matched_skills||[]).join(', ')||'—'}<br>
-        Missing: ${(b.missing_skills||[]).join(', ')||'—'}
-      </div>
-      ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ ${res.warning}</p>`:''}`;
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <span style="font-size:28px;font-weight:700;color:${scoreColor}">${Math.round(res.match_score??0)}</span>
+          <span style="font-size:12px;color:var(--muted)"> / 100</span>
+          <div style="margin-top:6px;font-size:13px">
+            Skills matched: <strong>${b.skills_matched_count??'—'}/${b.skills_total??'—'}</strong><br>
+            Matched: ${(b.matched_skills||[]).join(', ')||'—'}<br>
+            Missing: ${(b.missing_skills||[]).join(', ')||'—'}
+          </div>
+          ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ ${res.warning}</p>`:''}
+        </div>
+        <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="closeApplyModal();navigate('kanban','${_reqId}')">View in pipeline →</button>
+      </div>`;
     resEl.style.display='block';
   } finally {btn.disabled=false;btn.textContent='Submit & screen';}
+}
+function _showApplyErr(msg){
+  const resEl=document.getElementById('am-result');
+  resEl.innerHTML=`<p style="color:#c0392b;font-size:13px;margin:0">⚠ ${msg}</p>`;
+  resEl.style.display='block';
 }
 
 // ── Change password ───────────────────────────────────────────────────────────
@@ -2261,6 +3095,78 @@ function _fmtMs(ms) {
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
 
+// ── SCREEN: NexAI Sessions (drill-down from dashboard) ────────────────────────
+async function screenNexAISessions() {
+  const filter = _navFilter; _navFilter = {};
+  setTitle('NexAI Sessions');
+
+  // Build query params
+  const qs = new URLSearchParams();
+  if (filter.nexai_status) qs.set('status', filter.nexai_status);
+  if (filter.score_min != null) qs.set('score_min', filter.score_min);
+  if (filter.score_max != null) qs.set('score_max', filter.score_max);
+  const url = '/api/nexai/sessions' + (qs.toString() ? '?' + qs : '');
+
+  const rows = await api(url);
+  if (!rows) { showErr('Could not load NexAI sessions.'); return; }
+
+  const label = filter.label || 'All AI Sessions';
+  const showRecruiter = ME.role === 'ta_manager' || ME.role === 'admin';
+
+  const banner = `
+    <div class="filter-banner" style="margin-bottom:14px">
+      <span>Showing: <strong>${label}</strong> &nbsp;·&nbsp; ${rows.length} session${rows.length!==1?'s':''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="navigate('dashboard')">← Back to Dashboard</button>
+    </div>`;
+
+  const tRows = rows.map(r => {
+    const durMin = r.duration_min != null ? parseFloat(r.duration_min).toFixed(0)+'m' : '—';
+    const dateStr = r.created_at ? new Date(r.created_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}) : '—';
+    const recCol = showRecruiter ? `<td style="font-size:12px;color:var(--muted)">${r.recruiter_name||'—'}</td>` : '';
+    return `<tr>
+      <td><strong>${r.candidate_name}</strong><br><span style="font-size:11px;color:var(--muted)">${r.candidate_email||''}</span></td>
+      <td style="font-size:12px">${r.req_title}</td>
+      ${recCol}
+      <td>${_scorePill(r.raw_score)}</td>
+      <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+      <td style="font-size:12px">${durMin}</td>
+      <td style="font-size:11px;color:var(--muted)">${dateStr}</td>
+    </tr>`;
+  }).join('');
+
+  const recHeader = showRecruiter ? '<th>Recruiter</th>' : '';
+
+  // Score summary strip (only when there are completed sessions with scores)
+  const scored = rows.filter(r => r.raw_score != null);
+  let summaryHtml = '';
+  if (scored.length) {
+    const avg = (scored.reduce((s,r) => s + parseFloat(r.raw_score), 0) / scored.length).toFixed(1);
+    const high = scored.filter(r => r.raw_score >= 70).length;
+    const passed = scored.filter(r => r.raw_score >= 50).length;
+    summaryHtml = `
+      <div class="stat-row" style="margin-bottom:16px">
+        <div class="stat-box"><div class="sv">${rows.length}</div><div class="sl">Total</div></div>
+        <div class="stat-box"><div class="sv" style="color:#1d6e56">${scored.length}</div><div class="sl">Scored</div></div>
+        <div class="stat-box"><div class="sv" style="color:${_scoreColor(parseFloat(avg))}">${avg}</div><div class="sl">Avg Score</div></div>
+        <div class="stat-box"><div class="sv" style="color:#1d6e56">${high}</div><div class="sl">High ≥70</div></div>
+        <div class="stat-box"><div class="sv">${scored.length?Math.round(passed/scored.length*100)+'%':'—'}</div><div class="sl">Pass Rate ≥50</div></div>
+      </div>`;
+  }
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>NexAI Sessions</h1></div>
+    ${banner}
+    ${summaryHtml}
+    <div class="card" style="padding:0;overflow:hidden">
+      ${tRows
+        ? `<table><thead><tr>
+             <th>Candidate</th><th>Position</th>${recHeader}
+             <th>AI Score</th><th>Status</th><th>Duration</th><th>Date</th>
+           </tr></thead><tbody>${tRows}</tbody></table>`
+        : '<p class="empty">No sessions match this filter.</p>'}
+    </div>`;
+}
+
 // ── SCREEN: Admin — System Health ────────────────────────────────────────────
 async function screenSysHealth() {
   setTitle('System Health');
@@ -2308,13 +3214,13 @@ async function screenSysHealth() {
 
   document.getElementById('content').innerHTML=`
     <div class="page-header"><h1>System Health</h1></div>
-    <div class="stat-row">
-      <div class="stat-box"><div class="sv">${totalUsers}</div><div class="sl">Active users</div></div>
-      <div class="stat-box"><div class="sv" style="color:${openTickets>0?'var(--accent)':'inherit'}">${openTickets}</div><div class="sl">Open tickets</div></div>
-      <div class="stat-box"><div class="sv">${pipe.open_reqs||0}</div><div class="sl">Open reqs</div></div>
-      <div class="stat-box"><div class="sv">${pipe.total_apps||0}</div><div class="sl">Total applications</div></div>
-      <div class="stat-box"><div class="sv">${lt.today}</div><div class="sl">Logins today</div></div>
-      <div class="stat-box"><div class="sv">${lt.yesterday}</div><div class="sl">Logins yesterday</div></div>
+    <div class="stage-grid" style="margin-bottom:20px">
+      <div class="stage-card dash-link" onclick="navigate('users')" title="Manage users"><div class="n">${totalUsers}</div><div class="lbl">Active users</div></div>
+      <div class="stage-card dash-link" onclick="navigate('tickets')" title="View open tickets" style="${openTickets>0?'border-color:var(--accent)':''}"><div class="n" style="color:${openTickets>0?'var(--accent)':'inherit'}">${openTickets}</div><div class="lbl">Open tickets</div></div>
+      <div class="stage-card dash-link" onclick="navigate('requisitions')" title="View all requisitions"><div class="n">${pipe.open_reqs||0}</div><div class="lbl">Open reqs</div></div>
+      <div class="stage-card dash-link" onclick="navigate('sys_logs')" title="View system logs"><div class="n">${pipe.total_apps||0}</div><div class="lbl">Total applications</div></div>
+      <div class="stage-card" title="Logins today"><div class="n">${lt.today}</div><div class="lbl">Logins today</div></div>
+      <div class="stage-card" title="Logins yesterday"><div class="n">${lt.yesterday}</div><div class="lbl">Logins yesterday</div></div>
     </div>
     <div class="two-col" style="margin-bottom:20px">
       <div class="card">
@@ -2469,6 +3375,46 @@ async function screenRaiseTicket() {
     else flash(res?.detail||'Could not raise ticket.',false);
   };
 }
+
+// ── Mobile navigation drawer ──────────────────────────────────────────────────
+(function initMobileNav(){
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  const btn     = document.getElementById('menu-btn');
+  if (!btn || !sidebar || !overlay) return;
+
+  function openNav() {
+    sidebar.classList.add('mob-open');
+    overlay.classList.add('mob-open');
+    btn.setAttribute('aria-expanded','true');
+    btn.innerHTML = '&#10005;'; // × close icon
+    document.body.style.overflow = 'hidden'; // prevent page scroll while drawer open
+  }
+  function closeNav() {
+    sidebar.classList.remove('mob-open');
+    overlay.classList.remove('mob-open');
+    btn.setAttribute('aria-expanded','false');
+    btn.innerHTML = '&#9776;'; // ☰ hamburger
+    document.body.style.overflow = '';
+  }
+
+  btn.addEventListener('click', () => sidebar.classList.contains('mob-open') ? closeNav() : openNav());
+  overlay.addEventListener('click', closeNav);
+
+  // Close when a nav item is tapped (mobile)
+  sidebar.addEventListener('click', function(e) {
+    if (e.target.closest('.nav-item') && window.innerWidth <= 768) closeNav();
+  });
+
+  // Swipe left on sidebar to close
+  let _touchStartX = 0;
+  sidebar.addEventListener('touchstart', e => { _touchStartX = e.touches[0].clientX; }, {passive:true});
+  sidebar.addEventListener('touchend', e => {
+    if (e.changedTouches[0].clientX - _touchStartX < -50) closeNav();
+  }, {passive:true});
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
+})();
 
 // ── Post-OAuth redirect ───────────────────────────────────────────────────────
 const _qs=new URLSearchParams(window.location.search);

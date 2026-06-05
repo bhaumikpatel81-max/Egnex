@@ -43,6 +43,41 @@ def import_from_jobboard(source: str, profile_url: str) -> dict:
     )
 
 
+def extract_contact_info(text: str) -> dict:
+    """
+    Heuristic extraction of name, email, and phone from raw resume text.
+    Used to pre-fill the submit-application form.
+    """
+    import re
+
+    # Email — reliable
+    email_match = re.search(r'[\w.+\-]+@[\w\-]+\.[a-zA-Z]{2,}', text)
+    email = email_match.group().lower() if email_match else None
+
+    # Phone — 10-digit Indian mobile or international with country code
+    phone_match = re.search(
+        r'(?:\+91[\s\-]?)?[6-9]\d{9}|(?:\+\d{1,3}[\s\-]?)?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{4}',
+        text,
+    )
+    phone = re.sub(r'\s+', '', phone_match.group()) if phone_match else None
+
+    # Name — look for the first short line (2-5 words, all letters/spaces, no numbers)
+    name = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or len(stripped) > 60:
+            continue
+        # Skip lines that look like section headers or contain numbers/special chars
+        if re.search(r'[\d@#/\\|<>{}]', stripped):
+            continue
+        words = stripped.split()
+        if 2 <= len(words) <= 5 and all(re.match(r"[A-Za-z'\-\.]+$", w) for w in words):
+            name = stripped.title()
+            break
+
+    return {"full_name": name, "email": email, "phone": phone}
+
+
 def extract_text(file_bytes: bytes, filename: str) -> tuple:
     """
     Extract resume text from an uploaded file.

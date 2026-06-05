@@ -216,6 +216,85 @@ def get_session(session_id: str, _user: dict = Depends(get_current_user)):
     return row
 
 
+@router.get("/sessions")
+def list_sessions(
+    user: dict = Depends(get_current_user),
+    status: Optional[str] = None,
+    score_min: Optional[float] = None,
+    score_max: Optional[float] = None,
+):
+    """Role-scoped list of NexAI sessions with candidate info. Filterable."""
+    role = user["role"]
+    uid  = user["sub"]
+
+    join_parts  = []
+    where_parts = []
+    params: list = []
+
+    # Role scoping
+    if role == "recruiter":
+        join_parts.append(
+            "JOIN requisition_recruiter rr_scope "
+            "ON rr_scope.requisition_id = r.id AND rr_scope.recruiter_id = %s"
+        )
+        params.append(uid)
+    elif role == "hiring_manager":
+        where_parts.append("r.hiring_manager_id = %s")
+        params.append(uid)
+    # ta_manager / admin: sees all
+
+    # Optional filters
+    if status == "pending":
+        where_parts.append("ns.status IN ('pending','in_progress')")
+    elif status:
+        where_parts.append("ns.status = %s")
+        params.append(status)
+
+    if score_min is not None:
+        where_parts.append("ns.raw_score >= %s")
+        params.append(score_min)
+
+    if score_max is not None:
+        where_parts.append("ns.raw_score <= %s")
+        params.append(score_max)
+
+    join_sql  = "\n    ".join(join_parts)
+    where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    return query(
+        f"""
+        SELECT ns.id, ns.status, ns.raw_score, ns.created_at,
+               ns.started_at, ns.completed_at,
+               ROUND(
+                 EXTRACT(EPOCH FROM (ns.completed_at - ns.started_at)) / 60.0
+                 ::numeric, 1
+               ) AS duration_min,
+               c.full_name   AS candidate_name,
+               c.email       AS candidate_email,
+               r.title       AS req_title,
+               r.id          AS req_id,
+               a.id          AS app_id,
+               rec.full_name AS recruiter_name
+        FROM nexai_session ns
+        JOIN application  a   ON a.id  = ns.application_id
+        JOIN candidate    c   ON c.id  = a.candidate_id
+        JOIN requisition  r   ON r.id  = ns.requisition_id
+        {join_sql}
+        LEFT JOIN LATERAL (
+            SELECT u2.full_name
+            FROM requisition_recruiter rr2
+            JOIN app_user u2 ON u2.id = rr2.recruiter_id
+            WHERE rr2.requisition_id = r.id
+            ORDER BY rr2.is_owner DESC NULLS LAST LIMIT 1
+        ) rec ON true
+        {where_sql}
+        ORDER BY ns.created_at DESC
+        LIMIT 200
+        """,
+        params,
+    )
+
+
 @router.get("/health")
 def nexai_health(user: dict = Depends(get_current_user)):
     if user["role"] != "admin":

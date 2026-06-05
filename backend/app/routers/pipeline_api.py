@@ -146,6 +146,123 @@ def dashboard(user: dict = Depends(get_current_user)):
         )
     counts["recent_reqs"] = reqs
 
+    # ─── NexAI data ────────────────────────────────────────────────────────────
+
+    _NX_SUMMARY_COLS = """
+        COUNT(*)                                                           AS total,
+        COUNT(*) FILTER (WHERE ns.status = 'completed')                    AS completed,
+        COUNT(*) FILTER (WHERE ns.status = 'failed')                       AS failed,
+        COUNT(*) FILTER (WHERE ns.status IN ('pending','in_progress'))     AS pending,
+        ROUND(AVG(ns.raw_score) FILTER (WHERE ns.status='completed')
+              ::numeric, 1)                                                AS avg_score,
+        COUNT(*) FILTER (WHERE ns.raw_score >= 70 AND ns.status='completed') AS high_scorers,
+        COUNT(*) FILTER (WHERE ns.raw_score <  40 AND ns.status='completed') AS low_scorers,
+        ROUND(
+          COALESCE(
+            COUNT(*) FILTER (WHERE ns.raw_score >= 50 AND ns.status='completed')
+            ::numeric /
+            NULLIF(COUNT(*) FILTER (WHERE ns.status='completed'), 0),
+          0) * 100, 1
+        )                                                                  AS pass_rate
+    """
+
+    if role == "recruiter":
+        nx_where = """
+            JOIN requisition r2 ON r2.id = ns.requisition_id
+            JOIN requisition_recruiter rr2
+                 ON rr2.requisition_id = r2.id AND rr2.recruiter_id = %s
+        """
+        nx_params = [uid]
+        nx_dist_where = f"""
+            WHERE ns.status = 'completed' AND ns.raw_score IS NOT NULL
+              AND ns.requisition_id IN (
+                  SELECT requisition_id FROM requisition_recruiter WHERE recruiter_id = %s
+              )
+        """
+        nx_dist_params = [uid]
+        nx_recent_where = f"""
+            JOIN requisition ri ON ri.id = ns.requisition_id
+            JOIN requisition_recruiter rir
+                 ON rir.requisition_id = ri.id AND rir.recruiter_id = %s
+        """
+        nx_recent_params = [uid]
+    else:
+        nx_where = ""
+        nx_params = []
+        nx_dist_where = "WHERE ns.status = 'completed' AND ns.raw_score IS NOT NULL"
+        nx_dist_params = []
+        nx_recent_where = ""
+        nx_recent_params = []
+
+    if role in ("recruiter", "ta_manager"):
+        nx_row = query_one(
+            f"SELECT {_NX_SUMMARY_COLS} FROM nexai_session ns {nx_where}",
+            nx_params,
+        )
+        counts["nexai_summary"] = dict(nx_row) if nx_row else {}
+
+        counts["nexai_score_dist"] = query(
+            f"""
+            SELECT
+              CASE
+                WHEN raw_score >= 80 THEN '80-100'
+                WHEN raw_score >= 60 THEN '60-79'
+                WHEN raw_score >= 40 THEN '40-59'
+                WHEN raw_score >= 20 THEN '20-39'
+                ELSE '0-19'
+              END AS bucket,
+              CASE
+                WHEN raw_score >= 80 THEN 5
+                WHEN raw_score >= 60 THEN 4
+                WHEN raw_score >= 40 THEN 3
+                WHEN raw_score >= 20 THEN 2
+                ELSE 1
+              END AS sort_ord,
+              COUNT(*) AS n
+            FROM nexai_session ns
+            {nx_dist_where}
+            GROUP BY bucket, sort_ord
+            ORDER BY sort_ord
+            """,
+            nx_dist_params,
+        )
+
+        counts["nexai_recent"] = query(
+            f"""
+            SELECT ns.id, ns.raw_score, ns.status,
+                   ns.created_at, ns.completed_at,
+                   c.full_name AS candidate_name,
+                   r.title     AS req_title
+            FROM nexai_session ns
+            JOIN application a ON a.id = ns.application_id
+            JOIN candidate   c ON c.id = a.candidate_id
+            JOIN requisition r ON r.id = ns.requisition_id
+            {nx_recent_where}
+            ORDER BY ns.created_at DESC LIMIT 10
+            """,
+            nx_recent_params,
+        )
+
+    if role == "ta_manager":
+        counts["nexai_by_recruiter"] = query(
+            """
+            SELECT u.full_name AS recruiter_name,
+                   COUNT(ns.id)                                                   AS total,
+                   COUNT(ns.id) FILTER (WHERE ns.status='completed')              AS completed,
+                   ROUND(AVG(ns.raw_score) FILTER
+                         (WHERE ns.status='completed')::numeric, 1)               AS avg_score,
+                   COUNT(ns.id) FILTER
+                         (WHERE ns.raw_score >= 70 AND ns.status='completed')     AS high_scorers
+            FROM app_user u
+            LEFT JOIN requisition_recruiter rr ON rr.recruiter_id = u.id
+            LEFT JOIN nexai_session ns ON ns.requisition_id = rr.requisition_id
+            WHERE u.role IN ('recruiter','ta_manager') AND u.is_active = true
+            GROUP BY u.id, u.full_name
+            ORDER BY avg_score DESC NULLS LAST, u.full_name
+            """,
+            [],
+        )
+
     # Recruiter load panel (ta_manager / admin only)
     if role in ("ta_manager", "admin"):
         counts["recruiter_load"] = query("SELECT * FROM v_recruiter_load", [])
@@ -172,7 +289,7 @@ def dashboard(user: dict = Depends(get_current_user)):
             [],
         )
 
-    # Hiring manager: profiles awaiting review + my interviews + feedback outcomes
+    # Hiring manager: profiles + interviews + nexai + skills + time data
     if role == "hiring_manager":
         counts["profiles_to_review"] = query(
             """
@@ -191,7 +308,7 @@ def dashboard(user: dict = Depends(get_current_user)):
         )
         counts["my_interviews"] = query(
             """
-            SELECT i.id, i.scheduled_at, i.mode,
+            SELECT i.id, i.scheduled_at, i.mode, i.duration_min,
                    COALESCE(i.status, 'scheduled') AS status,
                    c.full_name  AS candidate_name,
                    r.title      AS req_title,
@@ -219,16 +336,61 @@ def dashboard(user: dict = Depends(get_current_user)):
             """,
             [uid],
         )
-        # Interviews conducted count (distinct applications with HM interview)
-        icount = query_one(
-            """SELECT COUNT(DISTINCT i.id) AS n
-               FROM interview i
-               JOIN application a  ON a.id = i.application_id
-               JOIN requisition r  ON r.id = a.requisition_id
-               WHERE r.hiring_manager_id = %s""",
+
+        # Interviews conducted + time stats
+        itime = query_one(
+            """
+            SELECT COUNT(DISTINCT i.id)                          AS n,
+                   ROUND(AVG(i.duration_min)::numeric, 0)        AS avg_min,
+                   ROUND(SUM(i.duration_min)::numeric / 60.0, 1) AS total_hrs
+            FROM interview i
+            JOIN application a  ON a.id = i.application_id
+            JOIN requisition r  ON r.id = a.requisition_id
+            WHERE r.hiring_manager_id = %s
+            """,
             [uid],
         )
-        counts["interviews_conducted"] = int(icount["n"]) if icount else 0
+        counts["interviews_conducted"] = int(itime["n"]) if itime else 0
+        counts["avg_interview_min"]    = float(itime["avg_min"])   if itime and itime["avg_min"]   else None
+        counts["total_interview_hrs"]  = float(itime["total_hrs"]) if itime and itime["total_hrs"] else 0
+
+        # NexAI screening summary for HM's requisitions
+        nexai = query_one(
+            """
+            SELECT
+              COUNT(*)                                                  AS total,
+              COUNT(*) FILTER (WHERE ns.status = 'completed')          AS completed,
+              COUNT(*) FILTER (WHERE ns.status = 'failed')             AS failed,
+              COUNT(*) FILTER (WHERE ns.status IN ('pending','in_progress')) AS pending,
+              ROUND(AVG(ns.raw_score) FILTER
+                    (WHERE ns.status='completed')::numeric, 1)          AS avg_score,
+              ROUND(AVG(
+                EXTRACT(EPOCH FROM (ns.completed_at - ns.started_at))/60.0
+              ) FILTER (WHERE ns.status='completed')::numeric, 1)       AS avg_session_min
+            FROM nexai_session ns
+            JOIN requisition r ON r.id = ns.requisition_id
+            WHERE r.hiring_manager_id = %s
+            """,
+            [uid],
+        )
+        counts["nexai_summary"] = dict(nexai) if nexai else {
+            "total": 0, "completed": 0, "failed": 0, "pending": 0,
+            "avg_score": None, "avg_session_min": None,
+        }
+
+        # Skills breakdown: aggregate key_skills from HM's requisitions
+        counts["skills_summary"] = query(
+            """
+            SELECT UNNEST(key_skills) AS skill, COUNT(*) AS n
+            FROM requisition
+            WHERE hiring_manager_id = %s
+              AND key_skills IS NOT NULL AND array_length(key_skills, 1) > 0
+            GROUP BY skill
+            ORDER BY n DESC, skill
+            LIMIT 15
+            """,
+            [uid],
+        )
 
     return counts
 
@@ -292,6 +454,8 @@ class RequisitionIn(BaseModel):
     key_skills: list[str] = []
     min_experience: Optional[float] = None
     budgeted_ctc: Optional[float] = None
+    budgeted_fixed: Optional[float] = None
+    budgeted_variable: Optional[float] = None
     openings: int = 1
     fiscal_year: Optional[str] = None
     job_description: Optional[str] = None
@@ -305,19 +469,28 @@ class RequisitionIn(BaseModel):
 def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_user)):
     if user["role"] not in ("recruiter", "ta_manager", "admin"):
         raise HTTPException(403, "Only recruiters and TA managers can create requisitions")
+    # Derive total CTC from fixed + variable if not explicitly provided
+    fixed = body.budgeted_fixed
+    variable = body.budgeted_variable
+    total_ctc = body.budgeted_ctc
+    if total_ctc is None and (fixed is not None or variable is not None):
+        total_ctc = (fixed or 0) + (variable or 0)
+
     req = query_one(
         """
         INSERT INTO requisition
           (title, bu_id, band_id, roll_type, key_skills, min_experience,
-           budgeted_ctc, openings, fiscal_year, job_description,
+           budgeted_ctc, budgeted_fixed, budgeted_variable,
+           openings, fiscal_year, job_description,
            is_p1, risk, hiring_location,
            status, opened_at, created_by)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s)
         RETURNING id, title, status
         """,
         [
             body.title, body.bu_id, body.band_id, body.roll_type,
-            body.key_skills, body.min_experience, body.budgeted_ctc,
+            body.key_skills, body.min_experience, total_ctc,
+            fixed, variable,
             body.openings, body.fiscal_year, body.job_description,
             body.is_p1, body.risk, body.hiring_location,
             user["sub"],
@@ -386,6 +559,89 @@ def kanban(req_id: str, _user: dict = Depends(get_current_user)):
         [req_id],
     )
     return {"rounds": rounds, "candidates": candidates}
+
+
+# ─── Recruiter Assignment ─────────────────────────────────────────────────────
+
+@router.get("/requisitions/{req_id}/recruiters")
+def get_req_recruiters(req_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] not in ("ta_manager", "admin", "recruiter"):
+        raise HTTPException(403, "Not authorised")
+    return query(
+        """SELECT u.id, u.full_name, u.email, rr.is_owner, rr.assigned_at
+           FROM requisition_recruiter rr
+           JOIN app_user u ON u.id = rr.recruiter_id
+           WHERE rr.requisition_id = %s
+           ORDER BY rr.is_owner DESC, rr.assigned_at""",
+        [req_id],
+    )
+
+
+class AssignRecruiterIn(BaseModel):
+    recruiter_id: str
+
+
+@router.post("/requisitions/{req_id}/assign-recruiter")
+def assign_recruiter(req_id: str, body: AssignRecruiterIn, user: dict = Depends(get_current_user)):
+    if user["role"] not in ("ta_manager", "admin"):
+        raise HTTPException(403, "Only TA managers can assign recruiters")
+    req = query_one("SELECT id FROM requisition WHERE id = %s", [req_id])
+    if not req:
+        raise HTTPException(404, "Requisition not found")
+    recruiter = query_one(
+        "SELECT id FROM app_user WHERE id = %s AND role = 'recruiter' AND is_active = true",
+        [body.recruiter_id],
+    )
+    if not recruiter:
+        raise HTTPException(404, "Active recruiter not found")
+    query(
+        """INSERT INTO requisition_recruiter (requisition_id, recruiter_id, is_owner, assigned_by)
+           VALUES (%s, %s, false, %s)
+           ON CONFLICT (requisition_id, recruiter_id) DO NOTHING""",
+        [req_id, body.recruiter_id, user["sub"]],
+        fetch=False,
+    )
+    return {"ok": True}
+
+
+@router.delete("/requisitions/{req_id}/recruiters/{recruiter_id}")
+def unassign_recruiter(req_id: str, recruiter_id: str, user: dict = Depends(get_current_user)):
+    if user["role"] not in ("ta_manager", "admin"):
+        raise HTTPException(403, "Only TA managers can remove assignments")
+    query(
+        "DELETE FROM requisition_recruiter WHERE requisition_id = %s AND recruiter_id = %s",
+        [req_id, recruiter_id],
+        fetch=False,
+    )
+    return {"ok": True}
+
+
+# ─── Team ──────────────────────────────────────────────────────────────────────
+
+@router.get("/team")
+def get_team(user: dict = Depends(get_current_user)):
+    if user["role"] not in ("ta_manager", "admin"):
+        raise HTTPException(403, "TA Manager access required")
+    return query(
+        """
+        SELECT u.id, u.full_name, u.email, u.role,
+               COUNT(DISTINCT rr.requisition_id)
+                 FILTER (WHERE r.status = 'open') AS active_req_count,
+               COALESCE(
+                 json_agg(
+                   json_build_object('req_id', r.id, 'title', r.title, 'status', r.status)
+                 ) FILTER (WHERE r.id IS NOT NULL AND r.status = 'open'),
+                 '[]'::json
+               ) AS assigned_requisitions
+        FROM app_user u
+        LEFT JOIN requisition_recruiter rr ON rr.recruiter_id = u.id
+        LEFT JOIN requisition r ON r.id = rr.requisition_id
+        WHERE u.role IN ('recruiter', 'ta_manager', 'hiring_manager')
+          AND u.is_active = true
+        GROUP BY u.id, u.full_name, u.email, u.role
+        ORDER BY u.role, u.full_name
+        """
+    )
 
 
 # ─── Candidates ───────────────────────────────────────────────────────────────
@@ -503,6 +759,87 @@ def profiles_to_review(user: dict = Depends(get_current_user)):
 class HMFeedbackIn(BaseModel):
     approved: bool
     comment: Optional[str] = None
+
+
+# ─── CV Database (Admin / TA Manager / Recruiter) ────────────────────────────
+
+@router.get("/cv-database")
+def cv_database(user: dict = Depends(get_current_user)):
+    role = user["role"]
+    uid  = user["sub"]
+
+    if role not in ("admin", "ta_manager", "recruiter"):
+        raise HTTPException(403, "Not authorised to view CV database")
+
+    # For recruiter, only show candidates from their requisitions
+    if role == "recruiter":
+        scope_where = """
+            AND c.id IN (
+                SELECT DISTINCT a_s.candidate_id
+                FROM application a_s
+                JOIN requisition_recruiter rr_s
+                     ON rr_s.requisition_id = a_s.requisition_id
+                     AND rr_s.recruiter_id = %s
+            )
+        """
+        scope_params = [uid]
+    else:
+        scope_where  = ""
+        scope_params = []
+
+    summary = query_one(
+        f"""
+        SELECT
+          COUNT(DISTINCT c.id)                                              AS total_candidates,
+          COUNT(a.id)                                                       AS total_applications,
+          COUNT(DISTINCT c.id) FILTER
+            (WHERE c.resume_url IS NOT NULL AND c.resume_url <> '')         AS resumes_on_file,
+          ROUND(AVG(a.combined_score)
+            FILTER (WHERE a.combined_score IS NOT NULL)::numeric, 1)        AS avg_score,
+          COUNT(DISTINCT c.id) FILTER (WHERE a.status = 'joined')           AS total_joined
+        FROM candidate c
+        LEFT JOIN application a ON a.candidate_id = c.id
+        WHERE 1=1 {scope_where}
+        """,
+        scope_params,
+    )
+
+    candidates = query(
+        f"""
+        SELECT
+          c.id, c.full_name, c.email, c.gender, c.source,
+          c.resume_url,
+          c.created_at                                                     AS registered_at,
+          (SELECT COUNT(*) FROM application WHERE candidate_id = c.id)    AS total_applications,
+          (SELECT r.title
+           FROM application a2
+           JOIN requisition r ON r.id = a2.requisition_id
+           WHERE a2.candidate_id = c.id
+           ORDER BY a2.applied_at DESC LIMIT 1)                           AS latest_position,
+          (SELECT a3.status
+           FROM application a3
+           WHERE a3.candidate_id = c.id
+           ORDER BY a3.applied_at DESC LIMIT 1)                           AS latest_status,
+          (SELECT a4.combined_score
+           FROM application a4
+           WHERE a4.candidate_id = c.id
+           ORDER BY a4.combined_score DESC NULLS LAST LIMIT 1)            AS best_score,
+          (SELECT a5.bot_score
+           FROM application a5
+           WHERE a5.candidate_id = c.id
+           ORDER BY a5.bot_score DESC NULLS LAST LIMIT 1)                 AS ai_score,
+          (SELECT a6.match_score
+           FROM application a6
+           WHERE a6.candidate_id = c.id
+           ORDER BY a6.match_score DESC NULLS LAST LIMIT 1)               AS match_score
+        FROM candidate c
+        WHERE 1=1 {scope_where}
+        ORDER BY c.created_at DESC
+        """,
+        scope_params,
+    )
+
+    return {"summary": dict(summary) if summary else {}, "candidates": candidates}
 
 
 @router.post("/applications/{app_id}/hm-feedback")

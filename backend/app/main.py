@@ -11,7 +11,7 @@ import json
 from datetime import datetime, timedelta
 
 from fastapi import FastAPI, HTTPException, Request, File, UploadFile, Form
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import psycopg2
@@ -55,6 +55,15 @@ _ASSETS_DIR = os.path.join(_FRONTEND_DIR, "assets")
 if os.path.isdir(_ASSETS_DIR):
     app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
+_RESUME_MIME = {
+    ".pdf":  "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc":  "application/msword",
+    ".jpg":  "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png":  "image/png",
+}
+
 # Paths that do NOT require a JWT
 _PUBLIC = {"/", "/login", "/api/health", "/api/auth/login"}
 _PUBLIC_PREFIXES = ("/assets/",)
@@ -82,6 +91,35 @@ def db_error_handler(request: Request, exc: psycopg2.Error):
                                  "detail": str(exc).splitlines()[0]})
 
 
+# ---------------- resume serving ----------------
+@app.get("/api/resume/{filename}")
+def serve_resume(filename: str, request: Request):
+    """Authenticated endpoint to view or download a candidate resume."""
+    role = request.state.user.get("role", "")
+    if role not in ("admin", "ta_manager", "recruiter"):
+        return JSONResponse(status_code=403, content={"detail": "Not authorised to view resumes"})
+
+    # Prevent path traversal
+    safe_name = os.path.basename(filename)
+    if not safe_name or safe_name != filename:
+        raise HTTPException(400, "Invalid filename")
+
+    file_path = os.path.join(_UPLOADS_DIR, safe_name)
+    if not os.path.isfile(file_path):
+        raise HTTPException(404, "Resume file not found")
+
+    ext = os.path.splitext(safe_name)[1].lower()
+    media_type = _RESUME_MIME.get(ext, "application/octet-stream")
+
+    # PDFs open inline in the browser; other formats force download
+    disposition = "inline" if ext == ".pdf" else "attachment"
+    return FileResponse(
+        file_path,
+        media_type=media_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{safe_name}"'},
+    )
+
+
 # ---------------- health ----------------
 @app.get("/api/health")
 def health():
@@ -105,11 +143,25 @@ def bands():
     return query("SELECT id, code, rank, description, is_active FROM band ORDER BY rank")
 
 
+@app.get("/api/group-companies")
+def group_companies_list():
+    return query("SELECT id, name, domain FROM group_company WHERE is_active = true ORDER BY name")
+
+
 @app.get("/api/business-units")
-def business_units():
+def business_units(company_id: str = None):
+    if company_id:
+        return query(
+            """SELECT bu.id, bu.name, gc.id AS company_id, gc.name AS company
+               FROM business_unit bu JOIN group_company gc ON gc.id = bu.company_id
+               WHERE bu.is_active = true AND gc.id = %s
+               ORDER BY bu.name""",
+            [company_id],
+        )
     return query(
-        """SELECT bu.id, bu.name, gc.name AS company
+        """SELECT bu.id, bu.name, gc.id AS company_id, gc.name AS company
            FROM business_unit bu JOIN group_company gc ON gc.id = bu.company_id
+           WHERE bu.is_active = true
            ORDER BY gc.name, bu.name"""
     )
 
@@ -155,6 +207,18 @@ def apply(payload: ApplyIn):
 
 
 _ALLOWED_RESUME_TYPES = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png"}
+
+
+@app.post("/api/parse-resume-contact")
+async def parse_resume_contact(file: UploadFile = File(...)):
+    """Parse a resume file and return extracted contact info for form pre-fill."""
+    suffix = os.path.splitext(file.filename or "")[1].lower()
+    if suffix not in _ALLOWED_RESUME_TYPES:
+        raise HTTPException(400, f"Unsupported file type '{suffix}'.")
+    file_bytes = await file.read()
+    text, _ = _parse_resume(file_bytes, file.filename or "")
+    from .services.resume_parser import extract_contact_info
+    return extract_contact_info(text)
 
 
 @app.post("/api/apply/upload")
@@ -336,6 +400,63 @@ def db_stats(request: Request):
         row = query_one(f"SELECT COUNT(*) AS n FROM {t}")
         result[t] = int(row["n"]) if row else 0
     return result
+
+
+@app.get("/api/admin/cv-database")
+def cv_database(request: Request):
+    """CV / candidate database — full candidate list with application data."""
+    if request.state.user.get("role") != "admin":
+        return JSONResponse(status_code=403, content={"detail": "Admin only"})
+
+    summary = query_one(
+        """
+        SELECT
+          COUNT(DISTINCT c.id)                                              AS total_candidates,
+          COUNT(a.id)                                                       AS total_applications,
+          COUNT(DISTINCT c.id) FILTER
+            (WHERE c.resume_url IS NOT NULL AND c.resume_url <> '')         AS resumes_on_file,
+          ROUND(AVG(a.combined_score)
+            FILTER (WHERE a.combined_score IS NOT NULL)::numeric, 1)        AS avg_score,
+          COUNT(DISTINCT c.id) FILTER (WHERE a.status = 'joined')           AS total_joined
+        FROM candidate c
+        LEFT JOIN application a ON a.candidate_id = c.id
+        """,
+    )
+
+    candidates = query(
+        """
+        SELECT
+          c.id, c.full_name, c.email, c.gender, c.source,
+          c.resume_url,
+          c.created_at                                                     AS registered_at,
+          (SELECT COUNT(*) FROM application WHERE candidate_id = c.id)    AS total_applications,
+          (SELECT r.title
+           FROM application a2
+           JOIN requisition r ON r.id = a2.requisition_id
+           WHERE a2.candidate_id = c.id
+           ORDER BY a2.applied_at DESC LIMIT 1)                           AS latest_position,
+          (SELECT a3.status
+           FROM application a3
+           WHERE a3.candidate_id = c.id
+           ORDER BY a3.applied_at DESC LIMIT 1)                           AS latest_status,
+          (SELECT a4.combined_score
+           FROM application a4
+           WHERE a4.candidate_id = c.id
+           ORDER BY a4.combined_score DESC NULLS LAST LIMIT 1)            AS best_score,
+          (SELECT a5.bot_score
+           FROM application a5
+           WHERE a5.candidate_id = c.id
+           ORDER BY a5.bot_score DESC NULLS LAST LIMIT 1)                 AS ai_score,
+          (SELECT a6.match_score
+           FROM application a6
+           WHERE a6.candidate_id = c.id
+           ORDER BY a6.match_score DESC NULLS LAST LIMIT 1)               AS match_score
+        FROM candidate c
+        ORDER BY c.created_at DESC
+        """,
+    )
+
+    return {"summary": dict(summary) if summary else {}, "candidates": candidates}
 
 
 @app.get("/api/admin/sys-logs")
