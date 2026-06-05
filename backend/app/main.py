@@ -39,6 +39,38 @@ app.include_router(_nexai_router)
 app.include_router(_proctoring_router)
 app.include_router(_tickets_router)
 
+
+@app.on_event("startup")
+def _auto_migrate():
+    """
+    Idempotent migrations — run on every startup so developers never need
+    to manually execute SQL files after pulling new code.
+    Each statement is safe to re-run (uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS).
+    """
+    from .db import query
+    migrations = [
+        # NexAI candidate invite tokens (added 2026-06)
+        """CREATE TABLE IF NOT EXISTS nexai_invite (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            application_id UUID NOT NULL REFERENCES application(id) ON DELETE CASCADE,
+            token          TEXT NOT NULL UNIQUE,
+            invited_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            expires_at     TIMESTAMPTZ NOT NULL DEFAULT now() + INTERVAL '7 days',
+            used_at        TIMESTAMPTZ,
+            created_by     UUID REFERENCES app_user(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_nexai_invite_token ON nexai_invite (token)",
+        # CTC split columns (added 2026-06)
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS budgeted_fixed    NUMERIC",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS budgeted_variable NUMERIC",
+    ]
+    for sql in migrations:
+        try:
+            query(sql, fetch=False)
+        except Exception as exc:
+            # Log but don't crash — a failed migration shouldn't block startup
+            print(f"[auto-migrate] WARNING: {exc}")
+
 _UPLOADS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
 )
