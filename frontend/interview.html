@@ -364,6 +364,13 @@ async function startInterview() {
     _procScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   } catch (e) {
     console.error('[NexAI] getDisplayMedia failed — name:', e.name, '| message:', e.message, e);
+    // Close AudioContext BEFORE stopping tracks so the audio device is fully released.
+    // Keeping an active AudioContext connected to a stopped stream holds the mic hardware
+    // on Windows/Chrome and causes NotFoundError on the next getUserMedia attempt.
+    if (_audioCtx) {
+      try { _audioCtx.close(); } catch(_) {}
+      _audioCtx = null; _analyser = null; _analyserBuf = null; _micStream = null;
+    }
     _procWebcamStream.getTracks().forEach(t => t.stop());
     _procWebcamStream = null;
     let _screenReason;
@@ -469,6 +476,16 @@ function retryPermissions() {
   const btn = document.getElementById('start-btn');
   btn.disabled    = false;
   btn.textContent = 'Start Interview';
+  // Fully release audio device so the next getUserMedia({video,audio}) can acquire it.
+  if (_audioCtx) {
+    try { _audioCtx.close(); } catch(_) {}
+    _audioCtx = null; _analyser = null; _analyserBuf = null; _micStream = null;
+  }
+  // Stop any partially-acquired streams from the failed attempt.
+  if (_procWebcamStream) {
+    _procWebcamStream.getTracks().forEach(t => t.stop());
+    _procWebcamStream = null;
+  }
   showStep('step-consent');
 }
 

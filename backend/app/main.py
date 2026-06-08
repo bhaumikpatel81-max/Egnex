@@ -102,6 +102,12 @@ def _auto_migrate():
                FROM nexai_invite
                ORDER BY application_id, invited_at DESC
            )""",
+        # Migration 16: conversational interview turn history (added 2026-06)
+        "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS conversation JSONB",
+        # Migration 18: proctoring completion flag (added 2026-06)
+        "ALTER TABLE proctoring_session ADD COLUMN IF NOT EXISTS proctoring_complete BOOLEAN NOT NULL DEFAULT FALSE",
+        # Migration 19: email-sent guard to prevent duplicate completion emails (added 2026-06)
+        "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS email_sent BOOLEAN NOT NULL DEFAULT FALSE",
     ]
     for sql in migrations:
         try:
