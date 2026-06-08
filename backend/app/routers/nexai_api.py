@@ -22,6 +22,7 @@ from ..services import avatar as _avatar_svc
 from ..services import tts as _tts_svc
 from ..services import prerender as _prerender_svc
 from ..services.connectors import send_email
+from ..services import interviewer_llm as _llm_svc
 
 router = APIRouter(prefix="/api/nexai", tags=["nexai"])
 
@@ -133,6 +134,16 @@ class QuestionIn(BaseModel):
 
 class RequisitionQuestionsIn(BaseModel):
     questions: list[QuestionIn]
+
+
+class ConverseIn(BaseModel):
+    candidate_text: Optional[str] = None
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _nexai_mode() -> str:
+    return os.environ.get("NEXAI_MODE", "scripted").lower()
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -757,6 +768,7 @@ def validate_invite(token: str):
         "job_title": row["job_title"],
         "company": row["company"],
         "application_id": str(row["application_id"]),
+        "mode": _nexai_mode(),
     }
 
 
@@ -815,7 +827,8 @@ def start_invited_session(token: str):
             query(
                 """UPDATE nexai_session
                    SET status = 'in_progress', started_at = now(),
-                       transcript = NULL, raw_score = NULL, score_detail = NULL
+                       transcript = NULL, raw_score = NULL, score_detail = NULL,
+                       conversation = NULL
                    WHERE id = %s""",
                 [existing["id"]], fetch=False,
             )
@@ -825,7 +838,8 @@ def start_invited_session(token: str):
                 """UPDATE nexai_session
                    SET questions = %s::jsonb, status = 'in_progress',
                        started_at = now(), transcript = NULL,
-                       raw_score = NULL, score_detail = NULL
+                       raw_score = NULL, score_detail = NULL,
+                       conversation = NULL
                    WHERE id = %s""",
                 [json.dumps(questions), existing["id"]], fetch=False,
             )
@@ -868,16 +882,171 @@ def get_invite_render_status(token: str):
     }
 
 
-@router.post("/invite/submit/{session_id}")
-def submit_invited_session(session_id: str, body: SubmitSessionIn):
-    """Public — candidate submits completed interview transcript."""
+@router.post("/invite/converse")
+async def converse_invite(token: str, body: ConverseIn):
+    """
+    Public — drive one turn of a conversational (LLM-led) NexAI interview.
+
+    Call with an empty/absent candidate_text on the very first turn to get the
+    bot's opening question. Subsequent calls should include the candidate's spoken
+    response. The endpoint returns the bot's next reply and signals when the
+    interview is complete (is_complete=true), at which point the session is scored
+    and written to the database exactly as the scripted submit flow does.
+
+    Only active when NEXAI_MODE=conversational.
+    """
+    if _nexai_mode() != "conversational":
+        raise HTTPException(400, "Conversational mode is not enabled (NEXAI_MODE=scripted)")
+
+    # ── Token validation (mirrors start_invited_session) ─────────────────────
+    invite = query_one(
+        "SELECT id, application_id, expires_at, used_at FROM nexai_invite WHERE token = %s",
+        [token],
+    )
+    if not invite:
+        raise HTTPException(400, "Invalid invite token")
+    exp = invite["expires_at"]
+    if exp and exp.replace(tzinfo=None) < datetime.utcnow():
+        raise HTTPException(400, "This interview link has expired")
+
+    # ── Load session + role context ───────────────────────────────────────────
     sess = query_one(
-        "SELECT id, application_id, questions FROM nexai_session WHERE id = %s",
+        """SELECT ns.id, ns.status, ns.conversation, ns.application_id,
+                  r.title, r.key_skills, r.job_description
+           FROM nexai_session ns
+           JOIN application a ON a.id  = ns.application_id
+           JOIN requisition r ON r.id  = a.requisition_id
+           WHERE ns.application_id = %s""",
+        [invite["application_id"]],
+    )
+    if not sess:
+        raise HTTPException(404, "Session not found — call /api/nexai/invite/begin first")
+    if sess["status"] == "completed":
+        raise HTTPException(400, "This interview has already been completed")
+
+    turns = list(sess["conversation"] or [])
+
+    # Append candidate's reply (empty on the opening call — bot speaks first)
+    candidate_text = (body.candidate_text or "").strip()
+    if candidate_text:
+        turns.append({"speaker": "candidate", "text": candidate_text})
+
+    role_context = {
+        "title": sess["title"] or "",
+        "key_skills": sess["key_skills"] or [],
+        "job_description": sess["job_description"] or "",
+    }
+    conversation_state = {"role_context": role_context, "turns": turns}
+
+    # ── Get bot's next reply ──────────────────────────────────────────────────
+    result = await _llm_svc.next_turn(conversation_state)
+    reply       = result["reply"]
+    is_complete = result["is_complete"]
+
+    turns.append({"speaker": "bot", "text": reply})
+
+    # ── If interview is done: score and write final results ───────────────────
+    if is_complete:
+        conversation_state["turns"] = turns
+        score_result = await _llm_svc.score_transcript(conversation_state)
+        raw_score = score_result["raw_score"]
+        detail    = score_result["score_detail"]
+
+        query(
+            """UPDATE nexai_session
+               SET conversation = %s::jsonb,
+                   raw_score = %s, score_detail = %s::jsonb,
+                   status = 'completed', completed_at = now()
+               WHERE id = %s""",
+            [json.dumps(turns), raw_score, json.dumps(detail), sess["id"]],
+            fetch=False,
+        )
+
+        app_row = query_one(
+            "SELECT match_score FROM application WHERE id = %s",
+            [sess["application_id"]],
+        )
+        match    = float((app_row or {}).get("match_score") or 0)
+        combined = round(0.4 * match + 0.6 * raw_score, 1)
+        query(
+            "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
+            [raw_score, combined, sess["application_id"]],
+            fetch=False,
+        )
+    else:
+        query(
+            "UPDATE nexai_session SET conversation = %s::jsonb WHERE id = %s",
+            [json.dumps(turns), sess["id"]],
+            fetch=False,
+        )
+
+    return {"reply": reply, "is_complete": is_complete}
+
+
+@router.post("/invite/submit/{session_id}")
+async def submit_invited_session(session_id: str, body: SubmitSessionIn):
+    """Public — candidate submits completed interview transcript.
+
+    In scripted mode: scores the supplied transcript using the rule-based model.
+    In conversational mode: if the converse endpoint already scored the session,
+    returns that score immediately; otherwise runs LLM scoring on the stored
+    conversation (edge-case safety valve).
+    """
+    sess = query_one(
+        """SELECT id, application_id, questions, conversation,
+                  raw_score, score_detail, status
+           FROM nexai_session WHERE id = %s""",
         [session_id],
     )
     if not sess:
         raise HTTPException(404, "Session not found")
 
+    # ── Conversational mode ───────────────────────────────────────────────────
+    if _nexai_mode() == "conversational":
+        # Already fully scored by the converse endpoint
+        if sess["status"] == "completed" and sess["raw_score"] is not None:
+            return {
+                "session_id": session_id,
+                "raw_score": float(sess["raw_score"]),
+                "score_detail": sess["score_detail"] or {},
+            }
+
+        # Safety valve: score the stored conversation if converse didn't complete
+        stored_turns = list(sess["conversation"] or [])
+        app_meta = query_one(
+            """SELECT a.match_score, r.title, r.key_skills, r.job_description
+               FROM application a JOIN requisition r ON r.id = a.requisition_id
+               WHERE a.id = %s""",
+            [sess["application_id"]],
+        )
+        role_ctx = {
+            "title": (app_meta or {}).get("title", ""),
+            "key_skills": (app_meta or {}).get("key_skills") or [],
+            "job_description": (app_meta or {}).get("job_description") or "",
+        }
+        score_result = await _llm_svc.score_transcript(
+            {"role_context": role_ctx, "turns": stored_turns}
+        )
+        raw_score = score_result["raw_score"]
+        detail    = score_result["score_detail"]
+
+        query(
+            """UPDATE nexai_session
+               SET raw_score = %s, score_detail = %s::jsonb,
+                   status = 'completed', completed_at = now()
+               WHERE id = %s""",
+            [raw_score, json.dumps(detail), session_id],
+            fetch=False,
+        )
+        match    = float((app_meta or {}).get("match_score") or 0)
+        combined = round(0.4 * match + 0.6 * raw_score, 1)
+        query(
+            "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
+            [raw_score, combined, sess["application_id"]], fetch=False,
+        )
+        return {"session_id": session_id, "raw_score": raw_score, "score_detail": detail}
+
+    # ── Scripted mode (unchanged behaviour) ──────────────────────────────────
     questions  = sess["questions"] if isinstance(sess["questions"], list) else []
     transcript = [t.dict() for t in body.transcript]
     raw_score, detail = _score_transcript(questions, transcript)

@@ -22,7 +22,7 @@ h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#1a1a1a}
 .check-row input{width:16px;height:16px;cursor:pointer;accent-color:#f15a22}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 22px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;border:none;transition:.15s}
 .btn-primary{background:#f15a22;color:#fff}.btn-primary:hover{background:#d44e1a}.btn-primary:disabled{opacity:.5;cursor:not-allowed}
-.btn-ghost{background:transparent;color:#1a1a1a;border:1px solid #ddd}.btn-ghost:hover{background:#f5f4f1}
+.btn-ghost{background:transparent;color:#1a1a1a;border:1px solid #ddd}.btn-ghost:hover{background:#f5f4f1}.btn-ghost:disabled{opacity:.5;cursor:not-allowed}
 .btn-full{width:100%}
 .status{text-align:center;font-size:13px;color:#6b6760;min-height:20px;margin:8px 0}
 .question-box{background:#f5f4f1;border-radius:8px;padding:16px;font-size:15px;line-height:1.6;margin:16px 0;min-height:60px;color:#1a1a1a}
@@ -30,8 +30,7 @@ h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#1a1a1a}
 .controls{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
 .transcript{font-size:12px;color:#6b6760;background:#f5f4f1;border-radius:6px;padding:12px;margin-top:12px;max-height:120px;overflow-y:auto;line-height:1.5;display:none}
 .result-box{text-align:center;padding:24px 0}
-.result-score{font-size:52px;font-weight:800;color:#f15a22}
-.result-label{font-size:14px;color:#6b6760;margin-bottom:16px}
+.result-label{font-size:14px;color:#1a1a1a;margin-bottom:8px}
 .result-detail{font-size:13px;color:#1a1a1a;line-height:1.8;text-align:left;background:#faf9f6;border-radius:8px;padding:14px;margin-top:16px}
 .error-box{text-align:center;padding:40px 20px}
 .error-box h2{font-size:18px;color:#c0392b;margin-bottom:8px}
@@ -47,6 +46,15 @@ canvas#orb{border-radius:50%}
 @keyframes pulse-speak{from{box-shadow:0 0 0 2px rgba(241,90,34,.18)}to{box-shadow:0 0 0 10px rgba(241,90,34,.06)}}
 @keyframes pulse-listen{from{box-shadow:0 0 0 2px rgba(37,99,235,.18)}to{box-shadow:0 0 0 10px rgba(37,99,235,.06)}}
 .step{display:none}.step.active{display:block}
+
+/* ── Conversational mode UI ───────────────────────────────────────────── */
+#conv-bot-text{font-size:14px;color:#1a1a1a;line-height:1.65;padding:12px 16px;background:#faf9f6;border-radius:8px;border-left:3px solid #f15a22;margin:10px 0;display:none}
+#conv-caption{min-height:22px;font-size:13px;color:#6b6760;font-style:italic;text-align:center;padding:4px 8px;margin:4px 0;display:none;word-break:break-word}
+#conv-controls{display:none;justify-content:center;margin:8px 0}
+#conv-text-wrap{display:none;margin:12px 0}
+#conv-text{width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;resize:vertical;min-height:80px;font-family:inherit}
+#thinking-dot{display:inline-block;animation:blink 1s step-start infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
 </style>
 </head>
 <body>
@@ -81,7 +89,7 @@ canvas#orb{border-radius:50%}
     <div class="consent-box">
       <strong>Before you begin, please read carefully.</strong><br>
       This AI screening session will:
-      <ul>
+      <ul id="consent-list">
         <li>Ask you up to 8 questions about your experience and skills</li>
         <li>Record your spoken answers via your microphone</li>
         <li>Score your responses automatically and share results with the hiring team</li>
@@ -99,7 +107,8 @@ canvas#orb{border-radius:50%}
   <!-- Step: Interview -->
   <div class="step" id="step-interview">
     <h1>AI Screening Interview</h1>
-    <p class="status" id="nx-status">Preparing your questions…</p>
+    <p class="status" id="nx-status">Preparing your interview…</p>
+
     <div class="orb-wrap" id="interviewer-stage">
       <video id="nexai-video" playsinline></video>
       <div id="video-play-prompt"><button class="btn btn-ghost" onclick="nxVideoPlay()">&#9654; Click to start</button></div>
@@ -108,14 +117,34 @@ canvas#orb{border-radius:50%}
         <canvas id="orb" width="48" height="48"></canvas>
       </div>
     </div>
+
+    <!-- Bot spoken text (conversational mode only) -->
+    <div id="conv-bot-text"></div>
+
+    <!-- Live caption of candidate's speech (conversational mode only) -->
+    <div id="conv-caption"></div>
+
+    <!-- Conversational controls: "I'm done" fallback button -->
+    <div class="controls" id="conv-controls">
+      <button class="btn btn-ghost btn-full" id="btn-done" onclick="convDone()">&#10003; I'm done speaking</button>
+    </div>
+
+    <!-- Text input fallback (when SpeechRecognition is unavailable) -->
+    <div id="conv-text-wrap">
+      <textarea id="conv-text" placeholder="Type your answer here, then press Enter or click Submit…"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();convTextSubmit();}"></textarea>
+      <button class="btn btn-primary btn-full" style="margin-top:8px" onclick="convTextSubmit()">Submit answer &#8594;</button>
+    </div>
+
+    <!-- Scripted mode: question box and button controls -->
     <div id="nx-question-wrap">
       <div class="q-num" id="nx-qnum"></div>
       <div class="question-box" id="nx-question">Please wait…</div>
     </div>
     <div class="controls" id="nx-controls">
-      <button class="btn btn-primary" id="btn-speak" onclick="nxSpeak()" disabled>▶ Hear question</button>
-      <button class="btn btn-ghost" id="btn-listen" onclick="nxListen()" style="display:none">🎤 Record answer</button>
-      <button class="btn btn-ghost" id="btn-next" onclick="nxNext()" style="display:none">Next →</button>
+      <button class="btn btn-primary" id="btn-speak" onclick="nxSpeak()" disabled>&#9654; Hear question</button>
+      <button class="btn btn-ghost" id="btn-listen" onclick="nxListen()" style="display:none">&#127908; Record answer</button>
+      <button class="btn btn-ghost" id="btn-next" onclick="nxNext()" style="display:none">Next &#8594;</button>
       <button class="btn btn-primary" id="btn-submit" onclick="nxSubmit()" style="display:none">Finish &amp; submit</button>
     </div>
     <div class="transcript" id="nx-transcript"></div>
@@ -124,7 +153,7 @@ canvas#orb{border-radius:50%}
   <!-- Step: Complete -->
   <div class="step" id="step-done">
     <div class="result-box">
-      <p style="font-size:14px;color:#1a1a1a;margin-bottom:8px">Thank you — your interview is complete.</p>
+      <p class="result-label">Thank you — your interview is complete.</p>
       <p style="font-size:13px;color:#6b6760">Your responses have been submitted to the hiring team. You will be contacted with next steps shortly.</p>
       <div class="result-detail" id="done-detail"></div>
     </div>
@@ -132,20 +161,35 @@ canvas#orb{border-radius:50%}
 </div>
 
 <script>
-// ── State ────────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// CONVERSATIONAL MODE — tune this constant to adjust silence sensitivity
+// Lower = submits faster after the candidate stops speaking.
+// ═══════════════════════════════════════════════════════════════════════════
+const SILENCE_MS       = 2500;  // ms of continuous quiet after speech → auto-submit
+const SPEECH_THRESHOLD = 12;    // mic amplitude (0–128) above which speech is detected
+
+// ── Shared state ──────────────────────────────────────────────────────────
 const _token = new URLSearchParams(location.search).get('token');
 let _sessionId = null, _questions = [], _seq = 0, _transcript = [];
 let _synth = window.speechSynthesis, _recog = null;
 let _orbRaf = null, _orbPhase = 0, _orbState = 'idle';
-let _questionVideos = {}; // seq → video entry from render-status
+let _questionVideos = {};
 
-// ── Steps ────────────────────────────────────────────────────────────────────
+// ── Conversational state ──────────────────────────────────────────────────
+let _mode = 'scripted';
+let _convBusy  = false;   // true while waiting for bot API response
+let _listening = false;   // true while candidate mic is active
+let _listenText = '';     // accumulated recognition text
+let _micAmplitude = 0;   // live amplitude fed to orb animation
+let _audioCtx = null, _analyser = null, _micStream = null, _analyserBuf = null;
+
+// ── Steps ─────────────────────────────────────────────────────────────────
 function showStep(id) {
   document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
 
-// ── API (no auth needed — token in URL param) ─────────────────────────────────
+// ── API helper ────────────────────────────────────────────────────────────
 async function apiPublic(path, opts={}) {
   try {
     const r = await fetch(path, opts);
@@ -156,7 +200,6 @@ async function apiPublic(path, opts={}) {
     }
     return r.json();
   } catch(e) {
-    // Connection refused = server not running
     if (e.message && (e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('fetch'))) {
       return { _err: 'server_down' };
     }
@@ -164,7 +207,7 @@ async function apiPublic(path, opts={}) {
   }
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────
 (async function init() {
   if (!_token) { showErr('No interview token found in the link.'); return; }
   const res = await apiPublic(`/api/nexai/invite/validate?token=${encodeURIComponent(_token)}`);
@@ -176,23 +219,35 @@ async function apiPublic(path, opts={}) {
     return;
   }
   if (res._err || !res.valid) { showErr(res.reason || res._err || 'Invalid link'); return; }
-  document.getElementById('info-job').textContent     = res.job_title  || '—';
-  document.getElementById('info-company').textContent = res.company    || '—';
-  document.getElementById('info-name').textContent    = res.candidate_name || '—';
+
+  document.getElementById('info-job').textContent     = res.job_title       || '—';
+  document.getElementById('info-company').textContent = res.company         || '—';
+  document.getElementById('info-name').textContent    = res.candidate_name  || '—';
   document.getElementById('consent-sub').textContent  =
     `Hi ${res.candidate_name || 'there'} — you have been invited to an AI screening interview.`;
+
+  // Store and apply mode
+  _mode = (res.mode || 'scripted').toLowerCase();
+  if (_mode === 'conversational') {
+    // Update consent bullet points to describe the live-conversation format
+    document.getElementById('consent-list').innerHTML =
+      '<li>Hold a natural spoken conversation about your experience and skills</li>' +
+      '<li>Record your voice via your microphone — the bot listens and responds in real time</li>' +
+      '<li>Score your conversation automatically and share results with the hiring team</li>';
+  }
+
   showStep('step-consent');
 })();
 
 function showErr(reason, title) {
-  document.getElementById('err-title').textContent = title || 'Cannot load interview';
+  document.getElementById('err-title').textContent  = title  || 'Cannot load interview';
   document.getElementById('err-reason').textContent = reason;
   showStep('step-error');
 }
 
-// ── Start interview ───────────────────────────────────────────────────────────
+// ── Start interview (consent → interview screen) ──────────────────────────
 async function startInterview() {
-  document.getElementById('start-btn').disabled = true;
+  document.getElementById('start-btn').disabled    = true;
   document.getElementById('start-btn').textContent = 'Starting…';
   const res = await apiPublic(
     `/api/nexai/invite/begin?token=${encodeURIComponent(_token)}`,
@@ -204,18 +259,285 @@ async function startInterview() {
   _seq = 0; _transcript = [];
   showStep('step-interview');
   _startOrb();
-  document.getElementById('nx-status').textContent = 'Preparing your interview…';
-  document.getElementById('btn-speak').disabled = true;
-  await pollRenderStatus();
-  loadQuestion();
+
+  if (_mode === 'conversational') {
+    _startConversationalInterview();
+  } else {
+    // ── Scripted mode — identical to original ─────────────────────────────
+    document.getElementById('nx-status').textContent = 'Preparing your interview…';
+    document.getElementById('btn-speak').disabled = true;
+    await pollRenderStatus();
+    loadQuestion();
+  }
 }
 
-// ── Question flow ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// CONVERSATIONAL MODE
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function _startConversationalInterview() {
+  // Hide scripted UI, show conversational UI
+  document.getElementById('nx-question-wrap').style.display = 'none';
+  document.getElementById('nx-controls').style.display      = 'none';
+  document.getElementById('nx-transcript').style.display    = 'none';
+  document.getElementById('conv-bot-text').style.display    = '';
+  document.getElementById('conv-caption').style.display     = '';
+  document.getElementById('conv-controls').style.display    = 'none'; // shown only while listening
+  document.getElementById('conv-text-wrap').style.display   = 'none';
+
+  // Request mic now (user just clicked a button, so permission prompt is allowed)
+  const micOk = await _setupMic();
+  if (!micOk) {
+    document.getElementById('nx-status').textContent =
+      'Microphone access denied — you can type your answers instead.';
+  }
+
+  // Open the conversation — empty text triggers the bot's opening line
+  await convTurn('');
+}
+
+// ── One full turn: send candidate text → receive bot reply → speak → listen ─
+async function convTurn(candidateText) {
+  if (_convBusy) return;
+  _convBusy = true;
+
+  // Thinking indicator
+  _orbSetState('idle');
+  document.getElementById('conv-controls').style.display = 'none';
+  document.getElementById('conv-text-wrap').style.display = 'none';
+  document.getElementById('conv-caption').textContent = '';
+  document.getElementById('conv-bot-text').textContent = '';
+  document.getElementById('nx-status').innerHTML =
+    'NexAI is thinking<span id="thinking-dot">…</span>';
+
+  let res = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    res = await apiPublic(
+      `/api/nexai/invite/converse?token=${encodeURIComponent(_token)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidate_text: candidateText }),
+      }
+    );
+    if (!res._err) break;
+    if (attempt === 0) {
+      document.getElementById('nx-status').textContent = 'Connection issue, retrying…';
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+
+  _convBusy = false;
+
+  if (res._err) {
+    document.getElementById('nx-status').textContent =
+      'Connection error. Please refresh the page and try again.';
+    return;
+  }
+
+  const { reply, is_complete } = res;
+
+  // Show bot's text on screen while it speaks
+  document.getElementById('conv-bot-text').textContent = reply;
+
+  // Speak the bot's reply — wait until speech ends before listening
+  await _convSpeak(reply);
+
+  // Clear bot text after speaking
+  document.getElementById('conv-bot-text').textContent = '';
+
+  if (is_complete) {
+    _orbSetState('done');
+    document.getElementById('nx-status').textContent = 'Interview complete. Thank you!';
+    document.getElementById('done-detail').innerHTML = '';
+    _stopOrb();
+    setTimeout(() => showStep('step-done'), 1200);
+    return;
+  }
+
+  // Start listening for the candidate's response
+  _convStartListening();
+}
+
+// ── Speak (Promise resolves when speech synthesis fires 'end') ─────────────
+function _convSpeak(text) {
+  return new Promise(resolve => {
+    _orbSetState('speaking');
+    document.getElementById('nx-status').textContent = 'NexAI is speaking…';
+    const utt = new SpeechSynthesisUtterance(text);
+    utt.rate = 0.95; utt.pitch = 1;
+    utt.onend   = () => { _orbSetState('idle'); resolve(); };
+    utt.onerror = () => { _orbSetState('idle'); resolve(); };
+    _synth.cancel();
+    _synth.speak(utt);
+    // Safety: resolve after 15 s max in case onend never fires (rare mobile bug)
+    setTimeout(resolve, 15000);
+  });
+}
+
+// ── Microphone setup (called once; subsequent calls are no-ops) ─────────────
+async function _setupMic() {
+  if (_audioCtx) return true;
+  try {
+    _micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    _audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+    _analyser  = _audioCtx.createAnalyser();
+    _analyser.fftSize = 256;
+    _analyserBuf = new Uint8Array(_analyser.frequencyBinCount);
+    _audioCtx.createMediaStreamSource(_micStream).connect(_analyser);
+    return true;
+  } catch(e) {
+    console.warn('[NexAI] Mic access failed:', e.message);
+    return false;
+  }
+}
+
+function _readAmplitude() {
+  if (!_analyser) return 0;
+  _analyser.getByteTimeDomainData(_analyserBuf);
+  let peak = 0;
+  for (let i = 0; i < _analyserBuf.length; i++) {
+    const v = Math.abs(_analyserBuf[i] - 128);
+    if (v > peak) peak = v;
+  }
+  return peak;
+}
+
+// ── Start listening for candidate answer ───────────────────────────────────
+function _convStartListening() {
+  _listening  = true;
+  _listenText = '';
+  _micAmplitude = 0;
+
+  _orbSetState('listening');
+  document.getElementById('nx-status').textContent = 'Your turn — speak now…';
+  document.getElementById('conv-caption').textContent = '';
+  document.getElementById('conv-controls').style.display = 'flex';
+  document.getElementById('btn-done').disabled = false;
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SR) {
+    // Text-input fallback
+    document.getElementById('conv-text-wrap').style.display = '';
+    document.getElementById('conv-text').value = '';
+    document.getElementById('conv-text').focus();
+    document.getElementById('conv-controls').style.display = 'none'; // hide "I'm done" — enter key submits
+    return;
+  }
+
+  _recog = new SR();
+  _recog.lang = 'en-IN';
+  _recog.continuous     = true;
+  _recog.interimResults = true;
+
+  _recog.onresult = (e) => {
+    let final = '', interim = '';
+    for (let i = 0; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final   += e.results[i][0].transcript + ' ';
+      else                      interim += e.results[i][0].transcript;
+    }
+    _listenText = final;
+    document.getElementById('conv-caption').textContent = (final + interim).trim();
+  };
+
+  _recog.onerror = () => {
+    // Recognition error — treat what we have as the answer
+    _convFinishListening();
+  };
+
+  _recog.onend = () => {
+    // Could be triggered by _recog.stop() or by browser timeout
+    _convFinishListening();
+  };
+
+  _recog.start();
+  _convSilenceMonitor();
+}
+
+// ── Silence detection loop — runs every 80 ms while listening ──────────────
+function _convSilenceMonitor() {
+  let hadSpeech  = false;
+  let silStart   = null;
+
+  function tick() {
+    if (!_listening) return; // stopped by _convFinishListening
+
+    const amp = _readAmplitude();
+    _micAmplitude = amp; // used by orb animation
+
+    if (amp > SPEECH_THRESHOLD) {
+      hadSpeech = true;
+      silStart  = null;
+    } else if (hadSpeech) {
+      if (!silStart) {
+        silStart = Date.now();
+      } else {
+        const elapsed = Date.now() - silStart;
+        if (elapsed >= SILENCE_MS) {
+          // Silence long enough — submit
+          _convFinishListening();
+          return;
+        }
+        // Show countdown so candidate knows what's happening
+        const sec = Math.ceil((SILENCE_MS - elapsed) / 1000);
+        document.getElementById('nx-status').textContent =
+          sec > 1 ? `Listening… (${sec}s of quiet, then submitting)` : 'Submitting…';
+      }
+    } else {
+      document.getElementById('nx-status').textContent = 'Your turn — speak now…';
+    }
+
+    setTimeout(tick, 80);
+  }
+
+  tick();
+}
+
+// ── Finish listening (called by silence detection, recog.onend, or "I'm done" button) ─
+function _convFinishListening() {
+  if (!_listening) return; // guard against double-firing
+  _listening = false;
+  _micAmplitude = 0;
+
+  // Stop recognition (triggers onend, but _listening=false so it's a no-op)
+  if (_recog) {
+    try { _recog.stop(); } catch(e) {}
+    _recog = null;
+  }
+
+  document.getElementById('conv-controls').style.display = 'none';
+  document.getElementById('btn-done').disabled = true;
+  _orbSetState('idle');
+
+  const answer = _listenText.trim();
+  document.getElementById('conv-caption').textContent = answer || '';
+  convTurn(answer);
+}
+
+// ── "I'm done speaking" button ─────────────────────────────────────────────
+function convDone() {
+  _convFinishListening();
+}
+
+// ── Text-input fallback submit ─────────────────────────────────────────────
+function convTextSubmit() {
+  const text = (document.getElementById('conv-text').value || '').trim();
+  document.getElementById('conv-text-wrap').style.display = 'none';
+  _listening = false; // ensure silence monitor doesn't fire
+  _orbSetState('idle');
+  convTurn(text);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SCRIPTED MODE — original flow, unchanged
+// ═══════════════════════════════════════════════════════════════════════════
+
 function loadQuestion() {
   if (_seq >= _questions.length) { showFinishBtn(); return; }
   const q = _questions[_seq];
   const total = _questions.length;
-  document.getElementById('nx-qnum').textContent = `Question ${_seq + 1} of ${total}`;
+  document.getElementById('nx-qnum').textContent    = `Question ${_seq + 1} of ${total}`;
   document.getElementById('nx-question').textContent = q.text;
   document.getElementById('btn-listen').style.display = 'none';
   document.getElementById('btn-next').style.display   = 'none';
@@ -234,13 +556,12 @@ function showFinishBtn() {
   document.getElementById('btn-listen').style.display  = 'none';
   document.getElementById('btn-next').style.display    = 'none';
   document.getElementById('btn-submit').style.display  = '';
-  document.getElementById('nx-qnum').textContent = '';
-  document.getElementById('nx-question').textContent = 'All questions answered. Click "Finish & submit" to complete your interview.';
-  document.getElementById('nx-status').textContent = 'Ready to submit.';
+  document.getElementById('nx-qnum').textContent       = '';
+  document.getElementById('nx-question').textContent   = 'All questions answered. Click "Finish & submit" to complete your interview.';
+  document.getElementById('nx-status').textContent     = 'Ready to submit.';
   _orbSetState('idle');
 }
 
-// ── Render-status polling ─────────────────────────────────────────────────────
 async function pollRenderStatus() {
   const start = Date.now();
   const MAX_MS = 90000, POLL_MS = 3000;
@@ -256,30 +577,26 @@ async function pollRenderStatus() {
   }
 }
 
-// ── Video / orb stage swap ────────────────────────────────────────────────────
 function _showVideoStage(url) {
-  const vid = document.getElementById('nexai-video');
-  const stage = document.getElementById('orb-stage');
+  const vid    = document.getElementById('nexai-video');
+  const stage  = document.getElementById('orb-stage');
   const playBtn = document.getElementById('video-play-prompt');
-  // Clear any previous handlers before touching src
   vid.onerror = null; vid.onended = null;
-  stage.style.display = 'none';
+  stage.style.display   = 'none';
   playBtn.style.display = 'none';
-  vid.style.display = '';
+  vid.style.display     = '';
   document.getElementById('btn-speak').style.display = 'none';
-  document.getElementById('nx-status').textContent = 'Watch the question, then record your answer.';
-  // Set handlers before src so onerror fires correctly
+  document.getElementById('nx-status').textContent   = 'Watch the question, then record your answer.';
   vid.onerror = () => _fallbackOrbForQuestion();
   vid.onended = () => {
     _orbSetState('idle');
     document.getElementById('btn-listen').style.display = '';
-    document.getElementById('nx-status').textContent = 'Click "Record answer" to speak your response.';
+    document.getElementById('nx-status').textContent    = 'Click "Record answer" to speak your response.';
   };
   vid.src = url;
   const p = vid.play();
   if (p !== undefined) {
     p.catch(() => {
-      // Autoplay with sound blocked — show single click affordance
       playBtn.style.display = '';
       document.getElementById('nx-status').textContent = 'Click to start the question.';
     });
@@ -287,18 +604,17 @@ function _showVideoStage(url) {
 }
 
 function _showOrbStage() {
-  const vid = document.getElementById('nexai-video');
-  const stage = document.getElementById('orb-stage');
+  const vid    = document.getElementById('nexai-video');
+  const stage  = document.getElementById('orb-stage');
   const playBtn = document.getElementById('video-play-prompt');
-  // Clear handlers before resetting src to suppress spurious error events
   vid.onerror = null; vid.onended = null;
   try { vid.pause(); } catch(e) {}
   vid.removeAttribute('src'); vid.load();
-  vid.style.display = 'none';
+  vid.style.display     = 'none';
   playBtn.style.display = 'none';
-  stage.style.display = '';
-  document.getElementById('btn-speak').style.display = '';
-  document.getElementById('btn-speak').disabled = false;
+  stage.style.display   = '';
+  document.getElementById('btn-speak').style.display  = '';
+  document.getElementById('btn-speak').disabled       = false;
 }
 
 function nxVideoPlay() {
@@ -311,28 +627,26 @@ function _fallbackOrbForQuestion() {
   _showOrbStage();
   document.getElementById('btn-listen').style.display = 'none';
   document.getElementById('btn-next').style.display   = 'none';
-  document.getElementById('nx-status').textContent = 'Click "Hear question" to listen, then record your answer.';
+  document.getElementById('nx-status').textContent    = 'Click "Hear question" to listen, then record your answer.';
 }
 
-// ── Speech synthesis ──────────────────────────────────────────────────────────
 function nxSpeak() {
   const q = _questions[_seq];
   if (!q) return;
   _orbSetState('speaking');
-  document.getElementById('btn-speak').disabled = true;
-  document.getElementById('nx-status').textContent = 'Speaking…';
+  document.getElementById('btn-speak').disabled       = true;
+  document.getElementById('nx-status').textContent    = 'Speaking…';
   const utt = new SpeechSynthesisUtterance(q.text);
   utt.rate = 0.95; utt.pitch = 1;
   utt.onend = () => {
     _orbSetState('idle');
     document.getElementById('btn-listen').style.display = '';
-    document.getElementById('nx-status').textContent = 'Click "Record answer" to speak your response.';
+    document.getElementById('nx-status').textContent    = 'Click "Record answer" to speak your response.';
   };
   _synth.cancel();
   _synth.speak(utt);
 }
 
-// ── Speech recognition ────────────────────────────────────────────────────────
 function nxListen() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
@@ -341,18 +655,18 @@ function nxListen() {
   }
   _recog = new SR();
   _recog.lang = 'en-IN';
-  _recog.continuous = true;
+  _recog.continuous     = true;
   _recog.interimResults = false;
   _orbSetState('listening');
-  document.getElementById('btn-listen').disabled = true;
-  document.getElementById('nx-status').textContent = 'Recording… speak now. Click "Stop" when done.';
-  document.getElementById('btn-listen').textContent = '⏹ Stop recording';
-  document.getElementById('btn-listen').disabled = false;
-  document.getElementById('btn-listen').onclick = nxStopListen;
+  document.getElementById('btn-listen').disabled    = true;
+  document.getElementById('nx-status').textContent  = 'Recording… speak now. Click "Stop" when done.';
+  document.getElementById('btn-listen').textContent = '&#9209; Stop recording';
+  document.getElementById('btn-listen').disabled    = false;
+  document.getElementById('btn-listen').onclick     = nxStopListen;
   let full = '';
   _recog.onresult = e => { for (let i=e.resultIndex;i<e.results.length;i++) full+=e.results[i][0].transcript+' '; };
-  _recog.onerror = () => { _orbSetState('idle'); _saveAnswer(full); };
-  _recog.onend = () => { _orbSetState('idle'); _saveAnswer(full); };
+  _recog.onerror  = () => { _orbSetState('idle'); _saveAnswer(full); };
+  _recog.onend    = () => { _orbSetState('idle'); _saveAnswer(full); };
   _recog.start();
 }
 
@@ -364,16 +678,14 @@ function _saveAnswer(text) {
   const q = _questions[_seq];
   const trimmed = text.trim();
   _transcript.push({ seq: q.seq, question: q.text, answer: trimmed });
-  // Show in transcript log
   const tEl = document.getElementById('nx-transcript');
   tEl.style.display = 'block';
   tEl.innerHTML += `<strong>Q${_seq+1}:</strong> ${trimmed || '<em>No answer recorded</em>'}<br>`;
   tEl.scrollTop = tEl.scrollHeight;
-  document.getElementById('nx-status').textContent = trimmed ? 'Answer recorded.' : 'No answer recorded.';
-  document.getElementById('btn-listen').textContent = '🎤 Record answer';
-  document.getElementById('btn-listen').onclick = nxListen;
+  document.getElementById('nx-status').textContent   = trimmed ? 'Answer recorded.' : 'No answer recorded.';
+  document.getElementById('btn-listen').textContent  = '&#127908; Record answer';
+  document.getElementById('btn-listen').onclick      = nxListen;
   document.getElementById('btn-listen').style.display = 'none';
-  // Show next or finish
   _seq++;
   if (_seq < _questions.length) {
     document.getElementById('btn-next').style.display = '';
@@ -384,11 +696,10 @@ function _saveAnswer(text) {
 
 function nxNext() { loadQuestion(); }
 
-// ── Submit ────────────────────────────────────────────────────────────────────
 async function nxSubmit() {
-  document.getElementById('btn-submit').disabled = true;
+  document.getElementById('btn-submit').disabled    = true;
   document.getElementById('btn-submit').textContent = 'Submitting…';
-  document.getElementById('nx-status').textContent = 'Sending your responses…';
+  document.getElementById('nx-status').textContent  = 'Sending your responses…';
   _orbSetState('idle');
   const res = await apiPublic(
     `/api/nexai/invite/submit/${_sessionId}`,
@@ -399,28 +710,34 @@ async function nxSubmit() {
     }
   );
   if (res._err) {
-    document.getElementById('nx-status').textContent = 'Error submitting: ' + res._err;
-    document.getElementById('btn-submit').disabled = false;
+    document.getElementById('nx-status').textContent  = 'Error submitting: ' + res._err;
+    document.getElementById('btn-submit').disabled    = false;
     document.getElementById('btn-submit').textContent = 'Retry submit';
     return;
   }
-  // Show result
   const detail = res.score_detail || {};
   const qa = detail.questions_answered ?? '—';
-  const qt = detail.total_questions ?? '—';
+  const qt = detail.total_questions    ?? '—';
   document.getElementById('done-detail').innerHTML =
     `Questions answered: <strong>${qa} / ${qt}</strong>`;
   _stopOrb();
   showStep('step-done');
 }
 
-// ── Orb animation ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+// ORB ANIMATION
+// ═══════════════════════════════════════════════════════════════════════════
+
 function _orbSetState(s) {
   _orbState = s;
   const av = document.getElementById('nexai-avatar');
   if (av) av.className = (s === 'idle' || s === 'done') ? '' : s;
 }
-function _stopOrb() { if (_orbRaf) { cancelAnimationFrame(_orbRaf); _orbRaf = null; } }
+
+function _stopOrb() {
+  if (_orbRaf) { cancelAnimationFrame(_orbRaf); _orbRaf = null; }
+}
+
 function _startOrb() {
   const canvas = document.getElementById('orb');
   if (!canvas) return;
@@ -430,17 +747,27 @@ function _startOrb() {
     _orbRaf = requestAnimationFrame(frame);
     _orbPhase += 0.04;
     ctx.clearRect(0, 0, W, H);
-    const base = _orbState === 'listening' ? 18 + Math.sin(_orbPhase * 3) * 4
-               : _orbState === 'speaking'  ? 18 + Math.sin(_orbPhase * 2) * 3
-               : 16 + Math.sin(_orbPhase) * 1;
+
+    // In listening state: orb radius reacts to live mic amplitude
+    let base;
+    if (_orbState === 'listening') {
+      base = 14 + Math.min(_micAmplitude * 0.35, 10) + Math.sin(_orbPhase * 3) * 2;
+    } else if (_orbState === 'speaking') {
+      base = 18 + Math.sin(_orbPhase * 2) * 3;
+    } else {
+      base = 16 + Math.sin(_orbPhase) * 1;
+    }
+
     const gr = ctx.createRadialGradient(cx-4, cy-4, 1, cx, cy, base);
-    gr.addColorStop(0, '#ff8c5a');
+    gr.addColorStop(0,   '#ff8c5a');
     gr.addColorStop(0.5, '#f15a22');
-    gr.addColorStop(1, '#9c3a0e');
+    gr.addColorStop(1,   '#9c3a0e');
     ctx.fillStyle = gr;
     ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2); ctx.fill();
+
     const hl = ctx.createRadialGradient(cx-5, cy-5, 0, cx-2, cy-2, base * 0.55);
-    hl.addColorStop(0, 'rgba(255,255,255,0.28)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
+    hl.addColorStop(0, 'rgba(255,255,255,0.28)');
+    hl.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = hl;
     ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2); ctx.fill();
   }

@@ -2937,10 +2937,17 @@ async function submitApply(){
     }else{
       const text=document.getElementById('am-text').value.trim();
       if(!text){_showApplyErr('Paste resume text first.');return;}
-      res=await api('/api/apply',{method:'POST',headers:{'Content-Type':'application/json'},
+      let _tr;
+      try{_tr=await fetch('/api/apply',{method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${_tok}`},
         body:JSON.stringify({requisition_id:_reqId,full_name:name,email,phone:phone||null,gender,
-          years_experience:parseFloat(years)||null,resume_text:text})});
-      if(!res){_showApplyErr('Submission failed. Check console for details.');return;}
+          years_experience:parseFloat(years)||null,resume_text:text})});}
+      catch{_showApplyErr('Network error — check your connection.');return;}
+      if(!_tr.ok){
+        let d='Server error';try{const j=await _tr.json();d=j.detail||d;}catch{}
+        _showApplyErr(d);return;
+      }
+      res=await _tr.json();
     }
     if(res.detail){_showApplyErr(res.detail);return;}
     const b=res.breakdown||{};

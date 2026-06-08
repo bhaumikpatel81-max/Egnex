@@ -664,31 +664,41 @@ def list_candidates(user: dict = Depends(get_current_user)):
     if role == "recruiter":
         return query(
             f"""
-            SELECT c.id, c.full_name, c.email, c.gender,
-                   r.id AS req_id, r.title AS requisition, a.status,
-                   a.combined_score, a.match_score, a.id AS app_id,
-                   rc_info.recruiter_id, rc_info.recruiter_name
-            FROM candidate c
-            JOIN application  a ON a.candidate_id = c.id
-            JOIN requisition  r ON r.id = a.requisition_id
-            JOIN requisition_recruiter rr
-                 ON rr.requisition_id = r.id AND rr.recruiter_id = %s
-            {_rec_lat}
-            ORDER BY a.applied_at DESC
+            SELECT * FROM (
+              SELECT DISTINCT ON (LOWER(c.email), r.id)
+                c.id, c.full_name, c.email, c.gender,
+                r.id AS req_id, r.title AS requisition, a.status,
+                a.combined_score, a.match_score, a.id AS app_id,
+                rc_info.recruiter_id, rc_info.recruiter_name,
+                a.applied_at
+              FROM candidate c
+              JOIN application  a ON a.candidate_id = c.id
+              JOIN requisition  r ON r.id = a.requisition_id
+              JOIN requisition_recruiter rr
+                   ON rr.requisition_id = r.id AND rr.recruiter_id = %s
+              {_rec_lat}
+              ORDER BY LOWER(c.email), r.id, a.combined_score DESC NULLS LAST, a.applied_at DESC
+            ) deduped
+            ORDER BY applied_at DESC
             """,
             [uid],
         )
     return query(
         f"""
-        SELECT c.id, c.full_name, c.email, c.gender,
-               r.id AS req_id, r.title AS requisition, a.status,
-               a.combined_score, a.match_score, a.id AS app_id,
-               rc_info.recruiter_id, rc_info.recruiter_name
-        FROM candidate c
-        JOIN application a ON a.candidate_id = c.id
-        JOIN requisition r ON r.id = a.requisition_id
-        {_rec_lat}
-        ORDER BY a.applied_at DESC
+        SELECT * FROM (
+          SELECT DISTINCT ON (LOWER(c.email), r.id)
+            c.id, c.full_name, c.email, c.gender,
+            r.id AS req_id, r.title AS requisition, a.status,
+            a.combined_score, a.match_score, a.id AS app_id,
+            rc_info.recruiter_id, rc_info.recruiter_name,
+            a.applied_at
+          FROM candidate c
+          JOIN application a ON a.candidate_id = c.id
+          JOIN requisition r ON r.id = a.requisition_id
+          {_rec_lat}
+          ORDER BY LOWER(c.email), r.id, a.combined_score DESC NULLS LAST, a.applied_at DESC
+        ) deduped
+        ORDER BY applied_at DESC
         """,
         [],
     )
@@ -790,13 +800,13 @@ def cv_database(user: dict = Depends(get_current_user)):
     summary = query_one(
         f"""
         SELECT
-          COUNT(DISTINCT c.id)                                              AS total_candidates,
+          COUNT(DISTINCT LOWER(c.email))                                    AS total_candidates,
           COUNT(a.id)                                                       AS total_applications,
-          COUNT(DISTINCT c.id) FILTER
+          COUNT(DISTINCT LOWER(c.email)) FILTER
             (WHERE c.resume_url IS NOT NULL AND c.resume_url <> '')         AS resumes_on_file,
           ROUND(AVG(a.combined_score)
             FILTER (WHERE a.combined_score IS NOT NULL)::numeric, 1)        AS avg_score,
-          COUNT(DISTINCT c.id) FILTER (WHERE a.status = 'joined')           AS total_joined
+          COUNT(DISTINCT LOWER(c.email)) FILTER (WHERE a.status = 'joined') AS total_joined
         FROM candidate c
         LEFT JOIN application a ON a.candidate_id = c.id
         WHERE 1=1 {scope_where}
@@ -804,37 +814,50 @@ def cv_database(user: dict = Depends(get_current_user)):
         scope_params,
     )
 
+    # DISTINCT ON (email) collapses duplicate candidate records for the same person.
+    # Keeps the oldest record (first created) as the canonical row.
     candidates = query(
         f"""
-        SELECT
-          c.id, c.full_name, c.email, c.gender, c.source,
-          c.resume_url,
-          c.created_at                                                     AS registered_at,
-          (SELECT COUNT(*) FROM application WHERE candidate_id = c.id)    AS total_applications,
-          (SELECT r.title
-           FROM application a2
-           JOIN requisition r ON r.id = a2.requisition_id
-           WHERE a2.candidate_id = c.id
-           ORDER BY a2.applied_at DESC LIMIT 1)                           AS latest_position,
-          (SELECT a3.status
-           FROM application a3
-           WHERE a3.candidate_id = c.id
-           ORDER BY a3.applied_at DESC LIMIT 1)                           AS latest_status,
-          (SELECT a4.combined_score
-           FROM application a4
-           WHERE a4.candidate_id = c.id
-           ORDER BY a4.combined_score DESC NULLS LAST LIMIT 1)            AS best_score,
-          (SELECT a5.bot_score
-           FROM application a5
-           WHERE a5.candidate_id = c.id
-           ORDER BY a5.bot_score DESC NULLS LAST LIMIT 1)                 AS ai_score,
-          (SELECT a6.match_score
-           FROM application a6
-           WHERE a6.candidate_id = c.id
-           ORDER BY a6.match_score DESC NULLS LAST LIMIT 1)               AS match_score
-        FROM candidate c
-        WHERE 1=1 {scope_where}
-        ORDER BY c.created_at DESC
+        SELECT * FROM (
+          SELECT DISTINCT ON (LOWER(c.email))
+            c.id, c.full_name, c.email, c.gender, c.source,
+            c.resume_url,
+            c.created_at                                                     AS registered_at,
+            (SELECT COUNT(DISTINCT a_cnt.requisition_id)
+             FROM application a_cnt
+             JOIN candidate c_dup ON c_dup.id = a_cnt.candidate_id
+             WHERE LOWER(c_dup.email) = LOWER(c.email))                     AS total_applications,
+            (SELECT r.title
+             FROM application a2
+             JOIN candidate c2d ON c2d.id = a2.candidate_id
+             JOIN requisition r ON r.id = a2.requisition_id
+             WHERE LOWER(c2d.email) = LOWER(c.email)
+             ORDER BY a2.applied_at DESC LIMIT 1)                           AS latest_position,
+            (SELECT a3.status
+             FROM application a3
+             JOIN candidate c3d ON c3d.id = a3.candidate_id
+             WHERE LOWER(c3d.email) = LOWER(c.email)
+             ORDER BY a3.applied_at DESC LIMIT 1)                           AS latest_status,
+            (SELECT a4.combined_score
+             FROM application a4
+             JOIN candidate c4d ON c4d.id = a4.candidate_id
+             WHERE LOWER(c4d.email) = LOWER(c.email)
+             ORDER BY a4.combined_score DESC NULLS LAST LIMIT 1)            AS best_score,
+            (SELECT a5.bot_score
+             FROM application a5
+             JOIN candidate c5d ON c5d.id = a5.candidate_id
+             WHERE LOWER(c5d.email) = LOWER(c.email)
+             ORDER BY a5.bot_score DESC NULLS LAST LIMIT 1)                 AS ai_score,
+            (SELECT a6.match_score
+             FROM application a6
+             JOIN candidate c6d ON c6d.id = a6.candidate_id
+             WHERE LOWER(c6d.email) = LOWER(c.email)
+             ORDER BY a6.match_score DESC NULLS LAST LIMIT 1)               AS match_score
+          FROM candidate c
+          WHERE 1=1 {scope_where}
+          ORDER BY LOWER(c.email), c.created_at ASC
+        ) deduped
+        ORDER BY registered_at DESC
         """,
         scope_params,
     )

@@ -16,3 +16,4 @@ openpyxl>=3.1.0
 gtts>=2.4.0
 edge-tts>=6.1.9
 google-cloud-storage>=2.16.0
+openai>=1.40.0

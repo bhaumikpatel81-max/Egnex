@@ -95,6 +95,13 @@ def _auto_migrate():
             updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_by      UUID        REFERENCES app_user(id)
         )""",
+        # De-duplicate nexai_invite — keep only the latest invite per application (added 2026-06)
+        """DELETE FROM nexai_invite
+           WHERE id NOT IN (
+               SELECT DISTINCT ON (application_id) id
+               FROM nexai_invite
+               ORDER BY application_id, invited_at DESC
+           )""",
     ]
     for sql in migrations:
         try:
@@ -577,13 +584,13 @@ def cv_database(request: Request):
     summary = query_one(
         """
         SELECT
-          COUNT(DISTINCT c.id)                                              AS total_candidates,
+          COUNT(DISTINCT LOWER(c.email))                                    AS total_candidates,
           COUNT(a.id)                                                       AS total_applications,
-          COUNT(DISTINCT c.id) FILTER
+          COUNT(DISTINCT LOWER(c.email)) FILTER
             (WHERE c.resume_url IS NOT NULL AND c.resume_url <> '')         AS resumes_on_file,
           ROUND(AVG(a.combined_score)
             FILTER (WHERE a.combined_score IS NOT NULL)::numeric, 1)        AS avg_score,
-          COUNT(DISTINCT c.id) FILTER (WHERE a.status = 'joined')           AS total_joined
+          COUNT(DISTINCT LOWER(c.email)) FILTER (WHERE a.status = 'joined') AS total_joined
         FROM candidate c
         LEFT JOIN application a ON a.candidate_id = c.id
         """,
@@ -591,34 +598,45 @@ def cv_database(request: Request):
 
     candidates = query(
         """
-        SELECT
-          c.id, c.full_name, c.email, c.gender, c.source,
-          c.resume_url,
-          c.created_at                                                     AS registered_at,
-          (SELECT COUNT(*) FROM application WHERE candidate_id = c.id)    AS total_applications,
-          (SELECT r.title
-           FROM application a2
-           JOIN requisition r ON r.id = a2.requisition_id
-           WHERE a2.candidate_id = c.id
-           ORDER BY a2.applied_at DESC LIMIT 1)                           AS latest_position,
-          (SELECT a3.status
-           FROM application a3
-           WHERE a3.candidate_id = c.id
-           ORDER BY a3.applied_at DESC LIMIT 1)                           AS latest_status,
-          (SELECT a4.combined_score
-           FROM application a4
-           WHERE a4.candidate_id = c.id
-           ORDER BY a4.combined_score DESC NULLS LAST LIMIT 1)            AS best_score,
-          (SELECT a5.bot_score
-           FROM application a5
-           WHERE a5.candidate_id = c.id
-           ORDER BY a5.bot_score DESC NULLS LAST LIMIT 1)                 AS ai_score,
-          (SELECT a6.match_score
-           FROM application a6
-           WHERE a6.candidate_id = c.id
-           ORDER BY a6.match_score DESC NULLS LAST LIMIT 1)               AS match_score
-        FROM candidate c
-        ORDER BY c.created_at DESC
+        SELECT * FROM (
+          SELECT DISTINCT ON (LOWER(c.email))
+            c.id, c.full_name, c.email, c.gender, c.source,
+            c.resume_url,
+            c.created_at                                                     AS registered_at,
+            (SELECT COUNT(DISTINCT a_cnt.requisition_id)
+             FROM application a_cnt
+             JOIN candidate c_dup ON c_dup.id = a_cnt.candidate_id
+             WHERE LOWER(c_dup.email) = LOWER(c.email))                     AS total_applications,
+            (SELECT r.title
+             FROM application a2
+             JOIN candidate c2d ON c2d.id = a2.candidate_id
+             JOIN requisition r ON r.id = a2.requisition_id
+             WHERE LOWER(c2d.email) = LOWER(c.email)
+             ORDER BY a2.applied_at DESC LIMIT 1)                           AS latest_position,
+            (SELECT a3.status
+             FROM application a3
+             JOIN candidate c3d ON c3d.id = a3.candidate_id
+             WHERE LOWER(c3d.email) = LOWER(c.email)
+             ORDER BY a3.applied_at DESC LIMIT 1)                           AS latest_status,
+            (SELECT a4.combined_score
+             FROM application a4
+             JOIN candidate c4d ON c4d.id = a4.candidate_id
+             WHERE LOWER(c4d.email) = LOWER(c.email)
+             ORDER BY a4.combined_score DESC NULLS LAST LIMIT 1)            AS best_score,
+            (SELECT a5.bot_score
+             FROM application a5
+             JOIN candidate c5d ON c5d.id = a5.candidate_id
+             WHERE LOWER(c5d.email) = LOWER(c.email)
+             ORDER BY a5.bot_score DESC NULLS LAST LIMIT 1)                 AS ai_score,
+            (SELECT a6.match_score
+             FROM application a6
+             JOIN candidate c6d ON c6d.id = a6.candidate_id
+             WHERE LOWER(c6d.email) = LOWER(c.email)
+             ORDER BY a6.match_score DESC NULLS LAST LIMIT 1)               AS match_score
+          FROM candidate c
+          ORDER BY LOWER(c.email), c.created_at ASC
+        ) deduped
+        ORDER BY registered_at DESC
         """,
     )
 
