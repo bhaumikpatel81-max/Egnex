@@ -153,7 +153,8 @@ _PUBLIC = {
 }
 _PUBLIC_PREFIXES = (
     "/assets/",
-    "/api/nexai/invite/submit/",   # /api/nexai/invite/submit/{session_id}
+    "/api/nexai/invite/submit/",       # /api/nexai/invite/submit/{session_id}
+    "/api/proctoring/candidate/",      # candidate token-auth proctoring endpoints
 )
 
 

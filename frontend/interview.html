@@ -281,12 +281,26 @@ async function startInterview() {
   const btn = document.getElementById('start-btn');
   btn.disabled = true;
 
+  // Guard: camera/mic APIs are hidden by browsers on non-secure origins (plain HTTP)
+  if (!window.isSecureContext) {
+    showErr(
+      'Camera access requires a secure connection (HTTPS).\n\n' +
+      'This page is loaded over plain HTTP. Browsers block camera and microphone access\n' +
+      'on non-HTTPS pages. Please ask the hiring team to provide an HTTPS link.\n\n' +
+      'Exception: localhost and 127.0.0.1 are treated as secure by browsers.\n' +
+      'Current origin: ' + window.location.origin
+    );
+    btn.disabled = false; btn.textContent = 'Start Interview';
+    return;
+  }
+
   // Guard: require modern browser with camera + screen-share support
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !navigator.mediaDevices.getDisplayMedia) {
     showErr(
       'Your browser does not support the features required for this interview.\n\n' +
       'Please use a recent version of Chrome or Edge on a desktop or laptop.'
     );
+    btn.disabled = false; btn.textContent = 'Start Interview';
     return;
   }
 
@@ -317,10 +331,24 @@ async function startInterview() {
   try {
     _procWebcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
   } catch (e) {
+    console.error('[NexAI] getUserMedia failed — name:', e.name, '| message:', e.message, e);
+    let _camReason;
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      _camReason = 'Permission denied (' + e.name + '). Your browser blocked the camera — it may have remembered a previous denial. Check the address-bar lock icon.';
+    } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+      _camReason = 'No camera or microphone found (' + e.name + '). Check that a webcam is connected and not disabled.';
+    } else if (e.name === 'NotReadableError' || e.name === 'TrackStartError') {
+      _camReason = 'Camera is already in use by another application (' + e.name + '). Close other apps using the camera and try again.';
+    } else if (e.name === 'SecurityError') {
+      _camReason = 'Blocked for security reasons (' + e.name + '). This page may not be served over HTTPS.';
+    } else {
+      _camReason = 'Camera/mic access failed — ' + e.name + ': ' + e.message;
+    }
     _showPermBlock(
       'Camera and microphone access required',
-      'This interview requires your camera and microphone to be active throughout the session.',
+      _camReason,
       [
+        'Check the browser console (F12 → Console) for the full error.',
         'Click the lock or camera icon in your browser\'s address bar.',
         'Set Camera and Microphone to "Allow".',
         'Reload the page if the setting does not take effect immediately.',
@@ -335,12 +363,20 @@ async function startInterview() {
   try {
     _procScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   } catch (e) {
+    console.error('[NexAI] getDisplayMedia failed — name:', e.name, '| message:', e.message, e);
     _procWebcamStream.getTracks().forEach(t => t.stop());
     _procWebcamStream = null;
+    let _screenReason;
+    if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+      _screenReason = 'Screen share was cancelled or denied (' + e.name + '). You must select a screen to share to continue.';
+    } else {
+      _screenReason = 'Screen share failed — ' + e.name + ': ' + e.message;
+    }
     _showPermBlock(
       'Screen sharing required',
-      'This interview requires you to share your screen for integrity monitoring.',
+      _screenReason,
       [
+        'Check the browser console (F12 → Console) for the full error.',
         'A dialog will appear asking which screen or window to share.',
         'Select your entire screen and click Share.',
         'If you dismissed the dialog, click "Try again" below.',
