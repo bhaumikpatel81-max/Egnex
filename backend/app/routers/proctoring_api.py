@@ -29,7 +29,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -358,3 +358,169 @@ def _assert_consented(session_id: str):
         raise HTTPException(404, "proctoring session not found")
     if not row["consent_granted"]:
         raise HTTPException(403, "Consent not granted — cannot store proctoring data")
+
+
+# ── Candidate-facing endpoints (token-auth, no JWT required) ─────────────────
+# These mirror the recruiter JWT endpoints above but authenticate via the
+# candidate's invite token. Existing recruiter endpoints are unchanged.
+
+def _get_invite_for_token(token: str) -> dict:
+    invite = query_one(
+        "SELECT id, application_id, expires_at FROM nexai_invite WHERE token = %s",
+        [token],
+    )
+    if not invite:
+        raise HTTPException(400, "Invalid interview token")
+    exp = invite["expires_at"]
+    if exp and exp.replace(tzinfo=None) < datetime.utcnow():
+        raise HTTPException(400, "Interview link has expired")
+    return invite
+
+
+def _candidate_owns_session(token: str, session_id: str) -> dict:
+    """Verify token owner's application matches the proctoring session. Returns session row."""
+    invite = _get_invite_for_token(token)
+    row = query_one(
+        "SELECT id, application_id, consent_granted FROM proctoring_session WHERE id = %s",
+        [session_id],
+    )
+    if not row or str(row["application_id"]) != str(invite["application_id"]):
+        raise HTTPException(403, "Not authorised")
+    return row
+
+
+@router.post("/candidate/init")
+def candidate_init_session(token: str):
+    """Public — create or retrieve the proctoring session for this invite token."""
+    invite = _get_invite_for_token(token)
+    existing = query_one(
+        "SELECT id, consent_granted FROM proctoring_session WHERE application_id = %s",
+        [str(invite["application_id"])],
+    )
+    if existing:
+        return {
+            "proctoring_session_id": str(existing["id"]),
+            "consent_granted": bool(existing["consent_granted"]),
+        }
+    row = query_one(
+        "INSERT INTO proctoring_session (application_id) VALUES (%s) RETURNING id, consent_granted",
+        [str(invite["application_id"])],
+    )
+    return {"proctoring_session_id": str(row["id"]), "consent_granted": False}
+
+
+@router.post("/candidate/{session_id}/consent")
+def candidate_record_consent(session_id: str, body: ConsentIn, token: str):
+    """Public — record proctoring consent from the candidate page."""
+    _candidate_owns_session(token, session_id)
+    retention_until = datetime.utcnow() + timedelta(days=body.retention_days)
+    row = query_one(
+        """UPDATE proctoring_session
+           SET consent_granted = %s,
+               proctoring_declined = %s,
+               consent_text = %s,
+               consented_at = now(),
+               retention_until = %s
+           WHERE id = %s
+           RETURNING id, consent_granted""",
+        [body.granted, not body.granted, body.consent_text, retention_until, session_id],
+    )
+    if not row:
+        raise HTTPException(404, "Session not found")
+    return row
+
+
+@router.post("/candidate/{session_id}/identity")
+async def candidate_identity_snapshot(
+    session_id: str,
+    snapshot: UploadFile = File(...),
+    token: str = Query(...),
+):
+    """Public — upload identity snapshot from the candidate page."""
+    row = _candidate_owns_session(token, session_id)
+    if not row["consent_granted"]:
+        raise HTTPException(403, "Consent not granted")
+    ext = os.path.splitext(snapshot.filename or "")[1] or ".jpg"
+    path = os.path.join(_UPLOADS_DIR, f"{session_id}_identity{ext}")
+    with open(path, "wb") as f:
+        f.write(await snapshot.read())
+    query_one(
+        "UPDATE proctoring_session SET identity_snapshot_path = %s WHERE id = %s RETURNING id",
+        [path, session_id],
+    )
+    return {"saved": True}
+
+
+@router.post("/candidate/{session_id}/media-chunk")
+async def candidate_media_chunk(
+    session_id: str,
+    media_type: str = Form(...),
+    chunk_index: int = Form(...),
+    chunk: UploadFile = File(...),
+    token: str = Query(...),
+):
+    """Public — receive a webcam or screen chunk from the candidate page."""
+    row = _candidate_owns_session(token, session_id)
+    if not row["consent_granted"]:
+        raise HTTPException(403, "Consent not granted")
+    if media_type not in ("webcam", "screen"):
+        raise HTTPException(400, "media_type must be 'webcam' or 'screen'")
+    folder = os.path.join(_UPLOADS_DIR, session_id, media_type)
+    os.makedirs(folder, exist_ok=True)
+    ext = os.path.splitext(chunk.filename or "")[1] or ".webm"
+    fname = f"chunk_{chunk_index:05d}{ext}"
+    with open(os.path.join(folder, fname), "wb") as f:
+        f.write(await chunk.read())
+    col = "webcam_video_path" if media_type == "webcam" else "screen_video_path"
+    query_one(
+        f"UPDATE proctoring_session SET {col} = %s WHERE id = %s RETURNING id",
+        [os.path.join(_UPLOADS_DIR, session_id, media_type), session_id],
+    )
+    return {"saved": True, "chunk": chunk_index}
+
+
+@router.post("/candidate/{session_id}/flags")
+def candidate_submit_flags(session_id: str, body: FlagsIn, token: str):
+    """Public — submit AI behaviour flags from the candidate page."""
+    row = _candidate_owns_session(token, session_id)
+    if not row["consent_granted"]:
+        raise HTTPException(403, "Consent not granted")
+    existing = query_one("SELECT flags FROM proctoring_session WHERE id = %s", [session_id])
+    current = existing["flags"] if isinstance(existing["flags"], list) else []
+    merged = current + body.flags
+    query_one(
+        "UPDATE proctoring_session SET flags = %s::jsonb, flag_count = %s WHERE id = %s RETURNING id",
+        [json.dumps(merged), len(merged), session_id],
+    )
+    return {"flag_count": len(merged)}
+
+
+class _LinkSessionIn(BaseModel):
+    nexai_session_id: str
+
+
+@router.post("/candidate/{session_id}/link")
+def candidate_link_session(session_id: str, body: _LinkSessionIn, token: str):
+    """Public — link proctoring session to nexai_session_id after /invite/begin."""
+    _candidate_owns_session(token, session_id)
+    query(
+        "UPDATE proctoring_session SET nexai_session_id = %s WHERE id = %s",
+        [body.nexai_session_id, session_id],
+        fetch=False,
+    )
+    return {"linked": True}
+
+
+@router.post("/candidate/{session_id}/complete")
+def candidate_complete_session(session_id: str, token: str):
+    """Public — mark proctoring session complete when the interview ends."""
+    _candidate_owns_session(token, session_id)
+    row = query_one(
+        """UPDATE proctoring_session
+           SET proctoring_complete = TRUE
+           WHERE id = %s RETURNING id, flag_count""",
+        [session_id],
+    )
+    if not row:
+        raise HTTPException(404, "Session not found")
+    return row

@@ -20,9 +20,19 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 def extract_text_from_docx(file_bytes: bytes) -> str:
     from docx import Document
     doc = Document(io.BytesIO(file_bytes))
-    return "\n".join(
-        para.text for para in doc.paragraphs if para.text.strip()
-    )
+    parts = []
+    # Paragraphs (body text, headings)
+    for para in doc.paragraphs:
+        if para.text.strip():
+            parts.append(para.text)
+    # Table cells — names/contact info are often in styled table headers
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                text = cell.text.strip()
+                if text and text not in parts:
+                    parts.append(text)
+    return "\n".join(parts)
 
 
 def extract_text_from_image(file_bytes: bytes) -> str:
@@ -88,18 +98,31 @@ def extract_contact_info(text: str) -> dict:
     # Return the original formatted string for display; backend normalizes for dedup
     phone_display = phone_raw if phone else None
 
-    # Name — first short line (2-5 words, only letters/hyphens, no numbers)
+    # Name — first short alphabetic line that isn't a section header or label
+    _SKIP_WORDS = {
+        "curriculum", "vitae", "resume", "cv", "profile", "objective",
+        "summary", "education", "experience", "skills", "contact",
+        "address", "declaration", "references", "achievements",
+        "personal", "details", "information", "hobbies", "interests",
+    }
     name = None
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped or len(stripped) > 60:
             continue
-        if re.search(r'[\d@#/\\|<>{}]', stripped):
+        if re.search(r'[\d@#/\\|<>{}:;]', stripped):
             continue
         words = stripped.split()
-        if 2 <= len(words) <= 5 and all(re.match(r"[A-Za-z'\-\.]+$", w) for w in words):
-            name = stripped.title()
-            break
+        if not (2 <= len(words) <= 5):
+            continue
+        if not all(re.match(r"[A-Za-z'\-\.]+$", w) for w in words):
+            continue
+        # Skip lines that are just section headings
+        lower_words = {w.lower() for w in words}
+        if lower_words & _SKIP_WORDS:
+            continue
+        name = stripped.title()
+        break
 
     return {"full_name": name, "email": email, "phone": phone_display}
 

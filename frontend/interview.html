@@ -45,6 +45,13 @@ canvas#orb{border-radius:50%}
 #nexai-avatar.listening{border-color:#2563eb;animation:pulse-listen .6s ease-in-out infinite alternate}
 @keyframes pulse-speak{from{box-shadow:0 0 0 2px rgba(241,90,34,.18)}to{box-shadow:0 0 0 10px rgba(241,90,34,.06)}}
 @keyframes pulse-listen{from{box-shadow:0 0 0 2px rgba(37,99,235,.18)}to{box-shadow:0 0 0 10px rgba(37,99,235,.06)}}
+/* Hidden proctoring capture elements — never visible to the candidate */
+#proctor-webcam,#proctor-snap{position:absolute;left:-9999px;opacity:0;pointer-events:none;width:1px;height:1px}
+/* Permissions blocking screen */
+.perm-block{text-align:center;padding:32px 16px}
+.perm-block h2{font-size:18px;color:#c0392b;margin-bottom:10px}
+.perm-block p{font-size:13px;color:#6b6760;line-height:1.6;margin-bottom:10px}
+.perm-block ul{text-align:left;font-size:13px;color:#6b6760;margin:8px auto 18px;max-width:400px;padding-left:20px;line-height:1.9}
 .step{display:none}.step.active{display:block}
 
 /* ── Conversational mode UI ───────────────────────────────────────────── */
@@ -77,6 +84,20 @@ canvas#orb{border-radius:50%}
     </div>
   </div>
 
+  <!-- Hidden proctoring capture elements (never visible) -->
+  <video id="proctor-webcam" autoplay muted playsinline></video>
+  <canvas id="proctor-snap"></canvas>
+
+  <!-- Step: Permissions blocked -->
+  <div class="step" id="step-permissions">
+    <div class="perm-block">
+      <h2 id="perm-title">Access required</h2>
+      <p id="perm-reason"></p>
+      <ul id="perm-steps"></ul>
+      <button class="btn btn-primary" style="min-width:160px" onclick="retryPermissions()">Try again</button>
+    </div>
+  </div>
+
   <!-- Step: Consent -->
   <div class="step" id="step-consent">
     <h1>AI Screening Interview</h1>
@@ -90,16 +111,18 @@ canvas#orb{border-radius:50%}
       <strong>Before you begin, please read carefully.</strong><br>
       This AI screening session will:
       <ul id="consent-list">
-        <li>Ask you up to 8 questions about your experience and skills</li>
-        <li>Record your spoken answers via your microphone</li>
-        <li>Score your responses automatically and share results with the hiring team</li>
+        <li>Ask you questions about your experience and skills</li>
+        <li>Record your webcam video, screen, and microphone audio throughout the session</li>
+        <li>Capture a photo of you at the start for identity purposes</li>
+        <li>Run AI integrity analysis (face and object detection) on your webcam feed</li>
+        <li>Score your responses and share all data with the hiring team for human review</li>
       </ul>
       <br>
       <strong>NexAI never auto-rejects.</strong> All scores are reviewed by a human recruiter before any decision is made.
     </div>
     <div class="check-row">
       <input type="checkbox" id="consent-check" onchange="document.getElementById('start-btn').disabled=!this.checked">
-      <label for="consent-check">I have read the above and consent to this session being recorded and scored.</label>
+      <label for="consent-check">I have read the above and consent to webcam recording, screen recording, and AI integrity monitoring for this session.</label>
     </div>
     <button class="btn btn-primary btn-full" id="start-btn" disabled onclick="startInterview()">Start Interview</button>
   </div>
@@ -183,6 +206,12 @@ let _listenText = '';     // accumulated recognition text
 let _micAmplitude = 0;   // live amplitude fed to orb animation
 let _audioCtx = null, _analyser = null, _micStream = null, _analyserBuf = null;
 
+// ── Proctoring state ──────────────────────────────────────────────────────────
+let _procSessId = null, _procWebcamStream = null, _procScreenStream = null;
+let _procWebcamRec = null, _procScreenRec = null;
+let _procFlags = [], _procFlagInterval = null, _procTFModels = null;
+let _procWcIdx = 0, _procScIdx = 0;
+
 // ── Steps ─────────────────────────────────────────────────────────────────
 function showStep(id) {
   document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
@@ -232,8 +261,10 @@ async function apiPublic(path, opts={}) {
     // Update consent bullet points to describe the live-conversation format
     document.getElementById('consent-list').innerHTML =
       '<li>Hold a natural spoken conversation about your experience and skills</li>' +
-      '<li>Record your voice via your microphone — the bot listens and responds in real time</li>' +
-      '<li>Score your conversation automatically and share results with the hiring team</li>';
+      '<li>Record your webcam video, screen, and microphone audio throughout the session</li>' +
+      '<li>Capture a photo of you at the start for identity purposes</li>' +
+      '<li>Run AI integrity analysis (face and object detection) on your webcam feed</li>' +
+      '<li>Score the conversation and share all data with the hiring team for human review</li>';
   }
 
   showStep('step-consent');
@@ -245,30 +276,308 @@ function showErr(reason, title) {
   showStep('step-error');
 }
 
-// ── Start interview (consent → interview screen) ──────────────────────────
+// ── Start interview — proctoring setup then interview (both modes) ───────────
 async function startInterview() {
-  document.getElementById('start-btn').disabled    = true;
-  document.getElementById('start-btn').textContent = 'Starting…';
+  const btn = document.getElementById('start-btn');
+  btn.disabled = true;
+
+  // Guard: require modern browser with camera + screen-share support
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !navigator.mediaDevices.getDisplayMedia) {
+    showErr(
+      'Your browser does not support the features required for this interview.\n\n' +
+      'Please use a recent version of Chrome or Edge on a desktop or laptop.'
+    );
+    return;
+  }
+
+  // ── P1: Create proctoring session + record consent ────────────────────────
+  btn.textContent = 'Setting up…';
+  const pInit = await apiPublic(
+    `/api/proctoring/candidate/init?token=${encodeURIComponent(_token)}`,
+    { method: 'POST' }
+  );
+  if (pInit._err) {
+    btn.disabled = false; btn.textContent = 'Start Interview';
+    showErr('Could not initialise proctoring session: ' + pInit._err);
+    return;
+  }
+  _procSessId = pInit.proctoring_session_id;
+
+  await apiPublic(
+    `/api/proctoring/candidate/${_procSessId}/consent?token=${encodeURIComponent(_token)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ granted: true }),
+    }
+  );
+
+  // ── P2: Camera permission — HARD BLOCK if denied ──────────────────────────
+  btn.textContent = 'Requesting camera…';
+  try {
+    _procWebcamStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  } catch (e) {
+    _showPermBlock(
+      'Camera and microphone access required',
+      'This interview requires your camera and microphone to be active throughout the session.',
+      [
+        'Click the lock or camera icon in your browser\'s address bar.',
+        'Set Camera and Microphone to "Allow".',
+        'Reload the page if the setting does not take effect immediately.',
+        'Then click "Try again" below.',
+      ]
+    );
+    return;
+  }
+
+  // ── P3: Screen-share permission — HARD BLOCK if denied ───────────────────
+  btn.textContent = 'Requesting screen share…';
+  try {
+    _procScreenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  } catch (e) {
+    _procWebcamStream.getTracks().forEach(t => t.stop());
+    _procWebcamStream = null;
+    _showPermBlock(
+      'Screen sharing required',
+      'This interview requires you to share your screen for integrity monitoring.',
+      [
+        'A dialog will appear asking which screen or window to share.',
+        'Select your entire screen and click Share.',
+        'If you dismissed the dialog, click "Try again" below.',
+      ]
+    );
+    return;
+  }
+
+  // ── All permissions granted — proceed ─────────────────────────────────────
+  btn.textContent = 'Starting…';
+
+  // Wire webcam stream audio into the AudioContext so _setupMic() (conversational
+  // mode) reuses it without opening a second mic stream.
+  if (!_audioCtx) {
+    try {
+      _audioCtx    = new (window.AudioContext || window.webkitAudioContext)();
+      _analyser    = _audioCtx.createAnalyser();
+      _analyser.fftSize = 256;
+      _analyserBuf = new Uint8Array(_analyser.frequencyBinCount);
+      _micStream   = _procWebcamStream;
+      _audioCtx.createMediaStreamSource(_procWebcamStream).connect(_analyser);
+    } catch (e) { /* non-fatal — silence detection falls back gracefully */ }
+  }
+
+  // Attach webcam to hidden video element for TF.js analysis + identity snapshot
+  const wv = document.getElementById('proctor-webcam');
+  wv.srcObject = _procWebcamStream;
+  await new Promise(r => { wv.onloadedmetadata = r; setTimeout(r, 2000); });
+
+  // ── Begin NexAI session (both modes call /invite/begin) ───────────────────
   const res = await apiPublic(
     `/api/nexai/invite/begin?token=${encodeURIComponent(_token)}`,
     { method: 'POST' }
   );
-  if (res._err) { showErr(res._err); return; }
+  if (res._err) {
+    _cleanupProctoring();
+    btn.disabled = false; btn.textContent = 'Start Interview';
+    showErr(res._err);
+    return;
+  }
   _sessionId = res.session_id;
   _questions = res.questions || [];
   _seq = 0; _transcript = [];
+
+  // ── Link proctoring_session → nexai_session (fire-and-forget) ────────────
+  apiPublic(
+    `/api/proctoring/candidate/${_procSessId}/link?token=${encodeURIComponent(_token)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nexai_session_id: _sessionId }),
+    }
+  );
+
+  // ── P2: Identity snapshot after 1.5 s (camera warm-up) ───────────────────
+  setTimeout(_captureProctorSnapshot, 1500);
+
+  // ── P3/P4: Start webcam + screen recorders ────────────────────────────────
+  _startProcRecorders();
+
+  // ── P6: Lazy-load TF.js and start AI flag analysis ───────────────────────
+  _startProcAIAnalysis();
+
+  // ── Enter interview screen ────────────────────────────────────────────────
   showStep('step-interview');
   _startOrb();
 
   if (_mode === 'conversational') {
     _startConversationalInterview();
   } else {
-    // ── Scripted mode — identical to original ─────────────────────────────
     document.getElementById('nx-status').textContent = 'Preparing your interview…';
     document.getElementById('btn-speak').disabled = true;
     await pollRenderStatus();
     loadQuestion();
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROCTORING LAYER — wraps both scripted and conversational modes
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _showPermBlock(title, reason, steps) {
+  document.getElementById('perm-title').textContent  = title;
+  document.getElementById('perm-reason').textContent = reason;
+  document.getElementById('perm-steps').innerHTML    = steps.map(s => `<li>${s}</li>`).join('');
+  showStep('step-permissions');
+}
+
+function retryPermissions() {
+  const btn = document.getElementById('start-btn');
+  btn.disabled    = false;
+  btn.textContent = 'Start Interview';
+  showStep('step-consent');
+}
+
+async function _captureProctorSnapshot() {
+  if (!_procWebcamStream || !_procSessId) return;
+  const vid = document.getElementById('proctor-webcam');
+  const cvs = document.getElementById('proctor-snap');
+  cvs.width  = vid.videoWidth  || 640;
+  cvs.height = vid.videoHeight || 480;
+  cvs.getContext('2d').drawImage(vid, 0, 0);
+  cvs.toBlob(async blob => {
+    if (!blob) return;
+    const fd = new FormData();
+    fd.append('snapshot', blob, 'identity.jpg');
+    apiPublic(
+      `/api/proctoring/candidate/${_procSessId}/identity?token=${encodeURIComponent(_token)}`,
+      { method: 'POST', body: fd }
+    );
+  }, 'image/jpeg', 0.85);
+}
+
+function _startProcRecorders() {
+  _procWcIdx = 0; _procScIdx = 0;
+
+  // Webcam recorder (video + audio)
+  const wcMime = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus'))
+    ? 'video/webm;codecs=vp8,opus' : 'video/webm';
+  try { _procWebcamRec = new MediaRecorder(_procWebcamStream, { mimeType: wcMime }); }
+  catch (e) { _procWebcamRec = new MediaRecorder(_procWebcamStream); }
+  _procWebcamRec.ondataavailable = async e => {
+    if (e.data.size > 0 && _procSessId) {
+      const fd = new FormData();
+      fd.append('media_type', 'webcam');
+      fd.append('chunk_index', String(_procWcIdx++));
+      fd.append('chunk', e.data, `chunk_${_procWcIdx}.webm`);
+      apiPublic(
+        `/api/proctoring/candidate/${_procSessId}/media-chunk?token=${encodeURIComponent(_token)}`,
+        { method: 'POST', body: fd }
+      );
+    }
+  };
+  _procWebcamRec.start(10000); // 10-second chunks
+
+  // Screen recorder
+  const scMime = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=vp8'))
+    ? 'video/webm;codecs=vp8' : 'video/webm';
+  try { _procScreenRec = new MediaRecorder(_procScreenStream, { mimeType: scMime }); }
+  catch (e) { _procScreenRec = new MediaRecorder(_procScreenStream); }
+  _procScreenRec.ondataavailable = async e => {
+    if (e.data.size > 0 && _procSessId) {
+      const fd = new FormData();
+      fd.append('media_type', 'screen');
+      fd.append('chunk_index', String(_procScIdx++));
+      fd.append('chunk', e.data, `chunk_${_procScIdx}.webm`);
+      apiPublic(
+        `/api/proctoring/candidate/${_procSessId}/media-chunk?token=${encodeURIComponent(_token)}`,
+        { method: 'POST', body: fd }
+      );
+    }
+  };
+  _procScreenRec.start(10000);
+}
+
+function _loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = src; s.crossOrigin = 'anonymous';
+    s.onload = resolve; s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+async function _startProcAIAnalysis() {
+  try {
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js');
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js');
+    await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+    const [blaze, coco] = await Promise.all([window.blazeface.load(), window.cocoSsd.load()]);
+    _procTFModels = { blaze, coco };
+    _procFlagInterval = setInterval(async () => {
+      const vid = document.getElementById('proctor-webcam');
+      if (!vid || !vid.videoWidth) return;
+      const now = Date.now();
+      try {
+        const faces = await _procTFModels.blaze.estimateFaces(vid, false);
+        if (faces.length === 0) {
+          _procFlags.push({ ts_ms: now, type: 'no_face',    confidence: 0.9,  detail: 'No face detected in frame' });
+        } else if (faces.length > 1) {
+          _procFlags.push({ ts_ms: now, type: 'multi_face', confidence: 0.95, detail: `${faces.length} faces detected` });
+        } else {
+          const [, ty] = faces[0].topLeft;
+          if (ty < 10) _procFlags.push({ ts_ms: now, type: 'face_away', confidence: 0.7, detail: 'Candidate may be looking away' });
+        }
+        const objects = await _procTFModels.coco.detect(vid);
+        const phones = objects.filter(o => o.class === 'cell phone' && o.score > 0.55);
+        if (phones.length) _procFlags.push({ ts_ms: now, type: 'phone_detected', confidence: phones[0].score, detail: 'Mobile phone detected in frame' });
+      } catch (e) { /* ignore individual frame errors */ }
+    }, 5000);
+  } catch (e) {
+    console.warn('[Proctor] TF.js models failed to load — AI flag analysis disabled:', e);
+  }
+}
+
+function _stopRecorder(rec) {
+  if (!rec || rec.state === 'inactive') return Promise.resolve();
+  return new Promise(resolve => {
+    rec.onstop = resolve;
+    rec.stop();
+    setTimeout(resolve, 3000); // safety timeout in case onstop never fires
+  });
+}
+
+async function _flushProctoringAndClose() {
+  if (!_procSessId) return;
+  if (_procFlagInterval) { clearInterval(_procFlagInterval); _procFlagInterval = null; }
+  // Stop recorders and wait for final ondataavailable flush
+  await Promise.all([_stopRecorder(_procWebcamRec), _stopRecorder(_procScreenRec)]);
+  _procWebcamRec = null; _procScreenRec = null;
+  // Submit all accumulated AI flags
+  if (_procFlags.length) {
+    await apiPublic(
+      `/api/proctoring/candidate/${_procSessId}/flags?token=${encodeURIComponent(_token)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flags: _procFlags }) }
+    );
+  }
+  // Mark session complete
+  await apiPublic(
+    `/api/proctoring/candidate/${_procSessId}/complete?token=${encodeURIComponent(_token)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }
+  );
+  // Release all media tracks
+  if (_procWebcamStream) { _procWebcamStream.getTracks().forEach(t => t.stop()); _procWebcamStream = null; }
+  if (_procScreenStream) { _procScreenStream.getTracks().forEach(t => t.stop()); _procScreenStream = null; }
+  const wv = document.getElementById('proctor-webcam');
+  if (wv) wv.srcObject = null;
+}
+
+function _cleanupProctoring() {
+  // Synchronous best-effort cleanup (used on error path and beforeunload)
+  if (_procFlagInterval) { clearInterval(_procFlagInterval); _procFlagInterval = null; }
+  if (_procWebcamRec && _procWebcamRec.state !== 'inactive') try { _procWebcamRec.stop(); } catch(e) {}
+  if (_procScreenRec && _procScreenRec.state !== 'inactive') try { _procScreenRec.stop(); } catch(e) {}
+  if (_procWebcamStream) { _procWebcamStream.getTracks().forEach(t => t.stop()); _procWebcamStream = null; }
+  if (_procScreenStream) { _procScreenStream.getTracks().forEach(t => t.stop()); _procScreenStream = null; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -351,7 +660,9 @@ async function convTurn(candidateText) {
     document.getElementById('nx-status').textContent = 'Interview complete. Thank you!';
     document.getElementById('done-detail').innerHTML = '';
     _stopOrb();
-    setTimeout(() => showStep('step-done'), 1200);
+    // Flush proctoring data; run in parallel with a 1.2 s pause so both finish before transitioning
+    await Promise.all([_flushProctoringAndClose(), new Promise(r => setTimeout(r, 1200))]);
+    showStep('step-done');
     return;
   }
 
@@ -721,6 +1032,7 @@ async function nxSubmit() {
   document.getElementById('done-detail').innerHTML =
     `Questions answered: <strong>${qa} / ${qt}</strong>`;
   _stopOrb();
+  await _flushProctoringAndClose();
   showStep('step-done');
 }
 
@@ -773,6 +1085,11 @@ function _startOrb() {
   }
   frame();
 }
+
+// Release media tracks when the candidate closes/navigates away
+window.addEventListener('beforeunload', () => {
+  _cleanupProctoring();
+});
 </script>
 </body>
 </html>

@@ -111,6 +111,18 @@ tr:hover td{background:#faf8f5}
 .modal{background:#fff;border:1px solid var(--border);border-radius:6px;padding:28px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.12)}
 .modal h2{font-size:17px;font-weight:600;margin-bottom:18px}
 .modal-btns{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}
+/* Transcript viewer */
+.tx-turn{display:flex;gap:10px;margin-bottom:10px;align-items:flex-start}
+.tx-speaker{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;min-width:80px;padding-top:4px;flex-shrink:0}
+.tx-speaker.bot{color:var(--accent)}.tx-speaker.cand{color:#2563eb}
+.tx-bubble{background:#faf9f6;border:1px solid var(--border);border-radius:0 6px 6px 6px;padding:8px 12px;font-size:13px;line-height:1.55;flex:1}
+.tx-bubble.bot{background:#fff8f5;border-color:#fcd9c9}
+.tx-qa{margin-bottom:14px}
+.tx-q{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--accent);margin-bottom:5px}
+.tx-a{background:#faf9f6;border:1px solid var(--border);border-radius:4px;padding:9px 12px;font-size:13px;line-height:1.55;color:var(--text)}
+.tx-dim-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px}
+.tx-dim-track{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.tx-dim-fill{height:100%;border-radius:3px;background:var(--accent)}
 .tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
 .tab{padding:6px 14px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;background:#fff;transition:background .1s}
 .tab.active,.tab:hover{background:var(--text);color:#fff;border-color:var(--text)}
@@ -355,6 +367,30 @@ select{background-image:none}
     </div>
   </div>
   <div id="content"><p class="empty">Loading…</p></div>
+</div>
+
+<!-- ── Transcript Viewer Modal ── -->
+<div class="modal-bg" id="transcript-modal" onclick="if(event.target===this)closeTranscript()">
+  <div class="modal" style="max-width:720px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px">
+      <div style="min-width:0">
+        <h2 id="tx-candidate" style="margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</h2>
+        <div style="font-size:12px;color:var(--muted)">
+          <span id="tx-req"></span>
+          <span id="tx-date" style="margin-left:8px"></span>
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div id="tx-score" style="font-size:26px;font-weight:800;line-height:1"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">AI Score</div>
+      </div>
+    </div>
+    <div id="tx-score-detail"></div>
+    <div id="tx-body"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeTranscript()">Close</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── New Requisition Modal ── -->
@@ -2206,7 +2242,10 @@ async function screenNexAITracker(){
         ${r.invite_status==='pending'||r.invite_status==='expired'
           ?`<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="resendInvite('${r.app_id}','${(r.candidate_name||'').replace(/'/g,"\\'")}','${(r.candidate_email||'').replace(/'/g,"\\'")}')">Resend</button>`
           :r.invite_status==='completed'
-            ?`<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>`
+            ?`<div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>
+                ${r.session_id?`<button class="btn btn-ghost btn-sm" style="font-size:11px;border-color:var(--accent);color:var(--accent)" onclick="openTranscript('${r.session_id}')">View transcript</button>`:''}
+              </div>`
             :''}
       </td>
     </tr>`).join('');
@@ -2270,6 +2309,129 @@ async function resendInvite(appId, name, email){
   } else {
     flash(res?.detail||'Failed to resend invite.',false);
   }
+}
+
+// ── Transcript viewer ────────────────────────────────────────────────────────
+
+function _htmlEsc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/\n/g,'<br>');
+}
+
+async function openTranscript(sessionId) {
+  const modal = document.getElementById('transcript-modal');
+  // Reset to loading state
+  document.getElementById('tx-candidate').textContent   = 'Loading…';
+  document.getElementById('tx-req').textContent         = '';
+  document.getElementById('tx-date').textContent        = '';
+  document.getElementById('tx-score').textContent       = '';
+  document.getElementById('tx-score-detail').innerHTML  = '';
+  document.getElementById('tx-body').innerHTML          = '<p class="empty" style="padding:24px 0">Loading transcript…</p>';
+  modal.classList.add('open');
+
+  const d = await api(`/api/nexai/sessions/${sessionId}/transcript`);
+  if (!d) { modal.classList.remove('open'); return; }
+
+  // ── Header ──────────────────────────────────────────────────────────────
+  document.getElementById('tx-candidate').textContent = d.candidate_name || '—';
+  document.getElementById('tx-req').textContent       = d.requisition   || '—';
+  document.getElementById('tx-date').textContent      = d.completed_at
+    ? '· ' + new Date(d.completed_at).toLocaleString('en-IN',
+        {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})
+    : '';
+
+  const score  = d.raw_score != null ? Math.round(d.raw_score) : null;
+  const scoreEl = document.getElementById('tx-score');
+  if (score != null) {
+    scoreEl.textContent  = score + '%';
+    scoreEl.style.color  = score >= 60 ? 'var(--green)' : score >= 40 ? '#d48806' : '#c0392b';
+  } else {
+    scoreEl.textContent  = '—';
+    scoreEl.style.color  = 'var(--muted)';
+  }
+
+  // ── Score detail ─────────────────────────────────────────────────────────
+  const sd  = d.score_detail || {};
+  let detailHtml = '';
+
+  if (d.mode === 'conversational' && (sd.strengths || sd.concerns || sd.per_dimension)) {
+    detailHtml += `<div style="background:#faf9f6;border:1px solid var(--border);border-radius:6px;padding:14px 16px;margin-bottom:16px">`;
+    if (sd.strengths) {
+      detailHtml += `<div style="margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--green);margin-bottom:4px">Strengths</div>
+        <div style="font-size:13px;line-height:1.6">${_htmlEsc(sd.strengths)}</div></div>`;
+    }
+    if (sd.concerns) {
+      detailHtml += `<div style="margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#c0392b;margin-bottom:4px">Areas to probe</div>
+        <div style="font-size:13px;line-height:1.6">${_htmlEsc(sd.concerns)}</div></div>`;
+    }
+    if (sd.per_dimension) {
+      const dims   = sd.per_dimension;
+      const labels = [['relevance','Relevance'],['depth','Depth'],['communication','Communication'],['fit','Culture fit']];
+      detailHtml  += `<div style="margin-top:2px">`;
+      for (const [k, lbl] of labels) {
+        const v   = dims[k] ?? 0;
+        const pct = Math.round((v / 10) * 100);
+        detailHtml += `<div class="tx-dim-row">
+          <span style="min-width:110px;color:var(--muted)">${lbl}</span>
+          <div class="tx-dim-track"><div class="tx-dim-fill" style="width:${pct}%"></div></div>
+          <span style="min-width:32px;text-align:right;font-weight:600;font-size:12px">${v}/10</span>
+        </div>`;
+      }
+      detailHtml += `</div>`;
+    }
+    detailHtml += `</div>`;
+
+  } else if (d.mode === 'scripted' && sd.questions_answered != null) {
+    detailHtml = `<div style="font-size:13px;color:var(--muted);margin-bottom:14px">
+      Questions answered: <strong style="color:var(--text)">${sd.questions_answered} / ${sd.total_questions ?? '—'}</strong>
+    </div>`;
+  }
+
+  document.getElementById('tx-score-detail').innerHTML = detailHtml;
+
+  // ── Transcript body ───────────────────────────────────────────────────────
+  let bodyHtml = '';
+
+  if (d.mode === 'conversational') {
+    const turns = Array.isArray(d.conversation) ? d.conversation : [];
+    if (!turns.length) {
+      bodyHtml = '<p class="empty" style="padding:12px 0">No conversation recorded.</p>';
+    } else {
+      bodyHtml = `<div style="border-top:1px solid var(--border);padding-top:14px">` +
+        turns.map(t => {
+          const isBot = t.speaker === 'bot';
+          return `<div class="tx-turn">
+            <div class="tx-speaker ${isBot ? 'bot' : 'cand'}">${isBot ? 'Interviewer' : 'Candidate'}</div>
+            <div class="tx-bubble${isBot ? ' bot' : ''}">${_htmlEsc(t.text || '')}</div>
+          </div>`;
+        }).join('') + `</div>`;
+    }
+
+  } else {
+    const trs = Array.isArray(d.transcript) ? d.transcript : [];
+    if (!trs.length) {
+      bodyHtml = '<p class="empty" style="padding:12px 0">No transcript recorded.</p>';
+    } else {
+      bodyHtml = `<div style="border-top:1px solid var(--border);padding-top:14px">` +
+        trs.map((t, i) => `
+          <div class="tx-qa">
+            <div class="tx-q">Q${t.seq != null ? t.seq : i + 1} — ${_htmlEsc(t.question || '')}</div>
+            <div class="tx-a">${t.answer && t.answer.trim()
+              ? _htmlEsc(t.answer)
+              : '<em style="color:var(--muted)">No answer recorded</em>'}</div>
+          </div>`).join('') +
+        `</div>`;
+    }
+  }
+
+  document.getElementById('tx-body').innerHTML = bodyHtml;
+}
+
+function closeTranscript() {
+  document.getElementById('transcript-modal').classList.remove('open');
 }
 
 // ── SCREEN: Settings (TA Manager / Admin) ────────────────────────────────────
@@ -2894,13 +3056,18 @@ async function _autoFillFromResume(input){
     if(r.ok) res=await r.json();
   }catch{}
   if(res){
-    const filled=[];
-    if(res.full_name&&!document.getElementById('am-name').value){document.getElementById('am-name').value=res.full_name;filled.push('name');}
-    if(res.email&&!document.getElementById('am-email').value){document.getElementById('am-email').value=res.email;filled.push('email');}
-    if(res.phone&&!document.getElementById('am-phone').value){document.getElementById('am-phone').value=res.phone;filled.push('phone');}
-    statusEl.textContent=filled.length?`Auto-filled: ${filled.join(', ')}.`:'Resume uploaded — fill in details manually.';
+    const filled=[],missing=[];
+    if(res.full_name){document.getElementById('am-name').value=res.full_name;filled.push('name');}else{missing.push('name');}
+    if(res.email){document.getElementById('am-email').value=res.email;filled.push('email');}else{missing.push('email');}
+    if(res.phone){document.getElementById('am-phone').value=res.phone;filled.push('phone');}else{missing.push('phone');}
+    let msg='';
+    if(filled.length) msg+=`Auto-filled: ${filled.join(', ')}.`;
+    if(missing.length) msg+=(msg?' ':'')+`Please fill manually: ${missing.join(', ')}.`;
+    statusEl.textContent=msg||'Resume parsed.';
+    statusEl.style.color=missing.length?'#c0392b':'var(--muted)';
   } else {
-    statusEl.textContent='Could not auto-parse — fill details manually.';
+    statusEl.textContent='Could not parse resume — please fill in details manually.';
+    statusEl.style.color='#c0392b';
   }
 }
 

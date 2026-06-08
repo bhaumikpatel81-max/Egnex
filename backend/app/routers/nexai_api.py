@@ -5,6 +5,7 @@ Question generation is rule-based (JD + key skills).
 Scoring is keyword + depth + communication weighted model.
 The face/avatar (14b) is intentionally NOT built here.
 """
+import html
 import io
 import json
 import os
@@ -434,6 +435,67 @@ def delete_req_questions(req_id: str, user: dict = Depends(get_current_user)):
         fetch=False,
     )
     return {"ok": True}
+
+
+# ── Session Transcript (recruiter read-only) ─────────────────────────────────
+
+@router.get("/sessions/{session_id}/transcript")
+def get_session_transcript(session_id: str, user: dict = Depends(get_current_user)):
+    """
+    Return the full transcript or conversation for a completed NexAI session.
+    Recruiter JWT required. Recruiters may only access sessions on their requisitions;
+    TA managers and admins see all.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    scope_join = ""
+    params: list = []
+    if user["role"] == "recruiter":
+        scope_join = (
+            "JOIN requisition_recruiter rr "
+            "  ON rr.requisition_id = r.id AND rr.recruiter_id = %s"
+        )
+        params.append(user["sub"])
+    params.append(session_id)
+
+    row = query_one(
+        f"""
+        SELECT ns.id, ns.transcript, ns.conversation,
+               ns.raw_score, ns.score_detail, ns.status, ns.completed_at,
+               c.full_name  AS candidate_name,
+               c.email      AS candidate_email,
+               r.title      AS requisition,
+               r.id         AS requisition_id
+        FROM nexai_session ns
+        JOIN application a  ON a.id = ns.application_id
+        JOIN candidate   c  ON c.id = a.candidate_id
+        JOIN requisition r  ON r.id = a.requisition_id
+        {scope_join}
+        WHERE ns.id = %s
+        """,
+        params,
+    )
+    if not row:
+        raise HTTPException(404, "Session not found or not accessible")
+
+    # Infer mode from which data column is populated
+    mode = "conversational" if row.get("conversation") else "scripted"
+
+    return {
+        "session_id":     str(row["id"]),
+        "mode":           mode,
+        "status":         row["status"],
+        "completed_at":   row["completed_at"].isoformat() if row["completed_at"] else None,
+        "candidate_name": row["candidate_name"],
+        "candidate_email":row["candidate_email"],
+        "requisition":    row["requisition"],
+        "requisition_id": str(row["requisition_id"]),
+        "raw_score":      float(row["raw_score"]) if row["raw_score"] is not None else None,
+        "score_detail":   row["score_detail"] or {},
+        "transcript":     row["transcript"]   or [],
+        "conversation":   row["conversation"] or [],
+    }
 
 
 # ── NexAI Invite Tracker ─────────────────────────────────────────────────────
@@ -882,8 +944,184 @@ def get_invite_render_status(token: str):
     }
 
 
+# ── Completion email helpers ──────────────────────────────────────────────────
+
+def _esc(s: str) -> str:
+    return html.escape(str(s or ""))
+
+
+def _build_completion_email_html(
+    candidate_name: str,
+    requisition_title: str,
+    raw_score,
+    score_detail: dict,
+    transcript: list,
+    conversation: list,
+) -> str:
+    sd   = score_detail or {}
+    mode = "conversational" if conversation else "scripted"
+
+    detail_html = ""
+    if sd.get("strengths"):
+        detail_html += (
+            "<h3 style='margin:16px 0 4px;color:#1a7f37'>Strengths</h3>"
+            f"<p style='margin:0 0 12px;line-height:1.5'>{_esc(sd['strengths'])}</p>"
+        )
+    if sd.get("concerns"):
+        detail_html += (
+            "<h3 style='margin:16px 0 4px;color:#b55c00'>Areas to Probe</h3>"
+            f"<p style='margin:0 0 12px;line-height:1.5'>{_esc(sd['concerns'])}</p>"
+        )
+    if mode == "conversational" and isinstance(sd.get("per_dimension"), dict):
+        pd = sd["per_dimension"]
+        dim_rows = "".join(
+            f"<tr><td style='padding:4px 12px 4px 0;color:#555'>{dim.title()}</td>"
+            f"<td><span style='display:inline-block;width:{int(pd.get(dim, 0)) * 10}%;"
+            f"max-width:120px;height:8px;background:#2d8cf0;border-radius:2px;min-width:2px'>"
+            f"</span>&nbsp;<span style='font-size:12px;color:#555'>"
+            f"{pd.get(dim, 0)}/10</span></td></tr>"
+            for dim in ("relevance", "depth", "communication", "fit")
+        )
+        detail_html += (
+            f"<h3 style='margin:16px 0 6px'>Dimension Scores</h3>"
+            f"<table style='border-spacing:0'>{dim_rows}</table>"
+        )
+    elif mode == "scripted" and sd.get("questions_answered") is not None:
+        detail_html += (
+            f"<p style='margin:4px 0'><b>Questions answered:</b> "
+            f"{sd['questions_answered']} / {sd.get('total_questions', '?')}</p>"
+        )
+
+    if mode == "conversational":
+        turn_rows = ""
+        for turn in (conversation or []):
+            spk   = turn.get("speaker", "")
+            label = "NexAI" if spk == "bot" else "Candidate"
+            color = "#2d8cf0" if spk == "bot" else "#444"
+            turn_rows += (
+                f"<tr style='border-bottom:1px solid #f0f0f0'>"
+                f"<td style='padding:7px 14px 7px 0;font-weight:600;color:{color};"
+                f"white-space:nowrap;vertical-align:top'>{label}</td>"
+                f"<td style='padding:7px 0;line-height:1.5;color:#222'>"
+                f"{_esc(turn.get('text', ''))}</td></tr>"
+            )
+        transcript_html = (
+            f"<table style='width:100%;border-collapse:collapse'>{turn_rows}</table>"
+        )
+    else:
+        qa_blocks = ""
+        for i, qa in enumerate(transcript or [], 1):
+            qa_blocks += (
+                f"<div style='margin-bottom:16px'>"
+                f"<p style='margin:0 0 4px;font-weight:600;color:#222'>"
+                f"Q{i}: {_esc(qa.get('question', ''))}</p>"
+                f"<p style='margin:0;color:#444;line-height:1.5;padding-left:12px;"
+                f"border-left:3px solid #ddd'>{_esc(qa.get('answer', ''))}</p></div>"
+            )
+        transcript_html = qa_blocks or "<p style='color:#888'>No transcript recorded.</p>"
+
+    score_val   = int(raw_score) if raw_score is not None else None
+    score_str   = f"{score_val}/100" if score_val is not None else "N/A"
+    score_color = (
+        "#1a7f37" if (score_val or 0) >= 70
+        else "#b55c00" if (score_val or 0) >= 50
+        else "#cf222e"
+    )
+
+    return (
+        "<!DOCTYPE html><html><body style='font-family:Arial,sans-serif;"
+        "max-width:700px;margin:0 auto;padding:24px;color:#222'>"
+        "<h2 style='margin:0 0 4px;color:#111'>NexAI Interview Completed</h2>"
+        "<p style='margin:0 0 20px;color:#888;font-size:12px'>"
+        "Powered by Egnex · One Click Hire</p>"
+        "<table style='border-collapse:collapse;margin-bottom:20px'>"
+        f"<tr><td style='padding:4px 16px 4px 0;color:#555;font-weight:600'>Candidate</td>"
+        f"<td>{_esc(candidate_name)}</td></tr>"
+        f"<tr><td style='padding:4px 16px 4px 0;color:#555;font-weight:600'>Role</td>"
+        f"<td>{_esc(requisition_title)}</td></tr>"
+        f"<tr><td style='padding:4px 16px 4px 0;color:#555;font-weight:600'>AI Score</td>"
+        f"<td><b style='color:{score_color};font-size:18px'>{score_str}</b></td></tr>"
+        "</table>"
+        f"{detail_html}"
+        "<hr style='border:none;border-top:1px solid #eee;margin:20px 0'>"
+        "<h3 style='margin:0 0 12px'>Full Interview Transcript</h3>"
+        f"{transcript_html}"
+        "<hr style='border:none;border-top:1px solid #eee;margin:24px 0 12px'>"
+        "<p style='margin:0;font-size:11px;color:#aaa'>"
+        "This email was sent automatically by NexAI. Do not reply.</p>"
+        "</body></html>"
+    )
+
+
+def _fire_completion_email(session_id: str) -> None:
+    """Background task — resolve recruiter, guard on email_sent, send, mark sent."""
+    try:
+        row = query_one(
+            """SELECT u.email        AS recruiter_email,
+                      c.full_name    AS candidate_name,
+                      r.title        AS requisition_title,
+                      ns.raw_score, ns.score_detail,
+                      ns.transcript, ns.conversation,
+                      ns.email_sent
+               FROM nexai_session  ns
+               JOIN application    a  ON a.id  = ns.application_id
+               JOIN candidate      c  ON c.id  = a.candidate_id
+               JOIN requisition    r  ON r.id  = a.requisition_id
+               JOIN nexai_invite   ni ON ni.application_id = ns.application_id
+               JOIN app_user       u  ON u.id  = ni.created_by
+               WHERE ns.id = %s
+               ORDER BY ni.invited_at DESC
+               LIMIT 1""",
+            [session_id],
+        )
+        if not row or row["email_sent"]:
+            return
+
+        sd   = row["score_detail"] or {}
+        conv = row["conversation"] or []
+        txn  = row["transcript"]   or []
+
+        html_body = _build_completion_email_html(
+            candidate_name=row["candidate_name"],
+            requisition_title=row["requisition_title"],
+            raw_score=row["raw_score"],
+            score_detail=sd,
+            transcript=txn,
+            conversation=conv,
+        )
+        score_display = (
+            f"{int(row['raw_score'])}/100"
+            if row["raw_score"] is not None
+            else "N/A"
+        )
+        plain = (
+            f"NexAI Interview Completed\n\n"
+            f"Candidate: {row['candidate_name']}\n"
+            f"Role: {row['requisition_title']}\n"
+            f"AI Score: {score_display}\n\n"
+            f"Strengths:\n{sd.get('strengths', '—')}\n\n"
+            f"Areas to Probe:\n{sd.get('concerns', '—')}\n"
+        )
+        send_email(
+            to_email=row["recruiter_email"],
+            subject=(
+                f"NexAI interview completed — "
+                f"{row['candidate_name']} — {row['requisition_title']}"
+            ),
+            body=plain,
+            html=html_body,
+        )
+        query(
+            "UPDATE nexai_session SET email_sent = TRUE WHERE id = %s",
+            [session_id],
+            fetch=False,
+        )
+    except Exception as exc:
+        print(f"[nexai_email] completion email failed for session {session_id}: {exc}")
+
+
 @router.post("/invite/converse")
-async def converse_invite(token: str, body: ConverseIn):
+async def converse_invite(token: str, body: ConverseIn, background_tasks: BackgroundTasks):
     """
     Public — drive one turn of a conversational (LLM-led) NexAI interview.
 
@@ -973,6 +1211,7 @@ async def converse_invite(token: str, body: ConverseIn):
             [raw_score, combined, sess["application_id"]],
             fetch=False,
         )
+        background_tasks.add_task(_fire_completion_email, str(sess["id"]))
     else:
         query(
             "UPDATE nexai_session SET conversation = %s::jsonb WHERE id = %s",
@@ -984,7 +1223,7 @@ async def converse_invite(token: str, body: ConverseIn):
 
 
 @router.post("/invite/submit/{session_id}")
-async def submit_invited_session(session_id: str, body: SubmitSessionIn):
+async def submit_invited_session(session_id: str, body: SubmitSessionIn, background_tasks: BackgroundTasks):
     """Public — candidate submits completed interview transcript.
 
     In scripted mode: scores the supplied transcript using the rule-based model.
@@ -1044,6 +1283,7 @@ async def submit_invited_session(session_id: str, body: SubmitSessionIn):
             "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
             [raw_score, combined, sess["application_id"]], fetch=False,
         )
+        background_tasks.add_task(_fire_completion_email, session_id)
         return {"session_id": session_id, "raw_score": raw_score, "score_detail": detail}
 
     # ── Scripted mode (unchanged behaviour) ──────────────────────────────────
@@ -1070,6 +1310,7 @@ async def submit_invited_session(session_id: str, body: SubmitSessionIn):
         "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
         [raw_score, combined, sess["application_id"]], fetch=False,
     )
+    background_tasks.add_task(_fire_completion_email, session_id)
 
     return {"session_id": session_id, "raw_score": raw_score, "score_detail": detail}
 
