@@ -125,6 +125,16 @@ class SubmitSessionIn(BaseModel):
     transcript: list[TranscriptEntry]
 
 
+class QuestionIn(BaseModel):
+    seq: int
+    text: str
+    expected_keywords: list[str] = []
+
+
+class RequisitionQuestionsIn(BaseModel):
+    questions: list[QuestionIn]
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/sessions", status_code=201)
@@ -322,6 +332,99 @@ def list_sessions(
     )
 
 
+# ── Per-Requisition Question Editor ──────────────────────────────────────────
+
+@router.get("/requisitions/{req_id}/questions")
+def get_req_questions(
+    req_id: str,
+    defaults: bool = False,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Return the question set for a requisition.
+    - defaults=False (default): return the saved custom set if one exists (saved=True),
+      otherwise return auto-generated defaults without persisting (saved=False).
+    - defaults=True: always return auto-generated defaults regardless of any saved set.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    req = query_one(
+        "SELECT key_skills, job_description FROM requisition WHERE id = %s",
+        [req_id],
+    )
+    if not req:
+        raise HTTPException(404, "Requisition not found")
+
+    if not defaults:
+        saved = query_one(
+            "SELECT questions, updated_at FROM requisition_questions WHERE requisition_id = %s",
+            [req_id],
+        )
+        if saved:
+            return {
+                "saved": True,
+                "questions": saved["questions"],
+                "updated_at": saved["updated_at"].isoformat() if saved["updated_at"] else None,
+            }
+
+    auto = _generate_questions(
+        req.get("key_skills") or [], req.get("job_description") or ""
+    )
+    return {"saved": False, "questions": auto, "updated_at": None}
+
+
+@router.put("/requisitions/{req_id}/questions")
+def save_req_questions(
+    req_id: str,
+    body: RequisitionQuestionsIn,
+    user: dict = Depends(get_current_user),
+):
+    """Upsert the custom question set for a requisition."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    if not query_one("SELECT id FROM requisition WHERE id = %s", [req_id]):
+        raise HTTPException(404, "Requisition not found")
+
+    if not body.questions:
+        raise HTTPException(400, "At least one question is required")
+
+    bad = [i + 1 for i, q in enumerate(body.questions) if not q.text.strip()]
+    if bad:
+        raise HTTPException(400, f"Question(s) {bad} have empty text")
+
+    questions = [
+        {"seq": i + 1, "text": q.text.strip(), "expected_keywords": q.expected_keywords}
+        for i, q in enumerate(body.questions)
+    ]
+    query(
+        """INSERT INTO requisition_questions (requisition_id, questions, updated_at, updated_by)
+           VALUES (%s, %s::jsonb, now(), %s)
+           ON CONFLICT (requisition_id)
+           DO UPDATE SET questions   = EXCLUDED.questions,
+                         updated_at = now(),
+                         updated_by = EXCLUDED.updated_by""",
+        [req_id, json.dumps(questions), user["sub"]],
+        fetch=False,
+    )
+    return {"saved": True, "questions": questions}
+
+
+@router.delete("/requisitions/{req_id}/questions")
+def delete_req_questions(req_id: str, user: dict = Depends(get_current_user)):
+    """Remove the saved question set — future invites revert to auto-generation."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    query(
+        "DELETE FROM requisition_questions WHERE requisition_id = %s",
+        [req_id],
+        fetch=False,
+    )
+    return {"ok": True}
+
+
 # ── NexAI Invite Tracker ─────────────────────────────────────────────────────
 
 @router.get("/invite-tracker")
@@ -392,7 +495,7 @@ def invite_tracker(user: dict = Depends(get_current_user)):
 
 # ── Candidate Invite Flow ─────────────────────────────────────────────────────
 
-@router.post("/invite/{app_id}", status_code=201)
+@router.post("/invite/{app_id:uuid}", status_code=201)
 def create_nexai_invite(
     app_id: str,
     background_tasks: BackgroundTasks,
@@ -431,8 +534,18 @@ def create_nexai_invite(
     # Create the nexai_session now (if not already present) so avatar videos can
     # be pre-rendered before the candidate opens their link.
     # start_invited_session preserves these questions, keeping video URLs valid.
-    _questions = _generate_questions(
-        app_row.get("key_skills") or [], app_row.get("job_description") or ""
+    #
+    # Question source priority:
+    #   1. Saved custom set on requisition_questions (recruiter has edited it).
+    #   2. Auto-generation from key_skills + job_description (original behaviour,
+    #      used for every requisition that has never been edited).
+    _saved_qs = query_one(
+        "SELECT questions FROM requisition_questions WHERE requisition_id = %s",
+        [app_row["requisition_id"]],
+    )
+    _questions = (
+        list(_saved_qs["questions"]) if _saved_qs
+        else _generate_questions(app_row.get("key_skills") or [], app_row.get("job_description") or "")
     )
     _existing_sess = query_one(
         "SELECT id FROM nexai_session WHERE application_id = %s", [app_id]
@@ -711,6 +824,32 @@ def start_invited_session(token: str):
         session_id = row["id"]
 
     return {"session_id": session_id, "questions": questions}
+
+
+@router.get("/invite/render-status")
+def get_invite_render_status(token: str):
+    """Public — candidate polls avatar pre-render status using their invite token."""
+    inv = query_one(
+        """SELECT ni.application_id
+             FROM nexai_invite ni
+            WHERE ni.token = %s AND ni.used_at IS NOT NULL""",
+        [token],
+    )
+    if not inv:
+        raise HTTPException(404, "Session not found")
+    row = query_one(
+        """SELECT id, render_status, question_videos
+             FROM nexai_session
+            WHERE application_id = %s""",
+        [inv["application_id"]],
+    )
+    if not row:
+        raise HTTPException(404, "Session not found")
+    return {
+        "session_id": str(row["id"]),
+        "render_status": row.get("render_status") or "pending",
+        "question_videos": row.get("question_videos") or [],
+    }
 
 
 @router.post("/invite/submit/{session_id}")

@@ -87,6 +87,14 @@ def _auto_migrate():
             gcs_url     TEXT        NOT NULL,
             created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
         )""",
+        # Per-requisition NexAI question editor (added 2026-06 Step 7)
+        """CREATE TABLE IF NOT EXISTS requisition_questions (
+            requisition_id  UUID        PRIMARY KEY
+                                        REFERENCES requisition(id) ON DELETE CASCADE,
+            questions       JSONB       NOT NULL DEFAULT '[]'::jsonb,
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by      UUID        REFERENCES app_user(id)
+        )""",
     ]
     for sql in migrations:
         try:
