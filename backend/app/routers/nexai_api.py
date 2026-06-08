@@ -12,13 +12,15 @@ import secrets
 import tempfile
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ..db import query, query_one
 from ..auth_utils import get_current_user
 from ..services import avatar as _avatar_svc
+from ..services import tts as _tts_svc
+from ..services import prerender as _prerender_svc
 from ..services.connectors import send_email
 
 router = APIRouter(prefix="/api/nexai", tags=["nexai"])
@@ -219,6 +221,28 @@ def get_session(session_id: str, _user: dict = Depends(get_current_user)):
     return row
 
 
+@router.get("/sessions/{session_id}/render-status")
+def get_render_status(session_id: str, _user: dict = Depends(get_current_user)):
+    """
+    Return avatar pre-render status and per-question video URLs for a session.
+    Frontend polls this before the candidate starts to determine if MP4s are ready.
+    render_status values: pending | rendering | ready | partial | failed
+    A 'failed' or 'partial' status is not an error — the orb takes over for any
+    question whose video_url is null or status is 'failed'.
+    """
+    row = query_one(
+        "SELECT render_status, question_videos FROM nexai_session WHERE id = %s",
+        [session_id],
+    )
+    if not row:
+        raise HTTPException(404, "Session not found")
+    return {
+        "session_id": session_id,
+        "render_status": row.get("render_status") or "pending",
+        "question_videos": row.get("question_videos") or [],
+    }
+
+
 @router.get("/sessions")
 def list_sessions(
     user: dict = Depends(get_current_user),
@@ -369,14 +393,20 @@ def invite_tracker(user: dict = Depends(get_current_user)):
 # ── Candidate Invite Flow ─────────────────────────────────────────────────────
 
 @router.post("/invite/{app_id}", status_code=201)
-def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
+def create_nexai_invite(
+    app_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
     """Recruiter sends an AI interview invite link to the candidate's email."""
     if user["role"] not in ("recruiter", "ta_manager", "admin"):
         raise HTTPException(403, "Not authorised")
 
     app_row = query_one(
         """SELECT a.id, a.status, c.full_name, c.email,
-                  r.title AS job_title, gc.name AS company
+                  r.id AS requisition_id, r.title AS job_title,
+                  r.key_skills, r.job_description,
+                  gc.name AS company
            FROM application a
            JOIN candidate   c  ON c.id = a.candidate_id
            JOIN requisition r  ON r.id = a.requisition_id
@@ -396,6 +426,34 @@ def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
            VALUES (%s, %s, %s)""",
         [app_id, token, user["sub"]],
         fetch=False,
+    )
+
+    # Create the nexai_session now (if not already present) so avatar videos can
+    # be pre-rendered before the candidate opens their link.
+    # start_invited_session preserves these questions, keeping video URLs valid.
+    _questions = _generate_questions(
+        app_row.get("key_skills") or [], app_row.get("job_description") or ""
+    )
+    _existing_sess = query_one(
+        "SELECT id FROM nexai_session WHERE application_id = %s", [app_id]
+    )
+    if _existing_sess:
+        _prerender_session_id = _existing_sess["id"]
+    else:
+        _sess_row = query_one(
+            """INSERT INTO nexai_session
+               (application_id, requisition_id, questions, status)
+               VALUES (%s, %s, %s::jsonb, 'pending') RETURNING id""",
+            [app_id, app_row["requisition_id"], json.dumps(_questions)],
+        )
+        _prerender_session_id = _sess_row["id"]
+
+    # Fire avatar pre-render as a background task.
+    # Completely safe when GPU is not deployed — pipeline logs a warning and exits,
+    # leaving all question_videos as failed so the frontend orb takes over.
+    # TODO: replace FastAPI BackgroundTasks with Celery/RQ for production reliability.
+    background_tasks.add_task(
+        _prerender_svc.prerender_interview_videos, _prerender_session_id
     )
 
     # Read base_url from DB Settings (Admin → Settings → App Base URL)
@@ -529,7 +587,11 @@ def create_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.post("/resend-invite/{app_id}", status_code=201)
-def resend_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
+def resend_nexai_invite(
+    app_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
     """
     Creates a fresh invite token for an application and resends the email.
     Used for expired or pending-too-long invites.
@@ -542,8 +604,8 @@ def resend_nexai_invite(app_id: str, user: dict = Depends(get_current_user)):
            WHERE application_id = %s AND used_at IS NULL""",
         [app_id], fetch=False,
     )
-    # Delegate to the main invite creator
-    return create_nexai_invite(app_id, user)
+    # Delegate to the main invite creator (re-triggers prerender; cache hits are instant)
+    return create_nexai_invite(app_id, background_tasks, user)
 
 
 @router.get("/invite/validate")
@@ -612,18 +674,32 @@ def start_invited_session(token: str):
     questions = _generate_questions(app_row["key_skills"] or [], app_row["job_description"] or "")
 
     existing = query_one(
-        "SELECT id FROM nexai_session WHERE application_id = %s",
+        "SELECT id, questions FROM nexai_session WHERE application_id = %s",
         [invite["application_id"]],
     )
     if existing:
-        query(
-            """UPDATE nexai_session
-               SET questions = %s::jsonb, status = 'in_progress',
-                   started_at = now(), transcript = NULL,
-                   raw_score = NULL, score_detail = NULL
-               WHERE id = %s""",
-            [json.dumps(questions), existing["id"]], fetch=False,
-        )
+        existing_qs = existing.get("questions") or []
+        if existing_qs:
+            # Session was pre-created at invite time with questions already generated
+            # and avatar videos potentially pre-rendered. Preserve the questions so
+            # pre-rendered video URLs remain valid. Only update session state.
+            query(
+                """UPDATE nexai_session
+                   SET status = 'in_progress', started_at = now(),
+                       transcript = NULL, raw_score = NULL, score_detail = NULL
+                   WHERE id = %s""",
+                [existing["id"]], fetch=False,
+            )
+            questions = existing_qs
+        else:
+            query(
+                """UPDATE nexai_session
+                   SET questions = %s::jsonb, status = 'in_progress',
+                       started_at = now(), transcript = NULL,
+                       raw_score = NULL, score_detail = NULL
+                   WHERE id = %s""",
+                [json.dumps(questions), existing["id"]], fetch=False,
+            )
         session_id = existing["id"]
     else:
         row = query_one(
@@ -728,14 +804,15 @@ class RenderQuestionIn(BaseModel):
 
 
 @router.post("/render-question")
-def render_question(body: RenderQuestionIn, _user: dict = Depends(get_current_user)):
+async def render_question(body: RenderQuestionIn, _user: dict = Depends(get_current_user)):
     """
     STEP A3 — Generate TTS audio for a question and render a lip-sync video
     using the configured avatar provider (sadtalker / wav2lip / vendor).
 
     For 'orb' provider: returns {video_url: null} immediately (frontend uses orb).
-    For GPU providers: generates audio via gTTS, sends to GPU service, returns video_url.
-    Falls back to orb cleanly if GPU service is unreachable.
+    For GPU providers: generates audio via edge-tts (neural, falls back to gTTS),
+    sends to GPU service, returns video_url.
+    Falls back to orb cleanly if TTS or GPU service fails.
     """
     provider = _avatar_svc.PROVIDER
     if provider == "orb":
@@ -743,13 +820,9 @@ def render_question(body: RenderQuestionIn, _user: dict = Depends(get_current_us
 
     # Generate TTS audio file for GPU rendering
     try:
-        from gtts import gTTS
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tf:
             audio_path = tf.name
-        gTTS(text=body.question_text, lang="en", tld="co.in").save(audio_path)
-    except ImportError:
-        return {"video_url": None, "provider": "orb", "fallback": True,
-                "reason": "gTTS not installed — pip install gtts"}
+        await _tts_svc.synthesize_speech(body.question_text, audio_path)
     except Exception as exc:
         return {"video_url": None, "provider": "orb", "fallback": True, "reason": str(exc)}
 

@@ -36,8 +36,13 @@ h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#1a1a1a}
 .error-box{text-align:center;padding:40px 20px}
 .error-box h2{font-size:18px;color:#c0392b;margin-bottom:8px}
 .error-box p{font-size:13px;color:#6b6760}
-.orb-wrap{display:flex;justify-content:center;margin:16px 0}
+.orb-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;margin:16px 0}
 canvas#orb{border-radius:50%}
+#nexai-avatar{width:120px;height:120px;border-radius:50%;object-fit:cover;border:3px solid #e5e3de;transition:border-color .3s,box-shadow .3s}
+#nexai-avatar.speaking{border-color:#f15a22;animation:pulse-speak .8s ease-in-out infinite alternate}
+#nexai-avatar.listening{border-color:#2563eb;animation:pulse-listen .6s ease-in-out infinite alternate}
+@keyframes pulse-speak{from{box-shadow:0 0 0 2px rgba(241,90,34,.18)}to{box-shadow:0 0 0 10px rgba(241,90,34,.06)}}
+@keyframes pulse-listen{from{box-shadow:0 0 0 2px rgba(37,99,235,.18)}to{box-shadow:0 0 0 10px rgba(37,99,235,.06)}}
 .step{display:none}.step.active{display:block}
 </style>
 </head>
@@ -92,7 +97,10 @@ canvas#orb{border-radius:50%}
   <div class="step" id="step-interview">
     <h1>AI Screening Interview</h1>
     <p class="status" id="nx-status">Preparing your questions…</p>
-    <div class="orb-wrap"><canvas id="orb" width="120" height="120"></canvas></div>
+    <div class="orb-wrap">
+      <img id="nexai-avatar" src="/assets/avatars/nexai-male.png" onerror="this.style.display='none'" alt="NexAI">
+      <canvas id="orb" width="48" height="48"></canvas>
+    </div>
     <div id="nx-question-wrap">
       <div class="q-num" id="nx-qnum"></div>
       <div class="question-box" id="nx-question">Please wait…</div>
@@ -324,7 +332,11 @@ async function nxSubmit() {
 }
 
 // ── Orb animation ─────────────────────────────────────────────────────────────
-function _orbSetState(s) { _orbState = s; }
+function _orbSetState(s) {
+  _orbState = s;
+  const av = document.getElementById('nexai-avatar');
+  if (av) av.className = (s === 'idle' || s === 'done') ? '' : s;
+}
 function _stopOrb() { if (_orbRaf) { cancelAnimationFrame(_orbRaf); _orbRaf = null; } }
 function _startOrb() {
   const canvas = document.getElementById('orb');
@@ -335,16 +347,16 @@ function _startOrb() {
     _orbRaf = requestAnimationFrame(frame);
     _orbPhase += 0.04;
     ctx.clearRect(0, 0, W, H);
-    const base = _orbState === 'listening' ? 44 + Math.sin(_orbPhase * 3) * 8
-               : _orbState === 'speaking'  ? 44 + Math.sin(_orbPhase * 2) * 5
-               : 40 + Math.sin(_orbPhase) * 2;
-    const gr = ctx.createRadialGradient(cx-10, cy-10, 4, cx, cy, base);
+    const base = _orbState === 'listening' ? 18 + Math.sin(_orbPhase * 3) * 4
+               : _orbState === 'speaking'  ? 18 + Math.sin(_orbPhase * 2) * 3
+               : 16 + Math.sin(_orbPhase) * 1;
+    const gr = ctx.createRadialGradient(cx-4, cy-4, 1, cx, cy, base);
     gr.addColorStop(0, '#ff8c5a');
     gr.addColorStop(0.5, '#f15a22');
     gr.addColorStop(1, '#9c3a0e');
     ctx.fillStyle = gr;
     ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2); ctx.fill();
-    const hl = ctx.createRadialGradient(cx-14, cy-14, 0, cx-6, cy-6, base * 0.55);
+    const hl = ctx.createRadialGradient(cx-5, cy-5, 0, cx-2, cy-2, base * 0.55);
     hl.addColorStop(0, 'rgba(255,255,255,0.28)'); hl.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = hl;
     ctx.beginPath(); ctx.arc(cx, cy, base, 0, Math.PI * 2); ctx.fill();

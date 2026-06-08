@@ -79,6 +79,14 @@ def _auto_migrate():
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             updated_by UUID REFERENCES app_user(id)
         )""",
+        # Avatar pre-render pipeline — per-question video tracking (added 2026-06 Step 4)
+        "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS question_videos JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS render_status TEXT NOT NULL DEFAULT 'pending' CHECK (render_status IN ('pending','rendering','ready','partial','failed'))",
+        """CREATE TABLE IF NOT EXISTS avatar_video_cache (
+            cache_key   TEXT        PRIMARY KEY,
+            gcs_url     TEXT        NOT NULL,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
     ]
     for sql in migrations:
         try:
@@ -102,6 +110,14 @@ _FRONTEND_DIR = os.environ.get(
 _ASSETS_DIR = os.path.join(_FRONTEND_DIR, "assets")
 if os.path.isdir(_ASSETS_DIR):
     app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
+
+# Local avatar video storage — used when GCS_BUCKET_NAME is not set (dev / orb-only mode).
+# Videos are written here by prerender.py and served at /media/avatar_videos/<filename>.
+_AVATAR_MEDIA_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "media", "avatar_videos")
+)
+os.makedirs(_AVATAR_MEDIA_DIR, exist_ok=True)
+app.mount("/media/avatar_videos", StaticFiles(directory=_AVATAR_MEDIA_DIR), name="avatar_videos")
 
 _RESUME_MIME = {
     ".pdf":  "application/pdf",
