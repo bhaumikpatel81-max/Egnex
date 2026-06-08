@@ -2600,7 +2600,7 @@ async function confirmSendInvite(){
 
   let raw,res;
   try{
-    raw=await fetch(`/api/nexai/invite/${_inviteAppId}`,{
+    raw=await fetch(`/api/nexai/invite/send/${_inviteAppId}`,{
       method:'POST',
       headers:{Authorization:`Bearer ${_tok}`}
     });
@@ -2630,8 +2630,11 @@ async function confirmSendInvite(){
       </div>`;
     document.getElementById('inv-btns').innerHTML='<button class="btn btn-ghost" onclick="closeInviteModal()">Close</button>';
   } else {
-    // Show the actual server error detail
-    const detail = res?.detail || `HTTP ${raw.status} — check server logs`;
+    // FastAPI validation errors return detail as an array; flatten gracefully
+    const rawDetail = res?.detail;
+    const detail = Array.isArray(rawDetail)
+      ? rawDetail.map(e => e.msg || e.message || JSON.stringify(e)).join(' · ')
+      : (rawDetail || `HTTP ${raw.status} — check server logs`);
     resEl.style.background='#fdf0f0';resEl.style.border='1px solid #f5c6c6';
     resEl.innerHTML=`<span style="color:#c0392b">⚠ ${detail}</span>`;
     btn.disabled=false;btn.textContent='📧 Retry';

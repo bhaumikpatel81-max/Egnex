@@ -124,8 +124,6 @@ canvas#orb{border-radius:50%}
   <!-- Step: Complete -->
   <div class="step" id="step-done">
     <div class="result-box">
-      <div class="result-score" id="done-score">—</div>
-      <div class="result-label">out of 100</div>
       <p style="font-size:14px;color:#1a1a1a;margin-bottom:8px">Thank you — your interview is complete.</p>
       <p style="font-size:13px;color:#6b6760">Your responses have been submitted to the hiring team. You will be contacted with next steps shortly.</p>
       <div class="result-detail" id="done-detail"></div>
@@ -407,11 +405,7 @@ async function nxSubmit() {
     return;
   }
   // Show result
-  const score = Math.round(res.raw_score ?? 0);
   const detail = res.score_detail || {};
-  document.getElementById('done-score').textContent = score;
-  document.getElementById('done-score').style.color =
-    score >= 60 ? '#1d6e56' : score >= 40 ? '#d48806' : '#f15a22';
   const qa = detail.questions_answered ?? '—';
   const qt = detail.total_questions ?? '—';
   document.getElementById('done-detail').innerHTML =

@@ -446,38 +446,43 @@ def invite_tracker(user: dict = Depends(get_current_user)):
     elif role not in ("ta_manager", "admin"):
         raise HTTPException(403, "Not authorised")
 
+    # DISTINCT ON (a.id) keeps only the most-recently-sent invite per application,
+    # so re-sending an invite never inflates the tracker row count.
     rows = query(
         f"""
-        SELECT
-            ni.id            AS invite_id,
-            ni.invited_at,
-            ni.expires_at,
-            ni.used_at,
-            c.full_name      AS candidate_name,
-            c.email          AS candidate_email,
-            r.id             AS req_id,
-            r.title          AS requisition,
-            a.id             AS app_id,
-            ns.id            AS session_id,
-            ns.status        AS session_status,
-            ns.started_at,
-            ns.completed_at,
-            ns.raw_score,
-            ub.full_name     AS invited_by,
-            CASE
-              WHEN ns.status = 'completed'    THEN 'completed'
-              WHEN ni.used_at IS NOT NULL      THEN 'in_progress'
-              WHEN ni.expires_at < now()       THEN 'expired'
-              ELSE 'pending'
-            END              AS invite_status
-        FROM nexai_invite ni
-        JOIN application  a  ON a.id  = ni.application_id
-        JOIN candidate    c  ON c.id  = a.candidate_id
-        JOIN requisition  r  ON r.id  = a.requisition_id
-        {scope_join}
-        LEFT JOIN nexai_session  ns ON ns.application_id = a.id
-        LEFT JOIN app_user       ub ON ub.id = ni.created_by
-        ORDER BY ni.invited_at DESC
+        SELECT * FROM (
+            SELECT DISTINCT ON (a.id)
+                ni.id            AS invite_id,
+                ni.invited_at,
+                ni.expires_at,
+                ni.used_at,
+                c.full_name      AS candidate_name,
+                c.email          AS candidate_email,
+                r.id             AS req_id,
+                r.title          AS requisition,
+                a.id             AS app_id,
+                ns.id            AS session_id,
+                ns.status        AS session_status,
+                ns.started_at,
+                ns.completed_at,
+                ns.raw_score,
+                ub.full_name     AS invited_by,
+                CASE
+                  WHEN ns.status = 'completed'    THEN 'completed'
+                  WHEN ni.used_at IS NOT NULL      THEN 'in_progress'
+                  WHEN ni.expires_at < now()       THEN 'expired'
+                  ELSE 'pending'
+                END              AS invite_status
+            FROM nexai_invite ni
+            JOIN application  a  ON a.id  = ni.application_id
+            JOIN candidate    c  ON c.id  = a.candidate_id
+            JOIN requisition  r  ON r.id  = a.requisition_id
+            {scope_join}
+            LEFT JOIN nexai_session  ns ON ns.application_id = a.id
+            LEFT JOIN app_user       ub ON ub.id = ni.created_by
+            ORDER BY a.id, ni.invited_at DESC
+        ) latest_invite
+        ORDER BY invited_at DESC
         """,
         params,
     )
@@ -495,7 +500,7 @@ def invite_tracker(user: dict = Depends(get_current_user)):
 
 # ── Candidate Invite Flow ─────────────────────────────────────────────────────
 
-@router.post("/invite/{app_id:uuid}", status_code=201)
+@router.post("/invite/send/{app_id}", status_code=201)
 def create_nexai_invite(
     app_id: str,
     background_tasks: BackgroundTasks,
@@ -589,8 +594,8 @@ def create_nexai_invite(
         f"The interview takes approximately 10-15 minutes. "
         f"You will need a microphone and a quiet environment.\n\n"
         f"Important:\n"
-        f"- This link is valid for 7 days\n"
-        f"- It can only be used once\n"
+        f"- Once you start, you have 48 hours to complete the interview\n"
+        f"- You can close and re-open the link within that window if needed\n"
         f"- NexAI never auto-rejects — all scores are reviewed by a human recruiter\n\n"
         f"Best regards,\nEgnex Hiring Team | {company}"
     )
@@ -656,7 +661,7 @@ def create_nexai_invite(
 
       <!-- Notice -->
       <table cellpadding="0" cellspacing="0">
-        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">⏳&nbsp; This link is valid for <strong>7 days</strong> and can only be used <strong>once</strong>.</td></tr>
+        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">⏳&nbsp; Once you start, you have <strong>48 hours</strong> to complete — you can close and re-open the link within that window.</td></tr>
         <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">📧&nbsp; Reply to this email if you have any questions.</td></tr>
       </table>
     </td></tr>
@@ -727,20 +732,22 @@ def validate_invite(token: str):
     row = query_one(
         """SELECT ni.id, ni.expires_at, ni.used_at,
                   c.full_name, r.title AS job_title, gc.name AS company,
-                  ni.application_id
+                  ni.application_id, ns.status AS session_status
            FROM nexai_invite ni
            JOIN application  a  ON a.id  = ni.application_id
            JOIN candidate    c  ON c.id  = a.candidate_id
            JOIN requisition  r  ON r.id  = a.requisition_id
            JOIN business_unit bu ON bu.id = r.bu_id
            JOIN group_company gc ON gc.id = bu.company_id
+           LEFT JOIN nexai_session ns ON ns.application_id = ni.application_id
            WHERE ni.token = %s""",
         [token],
     )
     if not row:
         return {"valid": False, "reason": "This interview link is invalid."}
-    if row["used_at"]:
-        return {"valid": False, "reason": "This interview link has already been used."}
+    # Permanently closed only after the interview is submitted
+    if row["session_status"] == "completed":
+        return {"valid": False, "reason": "This interview has already been completed."}
     exp = row["expires_at"]
     if exp and exp.replace(tzinfo=None) < datetime.utcnow():
         return {"valid": False, "reason": "This interview link has expired."}
@@ -755,7 +762,13 @@ def validate_invite(token: str):
 
 @router.post("/invite/begin")
 def start_invited_session(token: str):
-    """Public — candidate starts the NexAI session using their invite token."""
+    """Public — candidate starts (or re-enters) a NexAI session.
+
+    Policy:
+    - First entry: marks token used_at and sets a 48-hour completion window.
+    - Re-entry within 48 h: allowed — session is reset so candidate starts fresh.
+    - Permanently blocked only if session status = 'completed' (interview submitted).
+    """
     invite = query_one(
         """SELECT ni.id, ni.application_id, ni.expires_at, ni.used_at
            FROM nexai_invite ni WHERE ni.token = %s""",
@@ -763,17 +776,9 @@ def start_invited_session(token: str):
     )
     if not invite:
         raise HTTPException(400, "Invalid invite token")
-    if invite["used_at"]:
-        raise HTTPException(400, "This interview link has already been used")
     exp = invite["expires_at"]
     if exp and exp.replace(tzinfo=None) < datetime.utcnow():
         raise HTTPException(400, "This interview link has expired")
-
-    # Mark token as used
-    query(
-        "UPDATE nexai_invite SET used_at = now() WHERE id = %s",
-        [invite["id"]], fetch=False,
-    )
 
     app_row = query_one(
         """SELECT a.id, a.requisition_id, r.key_skills, r.job_description
@@ -784,18 +789,29 @@ def start_invited_session(token: str):
     if not app_row:
         raise HTTPException(404, "Application not found")
 
-    questions = _generate_questions(app_row["key_skills"] or [], app_row["job_description"] or "")
-
     existing = query_one(
-        "SELECT id, questions FROM nexai_session WHERE application_id = %s",
+        "SELECT id, status, questions FROM nexai_session WHERE application_id = %s",
         [invite["application_id"]],
     )
+    # Permanently closed only once the interview is submitted
+    if existing and existing["status"] == "completed":
+        raise HTTPException(400, "This interview has already been completed")
+
+    # First entry: stamp used_at and shrink the expiry to a 48-hour window
+    if not invite["used_at"]:
+        query(
+            """UPDATE nexai_invite
+               SET used_at = now(), expires_at = now() + INTERVAL '48 hours'
+               WHERE id = %s""",
+            [invite["id"]], fetch=False,
+        )
+
+    questions = _generate_questions(app_row["key_skills"] or [], app_row["job_description"] or "")
+
     if existing:
         existing_qs = existing.get("questions") or []
         if existing_qs:
-            # Session was pre-created at invite time with questions already generated
-            # and avatar videos potentially pre-rendered. Preserve the questions so
-            # pre-rendered video URLs remain valid. Only update session state.
+            # Preserve questions so any pre-rendered video URLs remain valid
             query(
                 """UPDATE nexai_session
                    SET status = 'in_progress', started_at = now(),
