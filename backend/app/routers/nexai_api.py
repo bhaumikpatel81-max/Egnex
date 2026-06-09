@@ -323,11 +323,15 @@ def list_sessions(
                r.title       AS req_title,
                r.id          AS req_id,
                a.id          AS app_id,
-               rec.full_name AS recruiter_name
+               rec.full_name AS recruiter_name,
+               ps.id         AS proctoring_session_id,
+               ps.flag_count AS proctor_flag_count,
+               (ps.id IS NOT NULL) AS has_proctoring
         FROM nexai_session ns
         JOIN application  a   ON a.id  = ns.application_id
         JOIN candidate    c   ON c.id  = a.candidate_id
         JOIN requisition  r   ON r.id  = ns.requisition_id
+        LEFT JOIN proctoring_session ps ON ps.nexai_session_id = ns.id
         {join_sql}
         LEFT JOIN LATERAL (
             SELECT u2.full_name

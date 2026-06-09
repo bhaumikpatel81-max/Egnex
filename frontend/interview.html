@@ -252,6 +252,7 @@ let _convTranscript = []; // [{speaker:'nexai'|'candidate', text:str}, ...]
 let _procSessId = null, _procWebcamStream = null, _procScreenStream = null;
 let _procWebcamRec = null, _procScreenRec = null;
 let _procFlags = [], _procFlagInterval = null, _procTFModels = null;
+let _procFlushTimer = null; // periodic flag flush timer (FIX #3)
 let _procWcIdx = 0, _procScIdx = 0;
 
 // ── Steps ─────────────────────────────────────────────────────────────────
@@ -556,6 +557,10 @@ async function _captureProctorSnapshot() {
 function _startProcRecorders() {
   _procWcIdx = 0; _procScIdx = 0;
 
+  // Flush flags to backend every 90 s so they survive a browser crash
+  if (_procFlushTimer) clearInterval(_procFlushTimer);
+  _procFlushTimer = setInterval(_periodicFlagFlush, 90000);
+
   // Webcam recorder (video + audio)
   const wcMime = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus'))
     ? 'video/webm;codecs=vp8,opus' : 'video/webm';
@@ -648,6 +653,7 @@ function _stopRecorder(rec) {
 async function _flushProctoringAndClose() {
   if (!_procSessId) return;
   if (_procFlagInterval) { clearInterval(_procFlagInterval); _procFlagInterval = null; }
+  if (_procFlushTimer)   { clearInterval(_procFlushTimer);   _procFlushTimer   = null; }
   // Stop recorders and wait for final ondataavailable flush
   await Promise.all([_stopRecorder(_procWebcamRec), _stopRecorder(_procScreenRec)]);
   _procWebcamRec = null; _procScreenRec = null;
@@ -675,6 +681,7 @@ async function _flushProctoringAndClose() {
 function _cleanupProctoring() {
   // Synchronous best-effort cleanup (used on error path and beforeunload)
   if (_procFlagInterval) { clearInterval(_procFlagInterval); _procFlagInterval = null; }
+  if (_procFlushTimer)   { clearInterval(_procFlushTimer);   _procFlushTimer   = null; }
   if (_procWebcamRec && _procWebcamRec.state !== 'inactive') try { _procWebcamRec.stop(); } catch(e) {}
   if (_procScreenRec && _procScreenRec.state !== 'inactive') try { _procScreenRec.stop(); } catch(e) {}
   if (_procWebcamStream) { _procWebcamStream.getTracks().forEach(t => t.stop()); _procWebcamStream = null; }
@@ -1226,9 +1233,36 @@ function _startOrb() {
   frame();
 }
 
-// Release media tracks when the candidate closes/navigates away
+// ── Periodic flag flush — sends accumulated flags every 90 s so they survive crashes ──
+async function _periodicFlagFlush() {
+  if (!_procSessId || !_procFlags.length) return;
+  const toSend = _procFlags.splice(0); // drain buffer atomically
+  try {
+    await apiPublic(
+      `/api/proctoring/candidate/${_procSessId}/flags?token=${encodeURIComponent(_token)}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flags: toSend }) }
+    );
+  } catch { _procFlags.unshift(...toSend); } // put back on network failure
+}
+
+// Flush when tab is hidden (switching windows, minimising, Alt+Tab)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && _procSessId) _periodicFlagFlush();
+});
+
+// Best-effort flush on close/navigate away via sendBeacon (no await needed)
 window.addEventListener('beforeunload', () => {
   _cleanupProctoring();
+  if (_procFlags.length && _procSessId && _token && navigator.sendBeacon) {
+    const blob = new Blob(
+      [JSON.stringify({ flags: _procFlags })],
+      { type: 'application/json' }
+    );
+    navigator.sendBeacon(
+      `/api/proctoring/candidate/${_procSessId}/flags?token=${encodeURIComponent(_token)}`,
+      blob
+    );
+  }
 });
 </script>
 </body>

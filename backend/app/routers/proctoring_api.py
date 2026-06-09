@@ -29,7 +29,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+import re as _re
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -346,6 +347,113 @@ def download_summary(session_id: str, user: dict = Depends(get_current_user)):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=proctor_summary_{session_id[:8]}.csv"},
     )
+
+
+# ── B8: Media listing + streaming (recruiter-only, JWT-protected) ─────────────
+
+@router.get("/{session_id}/media")
+def list_media(session_id: str, user: dict = Depends(get_current_user)):
+    """Return sorted lists of available webcam and screen chunk filenames."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    if not query_one("SELECT id FROM proctoring_session WHERE id = %s", [session_id]):
+        raise HTTPException(404, "Session not found")
+    result: dict = {"webcam": [], "screen": []}
+    for kind in ("webcam", "screen"):
+        folder = os.path.join(_UPLOADS_DIR, session_id, kind)
+        if os.path.isdir(folder):
+            result[kind] = sorted(
+                f for f in os.listdir(folder)
+                if os.path.isfile(os.path.join(folder, f))
+            )
+    return result
+
+
+@router.get("/{session_id}/media/{kind}/{filename}")
+def stream_media(
+    session_id: str,
+    kind: str,
+    filename: str,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Stream a single video chunk with HTTP range support for in-browser playback."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    if kind not in ("webcam", "screen"):
+        raise HTTPException(400, "kind must be webcam or screen")
+    safe = os.path.basename(filename)  # path-traversal guard
+    filepath = os.path.join(_UPLOADS_DIR, session_id, kind, safe)
+    if not os.path.isfile(filepath):
+        raise HTTPException(404, "Chunk not found")
+
+    file_size = os.path.getsize(filepath)
+
+    def _iter(start: int = 0, length: Optional[int] = None):
+        remaining = length if length is not None else file_size - start
+        with open(filepath, "rb") as f:
+            f.seek(start)
+            while remaining > 0:
+                data = f.read(min(65536, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    range_hdr = request.headers.get("range", "")
+    m = _re.match(r"bytes=(\d+)-(\d*)", range_hdr)
+    if m:
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else file_size - 1
+        end = min(end, file_size - 1)
+        chunk_len = end - start + 1
+        return StreamingResponse(
+            _iter(start, chunk_len),
+            status_code=206,
+            media_type="video/webm",
+            headers={
+                "Content-Range":  f"bytes {start}-{end}/{file_size}",
+                "Accept-Ranges":  "bytes",
+                "Content-Length": str(chunk_len),
+            },
+        )
+
+    return StreamingResponse(
+        _iter(),
+        media_type="video/webm",
+        headers={
+            "Accept-Ranges":  "bytes",
+            "Content-Length": str(file_size),
+        },
+    )
+
+
+@router.get("/{session_id}/identity")
+def stream_identity(session_id: str, user: dict = Depends(get_current_user)):
+    """Stream the candidate identity snapshot image."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    row = query_one(
+        "SELECT identity_snapshot_path FROM proctoring_session WHERE id = %s",
+        [session_id],
+    )
+    if not row or not row["identity_snapshot_path"]:
+        raise HTTPException(404, "No identity snapshot for this session")
+    path = row["identity_snapshot_path"]
+    if not os.path.isfile(path):
+        raise HTTPException(404, "Snapshot file missing from disk")
+    ext  = os.path.splitext(path)[1].lower()
+    mime = "image/png" if ext == ".png" else "image/jpeg"
+
+    def _iter():
+        with open(path, "rb") as f:
+            while True:
+                data = f.read(65536)
+                if not data:
+                    break
+                yield data
+
+    return StreamingResponse(_iter(), media_type=mime)
 
 
 # ── Helper ────────────────────────────────────────────────────────────────────

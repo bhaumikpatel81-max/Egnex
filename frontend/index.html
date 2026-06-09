@@ -3806,11 +3806,42 @@ async function openProctoringDetail(sessionId) {
       <span style="margin-left:auto;font-size:11px;color:var(--muted)">${Math.round((f.confidence||0)*100)}%</span>
     </div>`).join('') : '<p style="color:var(--muted);font-size:13px">No AI flags recorded.</p>';
 
+  const videoPlayerHtml = `
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Video Recordings</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--muted)">CANDIDATE WEBCAM</div>
+          <div id="wc-player-wrap">
+            <video id="wc-video" controls style="width:100%;border-radius:6px;background:#111;max-height:220px;display:block"></video>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px" id="wc-info">Loading…</div>
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-ghost btn-sm" id="wc-prev" onclick="procPrevChunk('wc')" disabled>&#9664; Prev</button>
+              <button class="btn btn-ghost btn-sm" id="wc-next" onclick="procNextChunk('wc')" disabled>Next &#9654;</button>
+              <a id="wc-dl" class="btn btn-ghost btn-sm" style="display:none" download>&#8595; Download chunk</a>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:260px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--muted)">SCREEN RECORDING</div>
+          <div id="sc-player-wrap">
+            <video id="sc-video" controls style="width:100%;border-radius:6px;background:#111;max-height:220px;display:block"></video>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px" id="sc-info">Loading…</div>
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-ghost btn-sm" id="sc-prev" onclick="procPrevChunk('sc')" disabled>&#9664; Prev</button>
+              <button class="btn btn-ghost btn-sm" id="sc-next" onclick="procNextChunk('sc')" disabled>Next &#9654;</button>
+              <a id="sc-dl" class="btn btn-ghost btn-sm" style="display:none" download>&#8595; Download chunk</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
   document.getElementById('content').innerHTML = `
     <div class="page-header">
       <h1>Proctoring session</h1>
       <button class="btn btn-ghost btn-sm" onclick="navigate('proctoring_review')">← Back</button>
-      <a class="btn btn-ghost btn-sm" href="/api/proctoring/review/${sessionId}/summary" download>⬇ Incident summary CSV</a>
+      <a class="btn btn-ghost btn-sm" href="/api/proctoring/review/${sessionId}/summary" download>⬇ Incident CSV</a>
     </div>
     <div class="two-col" style="margin-bottom:16px">
       <div class="card">
@@ -3820,10 +3851,13 @@ async function openProctoringDetail(sessionId) {
           <tr><td>Requisition</td><td>${d.req_title}</td></tr>
           <tr><td>Consent</td><td><span class="pill ${d.consent_granted?'open':'closed'}">${d.consent_granted?'Granted':'Declined'}</span></td></tr>
           <tr><td>Screen recording</td><td>${d.screen_recording_declined?'<span style="color:var(--gold)">Declined by candidate</span>':'Captured'}</td></tr>
-          <tr><td>Identity snapshot</td><td>${d.identity_snapshot_path?'Captured (human review)':'Not captured'}</td></tr>
           <tr><td>AI flags</td><td><strong>${d.flag_count}</strong></td></tr>
           <tr><td>Date</td><td style="font-size:12px">${d.created_at?new Date(d.created_at).toLocaleString('en-IN'):'—'}</td></tr>
         </tbody></table>
+        <div style="margin-top:12px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px">Identity Snapshot</div>
+          <div id="proctor-id-wrap"><p style="font-size:12px;color:var(--muted)">Loading…</p></div>
+        </div>
       </div>
       <div class="card">
         <div class="card-title">Human review</div>
@@ -3846,7 +3880,11 @@ async function openProctoringDetail(sessionId) {
     <div class="card">
       <div class="card-title">AI behaviour flags — timeline (${flags.length} events)</div>
       <div class="flag-timeline">${flagHtml}</div>
-    </div>`;
+    </div>
+    ${videoPlayerHtml}`;
+
+  // Async: load identity snapshot + video chunks after DOM is ready
+  _initProcMediaPlayer(sessionId);
 }
 
 async function saveProctoringReview(sessionId) {
@@ -3865,6 +3903,98 @@ function _fmtMs(ms) {
   const s = Math.floor(ms/1000);
   return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
 }
+
+// ── Proctoring badge for NexAI Sessions tracker ───────────────────────────────
+function _procBadge(r) {
+  if (!r.has_proctoring || !r.proctoring_session_id) {
+    return '<span style="font-size:11px;color:var(--muted)">Not proctored</span>';
+  }
+  const cnt = r.proctor_flag_count ?? 0;
+  const color = cnt === 0 ? '#1d6e56' : cnt <= 2 ? '#92400e' : '#991b1b';
+  const bg    = cnt === 0 ? '#d1fae5' : cnt <= 2 ? '#fef3c7' : '#fee2e2';
+  const icon  = cnt === 0 ? '✓' : '⚑';
+  const label = `${icon} ${cnt} flag${cnt !== 1 ? 's' : ''}`;
+  return `<span style="background:${bg};color:${color};font-size:11px;font-weight:600;
+      padding:3px 9px;border-radius:12px;cursor:pointer;white-space:nowrap;display:inline-block"
+    onclick="event.stopPropagation();openProctoringDetail('${r.proctoring_session_id}')"
+    title="Open proctoring report">${label}</span>`;
+}
+
+// ── Proctoring media player state ─────────────────────────────────────────────
+let _pm = { sid:'', wc:[], sc:[], wIdx:0, sIdx:0, wcBlob:null, scBlob:null };
+
+async function _initProcMediaPlayer(sid) {
+  _pm = { sid, wc:[], sc:[], wIdx:0, sIdx:0, wcBlob:null, scBlob:null };
+
+  // Identity snapshot (FIX #4)
+  const imgWrap = document.getElementById('proctor-id-wrap');
+  if (imgWrap) {
+    try {
+      const r = await fetch(`/api/proctoring/${sid}/identity`, { headers:{ Authorization:`Bearer ${_tok}` } });
+      if (r.ok) {
+        const url = URL.createObjectURL(await r.blob());
+        imgWrap.innerHTML = `<img src="${url}" style="max-width:160px;border-radius:8px;border:1px solid var(--border)">`;
+      } else {
+        imgWrap.innerHTML = '<p style="font-size:12px;color:var(--muted)">No snapshot captured.</p>';
+      }
+    } catch { imgWrap.innerHTML = '<p style="font-size:12px;color:var(--muted)">No snapshot captured.</p>'; }
+  }
+
+  // Media chunk list (FIX #2)
+  const media = await api(`/api/proctoring/${sid}/media`);
+  if (!media) return;
+  _pm.wc = (media.webcam || []).sort();
+  _pm.sc = (media.screen || []).sort();
+
+  const wcWrap = document.getElementById('wc-player-wrap');
+  const scWrap = document.getElementById('sc-player-wrap');
+
+  if (!_pm.wc.length) { if (wcWrap) wcWrap.innerHTML = '<p style="font-size:12px;color:var(--muted)">No webcam recording found.</p>'; }
+  else _loadProcChunk('wc', 0);
+
+  if (!_pm.sc.length) { if (scWrap) scWrap.innerHTML = '<p style="font-size:12px;color:var(--muted)">No screen recording found.</p>'; }
+  else _loadProcChunk('sc', 0);
+}
+
+async function _loadProcChunk(kind, idx) {
+  const chunks = kind === 'wc' ? _pm.wc : _pm.sc;
+  if (!chunks.length) return;
+  idx = Math.max(0, Math.min(idx, chunks.length - 1));
+  if (kind === 'wc') _pm.wIdx = idx; else _pm.sIdx = idx;
+
+  const fname    = chunks[idx];
+  const blobKind = kind === 'wc' ? 'webcam' : 'screen';
+  const blobKey  = kind === 'wc' ? 'wcBlob' : 'scBlob';
+  const vidEl    = document.getElementById(kind + '-video');
+  const infoEl   = document.getElementById(kind + '-info');
+  const dlEl     = document.getElementById(kind + '-dl');
+  if (!vidEl || !infoEl) return;
+
+  infoEl.textContent = `Loading chunk ${idx + 1} of ${chunks.length}…`;
+
+  if (_pm[blobKey]) { URL.revokeObjectURL(_pm[blobKey]); _pm[blobKey] = null; }
+
+  try {
+    const resp = await fetch(
+      `/api/proctoring/${_pm.sid}/media/${blobKind}/${encodeURIComponent(fname)}`,
+      { headers: { Authorization: `Bearer ${_tok}` } }
+    );
+    if (!resp.ok) { infoEl.textContent = 'Failed to load chunk.'; return; }
+    _pm[blobKey] = URL.createObjectURL(await resp.blob());
+    vidEl.src = _pm[blobKey];
+    vidEl.play().catch(() => {});
+    infoEl.textContent = `Chunk ${idx + 1} of ${chunks.length}`;
+    if (dlEl) { dlEl.href = _pm[blobKey]; dlEl.download = fname; dlEl.style.display = ''; }
+    vidEl.onended = () => { if (idx < chunks.length - 1) _loadProcChunk(kind, idx + 1); };
+    const prevEl = document.getElementById(kind + '-prev');
+    const nextEl = document.getElementById(kind + '-next');
+    if (prevEl) prevEl.disabled = idx === 0;
+    if (nextEl) nextEl.disabled = idx === chunks.length - 1;
+  } catch { infoEl.textContent = 'Error loading recording.'; }
+}
+
+function procPrevChunk(k) { _loadProcChunk(k, (k === 'wc' ? _pm.wIdx : _pm.sIdx) - 1); }
+function procNextChunk(k) { _loadProcChunk(k, (k === 'wc' ? _pm.wIdx : _pm.sIdx) + 1); }
 
 // ── SCREEN: NexAI Sessions (drill-down from dashboard) ────────────────────────
 async function screenNexAISessions() {
@@ -3900,6 +4030,7 @@ async function screenNexAISessions() {
       ${recCol}
       <td>${_scorePill(r.raw_score)}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
+      <td>${_procBadge(r)}</td>
       <td style="font-size:12px">${durMin}</td>
       <td style="font-size:11px;color:var(--muted)">${dateStr}</td>
     </tr>`;
@@ -3932,7 +4063,7 @@ async function screenNexAISessions() {
       ${tRows
         ? `<table><thead><tr>
              <th>Candidate</th><th>Position</th>${recHeader}
-             <th>AI Score</th><th>Status</th><th>Duration</th><th>Date</th>
+             <th>AI Score</th><th>Status</th><th>Proctoring</th><th>Duration</th><th>Date</th>
            </tr></thead><tbody>${tRows}</tbody></table>`
         : '<p class="empty">No sessions match this filter.</p>'}
     </div>`;
