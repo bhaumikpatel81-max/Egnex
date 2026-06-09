@@ -28,9 +28,10 @@ import openai
 def _model() -> str:
     return os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile")
 
-# Hard cap: force is_complete=True after this many bot turns regardless of sentinel
-# Includes the hardcoded intro turn, so effective question count is _MAX_BOT_TURNS - 1
-_MAX_BOT_TURNS = 15
+# Hard cap: force is_complete=True after this many bot turns regardless of sentinel.
+# Includes the hardcoded intro turn. Set high enough to allow the two-step graceful
+# ending (wrap-up question + closing) without hitting the cap prematurely.
+_MAX_BOT_TURNS = 18
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
@@ -49,15 +50,20 @@ Do NOT introduce yourself or ask if the candidate is ready — begin directly wi
 - Ask exactly ONE question per turn. Never stack multiple questions in one reply.
 - Listen carefully to what the candidate just said and open with a brief, varied \
 acknowledgement before your next question -- as a human interviewer would.
-- Cover the key skills organically across the conversation. Weave them in; do not \
-ask about every skill back-to-back.
+- Cover ALL of the key skills organically across the conversation. For each key skill, \
+ask at least one follow-up to probe depth beyond the surface answer before moving on.
 - Keep every reply short and spoken-friendly: no bullet points, no numbered lists, \
 no markdown formatting -- this text will be read aloud by text-to-speech.
 - Vary your acknowledgements. Do not open every turn with "Great!" or "Excellent!".
-- After roughly 10 to 15 exchanges (not counting the opening introduction), thank the \
-candidate warmly, let them know the team will review the responses, wish them well, and \
-then append the exact token [INTERVIEW_COMPLETE] at the very end of your final message \
-(no space before it, nothing after it).
+- GRACEFUL ENDING (two steps — follow this exactly):
+  Step 1: After 10 to 14 substantive exchanges (not counting the opening introduction), \
+when you have covered the key skills, ask a closing confirmation: \
+"That covers what I wanted to ask — is there anything you'd like to add before we wrap up?" \
+Do NOT include [INTERVIEW_COMPLETE] on this turn.
+  Step 2: On the very next turn, after the candidate has answered the closing confirmation, \
+give a brief warm closing (thank the candidate, mention the team will be in touch soon, \
+wish them well) and append the exact token [INTERVIEW_COMPLETE] at the very end of your \
+message (no space before it, nothing after it).
 - Never reveal you are an AI or mention that the interview is being scored.\
 """
 

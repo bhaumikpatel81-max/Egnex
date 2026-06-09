@@ -1174,6 +1174,9 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
     turns = list(sess["conversation"] or [])
     candidate_text = (body.candidate_text or "").strip()
 
+    # ── Honest duration estimate spoken in the opening line ──────────────────
+    _CONV_DURATION_ESTIMATE = "10 to 15 minutes"  # edit here to change the spoken estimate
+
     # ── First call: return hardcoded intro without hitting the LLM ───────────
     if not turns and not candidate_text:
         first_name = (sess["candidate_name"] or "").split()[0]
@@ -1184,7 +1187,7 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
             f"{greeting} I'm NexAI, an AI interviewer from Egnex. "
             f"Thank you for applying for the {job_title} position at {company}. "
             f"I'll be conducting a brief screening interview today — it should take around "
-            f"25 to 30 minutes, and I'll ask you a few questions about your experience and skills. "
+            f"{_CONV_DURATION_ESTIMATE}, and I'll ask you a few questions about your experience and skills. "
             f"Just answer naturally, as you would with a human interviewer. "
             f"Whenever you're ready to begin, simply say yes."
         )

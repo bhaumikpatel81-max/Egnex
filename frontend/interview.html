@@ -226,10 +226,10 @@ canvas#orb{border-radius:50%}
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
-// CONVERSATIONAL MODE — tune this constant to adjust silence sensitivity
-// Lower = submits faster after the candidate stops speaking.
+// CONVERSATIONAL MODE — tune these constants to adjust silence sensitivity
 // ═══════════════════════════════════════════════════════════════════════════
-const SILENCE_MS       = 2500;  // ms of continuous quiet after speech → auto-submit
+const SILENCE_MS       = 4000;  // ms of continuous quiet after speech → auto-submit
+const MIN_LISTEN_MS    = 3000;  // minimum ms of open mic before auto-finalize can trigger
 const SPEECH_THRESHOLD = 12;    // mic amplitude (0–128) above which speech is detected
 
 // ── Shared state ──────────────────────────────────────────────────────────
@@ -246,6 +246,12 @@ let _listening = false;   // true while candidate mic is active
 let _listenText = '';     // accumulated recognition text
 let _micAmplitude = 0;   // live amplitude fed to orb animation
 let _audioCtx = null, _analyser = null, _micStream = null, _analyserBuf = null;
+// Separate echo-cancelled audio context for conversation silence detection only.
+// _procWebcamStream feeds _audioCtx/_analyser (proctoring — raw, no processing).
+// _convMicStream feeds _convAudioCtx/_convAnalyser (conversation — echo-cancelled).
+// The MediaRecorder always reads from _procWebcamStream so proctoring is unaffected.
+let _convAudioCtx = null, _convAnalyser = null, _convAnalyserBuf = null, _convMicStream = null;
+let _listenStartTime = 0; // timestamp when answer-capture opened (for MIN_LISTEN_MS guard)
 let _convTranscript = []; // [{speaker:'nexai'|'candidate', text:str}, ...]
 
 // ── Proctoring state ──────────────────────────────────────────────────────────
@@ -464,7 +470,7 @@ async function startInterview() {
 
   // Show live candidate video so candidate can see what's being recorded
   const clv = document.getElementById('candidate-live');
-  if (clv) { clv.srcObject = _procWebcamStream; document.getElementById('candidate-live-wrap').style.display = ''; }
+  if (clv) { clv.srcObject = _procWebcamStream; document.getElementById('candidate-live-wrap').style.display = 'block'; }
 
   // ── Begin NexAI session (both modes call /invite/begin) ───────────────────
   const res = await apiPublic(
@@ -697,6 +703,8 @@ async function _flushProctoringAndClose() {
   // Release all media tracks
   if (_procWebcamStream) { _procWebcamStream.getTracks().forEach(t => t.stop()); _procWebcamStream = null; }
   if (_procScreenStream) { _procScreenStream.getTracks().forEach(t => t.stop()); _procScreenStream = null; }
+  if (_convMicStream)    { _convMicStream.getTracks().forEach(t => t.stop()); _convMicStream = null; }
+  if (_convAudioCtx)     { try { _convAudioCtx.close(); } catch(e) {} _convAudioCtx = null; }
   const wv = document.getElementById('proctor-webcam');
   if (wv) wv.srcObject = null;
   const clv = document.getElementById('candidate-live');
@@ -711,6 +719,7 @@ function _cleanupProctoring() {
   if (_procScreenRec && _procScreenRec.state !== 'inactive') try { _procScreenRec.stop(); } catch(e) {}
   if (_procWebcamStream) { _procWebcamStream.getTracks().forEach(t => t.stop()); _procWebcamStream = null; }
   if (_procScreenStream) { _procScreenStream.getTracks().forEach(t => t.stop()); _procScreenStream = null; }
+  if (_convMicStream)    { _convMicStream.getTracks().forEach(t => t.stop()); _convMicStream = null; }
   const clv2 = document.getElementById('candidate-live');
   if (clv2) clv2.srcObject = null;
 }
@@ -792,6 +801,10 @@ async function convTurn(candidateText) {
   // Speak the bot's reply — wait until speech ends before listening
   await _convSpeak(reply);
 
+  // 400 ms guard: let speaker audio decay before opening answer-capture so
+  // the bot's voice cannot be picked up by the mic as the candidate's answer.
+  await new Promise(r => setTimeout(r, 400));
+
   // Clear bot text after speaking
   document.getElementById('conv-bot-text').textContent = '';
 
@@ -827,29 +840,40 @@ function _convSpeak(text) {
   });
 }
 
-// ── Microphone setup (called once; subsequent calls are no-ops) ─────────────
+// ── Conversation mic setup — echo-cancelled stream for silence detection only ─
+// Opens a separate getUserMedia with echo-cancellation so _convAnalyser reads
+// candidate speech and NOT the bot's speaker output.
+// Never touches _procWebcamStream, _audioCtx, or _analyser — those stay raw
+// so the proctoring MediaRecorder captures every ambient sound unfiltered.
 async function _setupMic() {
-  if (_audioCtx) return true;
+  if (_convAudioCtx) return true;
   try {
-    _micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    _audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
-    _analyser  = _audioCtx.createAnalyser();
-    _analyser.fftSize = 256;
-    _analyserBuf = new Uint8Array(_analyser.frequencyBinCount);
-    _audioCtx.createMediaStreamSource(_micStream).connect(_analyser);
+    _convMicStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      video: false,
+    });
+    _convAudioCtx    = new (window.AudioContext || window.webkitAudioContext)();
+    _convAnalyser    = _convAudioCtx.createAnalyser();
+    _convAnalyser.fftSize = 256;
+    _convAnalyserBuf = new Uint8Array(_convAnalyser.frequencyBinCount);
+    _convAudioCtx.createMediaStreamSource(_convMicStream).connect(_convAnalyser);
     return true;
   } catch(e) {
-    console.warn('[NexAI] Mic access failed:', e.message);
+    console.warn('[NexAI] Conv mic setup failed — falling back to raw analyser:', e.message);
     return false;
   }
 }
 
 function _readAmplitude() {
-  if (!_analyser) return 0;
-  _analyser.getByteTimeDomainData(_analyserBuf);
+  // Use the echo-cancelled conversation analyser when available; fall back to
+  // the raw proctoring analyser so the orb still animates if conv mic failed.
+  const a   = _convAnalyser   || _analyser;
+  const buf = _convAnalyserBuf || _analyserBuf;
+  if (!a || !buf) return 0;
+  a.getByteTimeDomainData(buf);
   let peak = 0;
-  for (let i = 0; i < _analyserBuf.length; i++) {
-    const v = Math.abs(_analyserBuf[i] - 128);
+  for (let i = 0; i < buf.length; i++) {
+    const v = Math.abs(buf[i] - 128);
     if (v > peak) peak = v;
   }
   return peak;
@@ -857,9 +881,10 @@ function _readAmplitude() {
 
 // ── Start listening for candidate answer ───────────────────────────────────
 function _convStartListening() {
-  _listening  = true;
-  _listenText = '';
-  _micAmplitude = 0;
+  _listening       = true;
+  _listenText      = '';
+  _micAmplitude    = 0;
+  _listenStartTime = Date.now();
 
   _orbSetState('listening');
   document.getElementById('nx-status').textContent = 'Your turn — speak now…';
@@ -909,8 +934,8 @@ function _convStartListening() {
 
 // ── Silence detection loop — runs every 80 ms while listening ──────────────
 function _convSilenceMonitor() {
-  let hadSpeech  = false;
-  let silStart   = null;
+  let hadSpeech = false;
+  let silStart  = null;
 
   function tick() {
     if (!_listening) return; // stopped by _convFinishListening
@@ -918,10 +943,14 @@ function _convSilenceMonitor() {
     const amp = _readAmplitude();
     _micAmplitude = amp; // used by orb animation
 
+    const listenedMs = Date.now() - _listenStartTime;
+
     if (amp > SPEECH_THRESHOLD) {
       hadSpeech = true;
       silStart  = null;
-    } else if (hadSpeech) {
+    } else if (hadSpeech && listenedMs >= MIN_LISTEN_MS) {
+      // Only begin the silence countdown after MIN_LISTEN_MS has elapsed so
+      // a very quick answer is never cut off before the candidate finishes.
       if (!silStart) {
         silStart = Date.now();
       } else {
