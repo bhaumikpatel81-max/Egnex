@@ -37,10 +37,8 @@ services:
       AVATAR_PROVIDER: "orb"
       # NexAI interview mode: scripted | conversational
       NEXAI_MODE: "conversational"
-      # NexAI LLM — Groq API for conversational interviewer
-      GROQ_API_KEY: "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"
-      GROQ_BASE_URL: "https://api.groq.com/openai/v1"
-      LLM_MODEL: "llama-3.3-70b-versatile"
+    env_file:
+      - .env.prod          # loads GROQ_API_KEY, GROQ_BASE_URL, LLM_MODEL (and other secrets)
     ports:
       - "8080:8080"
     depends_on:
