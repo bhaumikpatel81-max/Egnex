@@ -1150,10 +1150,15 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
     # ── Load session + role context ───────────────────────────────────────────
     sess = query_one(
         """SELECT ns.id, ns.status, ns.conversation, ns.application_id,
-                  r.title, r.key_skills, r.job_description
+                  r.title, r.key_skills, r.job_description,
+                  c.full_name AS candidate_name,
+                  gc.name     AS company
            FROM nexai_session ns
-           JOIN application a ON a.id  = ns.application_id
-           JOIN requisition r ON r.id  = a.requisition_id
+           JOIN application   a  ON a.id  = ns.application_id
+           JOIN candidate      c  ON c.id  = a.candidate_id
+           JOIN requisition    r  ON r.id  = a.requisition_id
+           JOIN business_unit  bu ON bu.id = r.bu_id
+           JOIN group_company  gc ON gc.id = bu.company_id
            WHERE ns.application_id = %s""",
         [invite["application_id"]],
     )
@@ -1163,9 +1168,31 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
         raise HTTPException(400, "This interview has already been completed")
 
     turns = list(sess["conversation"] or [])
-
-    # Append candidate's reply (empty on the opening call — bot speaks first)
     candidate_text = (body.candidate_text or "").strip()
+
+    # ── First call: return hardcoded intro without hitting the LLM ───────────
+    if not turns and not candidate_text:
+        first_name = (sess["candidate_name"] or "").split()[0]
+        greeting   = f"Hello, {first_name}!" if first_name else "Hello!"
+        job_title  = sess["title"]  or "this role"
+        company    = sess["company"] or "the company"
+        intro = (
+            f"{greeting} I'm NexAI, an AI interviewer from Egnex. "
+            f"Thank you for applying for the {job_title} position at {company}. "
+            f"I'll be conducting a brief screening interview today — it should take around "
+            f"25 to 30 minutes, and I'll ask you a few questions about your experience and skills. "
+            f"Just answer naturally, as you would with a human interviewer. "
+            f"Whenever you're ready to begin, simply say yes."
+        )
+        turns.append({"speaker": "bot", "text": intro})
+        query(
+            "UPDATE nexai_session SET conversation = %s::jsonb WHERE id = %s",
+            [json.dumps(turns), sess["id"]],
+            fetch=False,
+        )
+        return {"reply": intro, "is_complete": False}
+
+    # Append candidate's reply for subsequent turns
     if candidate_text:
         turns.append({"speaker": "candidate", "text": candidate_text})
 

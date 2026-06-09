@@ -62,6 +62,34 @@ canvas#orb{border-radius:50%}
 #conv-text{width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px;resize:vertical;min-height:80px;font-family:inherit}
 #thinking-dot{display:inline-block;animation:blink 1s step-start infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ── Candidate live camera ──────────────────────────────────────────── */
+#candidate-live-wrap{display:none;text-align:center;margin:8px 0 14px}
+#candidate-live{width:140px;height:105px;border-radius:8px;object-fit:cover;border:2px solid #e5e3de;background:#111;display:block;margin:0 auto 4px}
+#candidate-live-label{font-size:10px;color:#aaa;letter-spacing:.3px}
+
+/* ── Real-time conversation transcript ──────────────────────────────── */
+#conv-transcript-wrap{display:none;margin-top:16px;border-top:1px solid #e5e3de;padding-top:14px}
+.conv-tr-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#9b9490;margin-bottom:10px}
+#conv-transcript{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:9px;padding-right:2px}
+.ct-turn{display:flex;flex-direction:column;max-width:88%}
+.ct-turn.nexai{align-self:flex-start}
+.ct-turn.candidate{align-self:flex-end;align-items:flex-end}
+.ct-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.ct-turn.nexai .ct-lbl{color:#f15a22}
+.ct-turn.candidate .ct-lbl{color:#2563eb}
+.ct-bubble{font-size:13px;line-height:1.55;padding:8px 11px;border-radius:8px;word-break:break-word}
+.ct-turn.nexai .ct-bubble{background:#fff5f0;border:1px solid #fde0d4;color:#1a1a1a;border-bottom-left-radius:2px}
+.ct-turn.candidate .ct-bubble{background:#eff6ff;border:1px solid #bfdbfe;color:#1a1a1a;border-bottom-right-radius:2px}
+
+/* ── Post-interview report (done screen) ─────────────────────────────── */
+#report-transcript{margin-top:20px;text-align:left}
+.rpt-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#9b9490;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e3de}
+.rt-turn{margin-bottom:10px}
+.rt-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.rt-lbl.nexai{color:#f15a22}
+.rt-lbl.candidate{color:#2563eb}
+.rt-text{font-size:13px;line-height:1.6;color:#1a1a1a;background:#faf9f6;border-radius:6px;padding:8px 10px}
 </style>
 </head>
 <body>
@@ -141,6 +169,12 @@ canvas#orb{border-radius:50%}
       </div>
     </div>
 
+    <!-- Candidate live camera (proctoring transparency) -->
+    <div id="candidate-live-wrap">
+      <video id="candidate-live" autoplay muted playsinline></video>
+      <div id="candidate-live-label">Your Camera &mdash; Proctoring Active</div>
+    </div>
+
     <!-- Bot spoken text (conversational mode only) -->
     <div id="conv-bot-text"></div>
 
@@ -171,6 +205,12 @@ canvas#orb{border-radius:50%}
       <button class="btn btn-primary" id="btn-submit" onclick="nxSubmit()" style="display:none">Finish &amp; submit</button>
     </div>
     <div class="transcript" id="nx-transcript"></div>
+
+    <!-- Real-time conversation transcript (conversational mode) -->
+    <div id="conv-transcript-wrap">
+      <div class="conv-tr-head">Live Transcript</div>
+      <div id="conv-transcript"></div>
+    </div>
   </div>
 
   <!-- Step: Complete -->
@@ -179,6 +219,7 @@ canvas#orb{border-radius:50%}
       <p class="result-label">Thank you — your interview is complete.</p>
       <p style="font-size:13px;color:#6b6760">Your responses have been submitted to the hiring team. You will be contacted with next steps shortly.</p>
       <div class="result-detail" id="done-detail"></div>
+      <div id="report-transcript"></div>
     </div>
   </div>
 </div>
@@ -205,6 +246,7 @@ let _listening = false;   // true while candidate mic is active
 let _listenText = '';     // accumulated recognition text
 let _micAmplitude = 0;   // live amplitude fed to orb animation
 let _audioCtx = null, _analyser = null, _micStream = null, _analyserBuf = null;
+let _convTranscript = []; // [{speaker:'nexai'|'candidate', text:str}, ...]
 
 // ── Proctoring state ──────────────────────────────────────────────────────────
 let _procSessId = null, _procWebcamStream = null, _procScreenStream = null;
@@ -412,6 +454,10 @@ async function startInterview() {
   const wv = document.getElementById('proctor-webcam');
   wv.srcObject = _procWebcamStream;
   await new Promise(r => { wv.onloadedmetadata = r; setTimeout(r, 2000); });
+
+  // Show live candidate video so candidate can see what's being recorded
+  const clv = document.getElementById('candidate-live');
+  if (clv) { clv.srcObject = _procWebcamStream; document.getElementById('candidate-live-wrap').style.display = ''; }
 
   // ── Begin NexAI session (both modes call /invite/begin) ───────────────────
   const res = await apiPublic(
@@ -622,6 +668,8 @@ async function _flushProctoringAndClose() {
   if (_procScreenStream) { _procScreenStream.getTracks().forEach(t => t.stop()); _procScreenStream = null; }
   const wv = document.getElementById('proctor-webcam');
   if (wv) wv.srcObject = null;
+  const clv = document.getElementById('candidate-live');
+  if (clv) { clv.srcObject = null; document.getElementById('candidate-live-wrap').style.display = 'none'; }
 }
 
 function _cleanupProctoring() {
@@ -631,6 +679,8 @@ function _cleanupProctoring() {
   if (_procScreenRec && _procScreenRec.state !== 'inactive') try { _procScreenRec.stop(); } catch(e) {}
   if (_procWebcamStream) { _procWebcamStream.getTracks().forEach(t => t.stop()); _procWebcamStream = null; }
   if (_procScreenStream) { _procScreenStream.getTracks().forEach(t => t.stop()); _procScreenStream = null; }
+  const clv2 = document.getElementById('candidate-live');
+  if (clv2) clv2.srcObject = null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -646,6 +696,7 @@ async function _startConversationalInterview() {
   document.getElementById('conv-caption').style.display     = '';
   document.getElementById('conv-controls').style.display    = 'none'; // shown only while listening
   document.getElementById('conv-text-wrap').style.display   = 'none';
+  document.getElementById('conv-transcript-wrap').style.display = '';
 
   // Request mic now (user just clicked a button, so permission prompt is allowed)
   const micOk = await _setupMic();
@@ -699,6 +750,10 @@ async function convTurn(candidateText) {
 
   const { reply, is_complete } = res;
 
+  // Push NexAI turn to live transcript
+  _convTranscript.push({ speaker: 'nexai', text: reply });
+  _appendConvTurn('nexai', 'NexAI', reply);
+
   // Show bot's text on screen while it speaks
   document.getElementById('conv-bot-text').textContent = reply;
 
@@ -712,6 +767,7 @@ async function convTurn(candidateText) {
     _orbSetState('done');
     document.getElementById('nx-status').textContent = 'Interview complete. Thank you!';
     document.getElementById('done-detail').innerHTML = '';
+    _buildDoneReport();
     _stopOrb();
     // Flush proctoring data; run in parallel with a 1.2 s pause so both finish before transitioning
     await Promise.all([_flushProctoringAndClose(), new Promise(r => setTimeout(r, 1200))]);
@@ -876,6 +932,7 @@ function _convFinishListening() {
 
   const answer = _listenText.trim();
   document.getElementById('conv-caption').textContent = answer || '';
+  if (answer) { _convTranscript.push({ speaker: 'candidate', text: answer }); _appendConvTurn('candidate', 'You', answer); }
   convTurn(answer);
 }
 
@@ -890,6 +947,7 @@ function convTextSubmit() {
   document.getElementById('conv-text-wrap').style.display = 'none';
   _listening = false; // ensure silence monitor doesn't fire
   _orbSetState('idle');
+  if (text) { _convTranscript.push({ speaker: 'candidate', text }); _appendConvTurn('candidate', 'You', text); }
   convTurn(text);
 }
 
@@ -1087,6 +1145,35 @@ async function nxSubmit() {
   _stopOrb();
   await _flushProctoringAndClose();
   showStep('step-done');
+}
+
+// ── Append a turn bubble to the live transcript panel ─────────────────────
+function _appendConvTurn(cls, label, text) {
+  const wrap = document.getElementById('conv-transcript');
+  if (!wrap) return;
+  const turn = document.createElement('div');
+  turn.className = 'ct-turn ' + cls;
+  const safe = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  turn.innerHTML = `<div class="ct-lbl">${label}</div><div class="ct-bubble">${safe}</div>`;
+  wrap.appendChild(turn);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+// ── Build the full post-interview report on the done screen ───────────────
+function _buildDoneReport() {
+  const rt = document.getElementById('report-transcript');
+  if (!rt) return;
+  if (!_convTranscript.length) { rt.innerHTML = ''; return; }
+  let html = '<div class="rpt-head">Interview Transcript</div>';
+  for (const t of _convTranscript) {
+    const isNexai = t.speaker === 'nexai';
+    const lbl  = isNexai ? 'NexAI' : 'You';
+    const cls  = isNexai ? 'nexai' : 'candidate';
+    const safe = t.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    html += `<div class="rt-turn"><div class="rt-lbl ${cls}">${lbl}</div><div class="rt-text">${safe}</div></div>`;
+  }
+  html += '<p style="font-size:12px;color:#9b9490;margin-top:14px;padding-top:10px;border-top:1px solid #e5e3de">Your webcam and screen recording have been securely submitted to the hiring team for review.</p>';
+  rt.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

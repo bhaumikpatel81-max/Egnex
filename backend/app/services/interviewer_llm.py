@@ -29,7 +29,8 @@ def _model() -> str:
     return os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile")
 
 # Hard cap: force is_complete=True after this many bot turns regardless of sentinel
-_MAX_BOT_TURNS = 10
+# Includes the hardcoded intro turn, so effective question count is _MAX_BOT_TURNS - 1
+_MAX_BOT_TURNS = 15
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,8 @@ Key Skills: {key_skills}
 Job Description: {job_description}
 
 RULES:
+- The candidate has already received an introduction and confirmed they are ready. \
+Do NOT introduce yourself or ask if the candidate is ready — begin directly with your first question.
 - Ask exactly ONE question per turn. Never stack multiple questions in one reply.
 - Listen carefully to what the candidate just said and open with a brief, varied \
 acknowledgement before your next question -- as a human interviewer would.
@@ -51,9 +54,9 @@ ask about every skill back-to-back.
 - Keep every reply short and spoken-friendly: no bullet points, no numbered lists, \
 no markdown formatting -- this text will be read aloud by text-to-speech.
 - Vary your acknowledgements. Do not open every turn with "Great!" or "Excellent!".
-- After roughly 6 to 10 exchanges (counting only your own turns), thank the candidate \
-warmly, let them know the team will review the responses, wish them well, and then \
-append the exact token [INTERVIEW_COMPLETE] at the very end of your final message \
+- After roughly 10 to 15 exchanges (not counting the opening introduction), thank the \
+candidate warmly, let them know the team will review the responses, wish them well, and \
+then append the exact token [INTERVIEW_COMPLETE] at the very end of your final message \
 (no space before it, nothing after it).
 - Never reveal you are an AI or mention that the interview is being scored.\
 """
@@ -111,7 +114,7 @@ def _build_messages(system_prompt: str, turns: list) -> list:
     """
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "Please begin the screening interview now."},
+        {"role": "user", "content": "The candidate has confirmed they are ready. Please begin with your first interview question."},
     ]
     for turn in turns:
         role = "assistant" if turn["speaker"] == "bot" else "user"
