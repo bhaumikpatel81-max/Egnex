@@ -141,6 +141,12 @@ class ConverseIn(BaseModel):
     candidate_text: Optional[str] = None
 
 
+class TerminateSessionIn(BaseModel):
+    token: str
+    strike_count: int
+    reason: str = ""
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _nexai_mode() -> str:
@@ -668,7 +674,7 @@ def create_nexai_invite(
         f"for the position of {job} at {company}.\n\n"
         f"Please use the link below to attend your interview at your convenience:\n\n"
         f"  {invite_url}\n\n"
-        f"The interview takes approximately 10-15 minutes. "
+        f"The interview takes approximately 25-30 minutes. "
         f"You will need a microphone and a quiet environment.\n\n"
         f"Important:\n"
         f"- Once you start, you have 48 hours to complete the interview\n"
@@ -715,7 +721,7 @@ def create_nexai_invite(
       <p style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#f15a22;margin:0 0 10px">What to expect</p>
       <table cellpadding="0" cellspacing="0" style="margin-bottom:28px">
         <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🎤&nbsp; Up to 8 spoken questions about your experience &amp; skills</td></tr>
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">⏱&nbsp; Takes approximately <strong>10–15 minutes</strong></td></tr>
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">⏱&nbsp; Takes approximately <strong>25–30 minutes</strong></td></tr>
         <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🔇&nbsp; Find a quiet place with a working microphone</td></tr>
         <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">✅&nbsp; NexAI <strong>never auto-rejects</strong> — all scores reviewed by a human recruiter</td></tr>
       </table>
@@ -822,9 +828,9 @@ def validate_invite(token: str):
     )
     if not row:
         return {"valid": False, "reason": "This interview link is invalid."}
-    # Permanently closed only after the interview is submitted
-    if row["session_status"] == "completed":
-        return {"valid": False, "reason": "This interview has already been completed."}
+    # Permanently closed after completion or proctoring termination
+    if row["session_status"] in ("completed", "terminated_proctoring"):
+        return {"valid": False, "reason": "already_completed"}
     exp = row["expires_at"]
     if exp and exp.replace(tzinfo=None) < datetime.utcnow():
         return {"valid": False, "reason": "This interview link has expired."}
@@ -1168,14 +1174,14 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
     )
     if not sess:
         raise HTTPException(404, "Session not found — call /api/nexai/invite/begin first")
-    if sess["status"] == "completed":
+    if sess["status"] in ("completed", "terminated_proctoring"):
         raise HTTPException(400, "This interview has already been completed")
 
     turns = list(sess["conversation"] or [])
     candidate_text = (body.candidate_text or "").strip()
 
     # ── Honest duration estimate spoken in the opening line ──────────────────
-    _CONV_DURATION_ESTIMATE = "10 to 15 minutes"  # edit here to change the spoken estimate
+    _CONV_DURATION_ESTIMATE = "25 to 30 minutes"  # edit here to change the spoken estimate
 
     # ── First call: return hardcoded intro without hitting the LLM ───────────
     if not turns and not candidate_text:
@@ -1254,6 +1260,80 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
         )
 
     return {"reply": reply, "is_complete": is_complete}
+
+
+@router.post("/invite/terminate")
+async def terminate_invite_session(body: TerminateSessionIn, background_tasks: BackgroundTasks):
+    """
+    Public — called by the candidate's browser when 3 proctoring strikes are reached.
+
+    Scores the partial transcript (LLM, with rule-based fallback) and writes the
+    session as 'terminated_proctoring' so it cannot be resumed.  The recruiter
+    dashboard will display the partial score alongside a termination indicator.
+    """
+    if _nexai_mode() != "conversational":
+        raise HTTPException(400, "Conversational mode is not enabled")
+
+    invite = query_one(
+        "SELECT id, application_id, expires_at FROM nexai_invite WHERE token = %s",
+        [body.token],
+    )
+    if not invite:
+        raise HTTPException(400, "Invalid invite token")
+
+    sess = query_one(
+        """SELECT ns.id, ns.status, ns.conversation, ns.application_id,
+                  r.title, r.key_skills, r.job_description
+           FROM nexai_session ns
+           JOIN application  a ON a.id = ns.application_id
+           JOIN requisition  r ON r.id = a.requisition_id
+           WHERE ns.application_id = %s""",
+        [invite["application_id"]],
+    )
+    if not sess:
+        raise HTTPException(404, "Session not found")
+    if sess["status"] in ("completed", "terminated_proctoring"):
+        return {"ok": True, "already_closed": True}
+
+    turns = list(sess["conversation"] or [])
+
+    # Score whatever partial transcript we have (best effort)
+    role_ctx = {
+        "title":           sess["title"],
+        "key_skills":      sess["key_skills"] or [],
+        "job_description": sess["job_description"] or "",
+    }
+    score_result = await _llm_svc.score_transcript({"role_context": role_ctx, "turns": turns})
+    raw_score = score_result["raw_score"]
+    detail    = score_result["score_detail"]
+    detail["terminated_by_proctoring"] = True
+    detail["strike_count"] = body.strike_count
+
+    reason_text = body.reason or f"Auto-terminated after {body.strike_count} proctoring strikes"
+
+    query(
+        """UPDATE nexai_session
+               SET status = 'terminated_proctoring',
+                   raw_score = %s, score_detail = %s::jsonb,
+                   termination_reason = %s,
+                   completed_at = now()
+             WHERE id = %s""",
+        [raw_score, json.dumps(detail), reason_text, sess["id"]],
+        fetch=False,
+    )
+
+    # Update application score (partial) — status stays at its current value
+    # rather than 'screen_passed'; recruiters can filter by session status.
+    app_row = query_one("SELECT match_score FROM application WHERE id = %s", [sess["application_id"]])
+    match    = float((app_row or {}).get("match_score") or 0)
+    combined = round(0.4 * match + 0.6 * raw_score, 1)
+    query(
+        "UPDATE application SET bot_score = %s, combined_score = %s WHERE id = %s",
+        [raw_score, combined, sess["application_id"]],
+        fetch=False,
+    )
+
+    return {"ok": True, "raw_score": raw_score}
 
 
 @router.post("/invite/submit/{session_id}")

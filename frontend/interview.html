@@ -7,8 +7,8 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f4f1;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
-.card{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);max-width:600px;width:100%;padding:36px 32px}
-.logo{display:flex;align-items:center;gap:10px;margin-bottom:28px}
+.card{background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.10);max-width:600px;width:100%;padding:36px 32px;position:relative}
+.logo{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:28px}
 .logo img{height:36px}
 .logo span{font-size:20px;font-weight:700;color:#1a1a1a}
 h1{font-size:20px;font-weight:700;margin-bottom:4px;color:#1a1a1a}
@@ -45,6 +45,13 @@ canvas#orb{border-radius:50%}
 #nexai-avatar.listening{border-color:#2563eb;animation:pulse-listen .6s ease-in-out infinite alternate}
 @keyframes pulse-speak{from{box-shadow:0 0 0 2px rgba(241,90,34,.18)}to{box-shadow:0 0 0 10px rgba(241,90,34,.06)}}
 @keyframes pulse-listen{from{box-shadow:0 0 0 2px rgba(37,99,235,.18)}to{box-shadow:0 0 0 10px rgba(37,99,235,.06)}}
+/* ── Strike warning modal — absolute overlay over the card ─────────────── */
+#strike-modal{display:none;position:absolute;inset:0;background:rgba(10,10,10,.55);border-radius:12px;z-index:200;align-items:center;justify-content:center;padding:20px}
+.strike-inner{background:#fff;border-radius:10px;padding:28px 24px;max-width:400px;width:100%;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.22)}
+.strike-inner h2{font-size:18px;font-weight:700;color:#b91c1c;margin-bottom:8px}
+#strike-reason{font-size:13px;color:#6b6760;margin:0 0 10px;font-style:italic}
+.strike-msg{font-size:13px;color:#1a1a1a;line-height:1.6;margin-bottom:20px}
+
 /* Hidden proctoring capture elements — never visible to the candidate */
 #proctor-webcam,#proctor-snap{position:absolute;left:-9999px;opacity:0;pointer-events:none;width:1px;height:1px}
 /* Permissions blocking screen */
@@ -94,6 +101,17 @@ canvas#orb{border-radius:50%}
 </head>
 <body>
 <div class="card">
+
+  <!-- Strike warning modal — absolute overlay, shown during proctoring violations -->
+  <div id="strike-modal">
+    <div class="strike-inner">
+      <h2>Warning <span id="strike-num">1</span> of <span id="strike-max">3</span></h2>
+      <p id="strike-reason"></p>
+      <p class="strike-msg">Please remain in front of the camera, alone, with no phone. Continued issues will end your interview.</p>
+      <button class="btn btn-primary" onclick="strikeAcknowledge()">I understand — continue</button>
+    </div>
+  </div>
+
   <div class="logo">
     <img src="/assets/egnex-logo.png" onerror="this.style.display='none'">
     <span>Egnex</span>
@@ -213,6 +231,15 @@ canvas#orb{border-radius:50%}
     </div>
   </div>
 
+  <!-- Step: Terminated by proctoring -->
+  <div class="step" id="step-terminated">
+    <div class="result-box">
+      <p class="result-label" style="color:#b91c1c;font-weight:700;font-size:17px">Interview Ended</p>
+      <p style="font-size:13px;color:#6b6760;margin-top:8px;line-height:1.6">Your interview has been ended due to repeated proctoring violations and submitted for review. All responses recorded so far have been saved.</p>
+      <div id="terminated-appeal"></div>
+    </div>
+  </div>
+
   <!-- Step: Complete -->
   <div class="step" id="step-done">
     <div class="result-box">
@@ -231,6 +258,14 @@ canvas#orb{border-radius:50%}
 const SILENCE_MS       = 4000;  // ms of continuous quiet after speech → auto-submit
 const MIN_LISTEN_MS    = 3000;  // minimum ms of open mic before auto-finalize can trigger
 const SPEECH_THRESHOLD = 12;    // mic amplitude (0–128) above which speech is detected
+
+// ── Proctoring strike enforcement — edit here to tune severity ────────────
+// Remove no_face/face_away from STRIKE_FLAG_TYPES to reduce false-positives
+// from lighting/angle issues once positioned edge-cases are understood.
+const STRIKE_FLAG_TYPES         = ['no_face','multi_face','face_away','phone_detected','unknown_object'];
+const STRIKE_PERSIST_DETECTIONS = 1;    // consecutive 5 s detection ticks required before strike
+const MAX_STRIKES               = 3;    // total strikes before auto-terminate
+const STRIKE_COOLDOWN_MS        = 8000; // ms after a strike before same flag type can strike again
 
 // ── Shared state ──────────────────────────────────────────────────────────
 const _token = new URLSearchParams(location.search).get('token');
@@ -253,6 +288,13 @@ let _audioCtx = null, _analyser = null, _micStream = null, _analyserBuf = null;
 let _convAudioCtx = null, _convAnalyser = null, _convAnalyserBuf = null, _convMicStream = null;
 let _listenStartTime = 0; // timestamp when answer-capture opened (for MIN_LISTEN_MS guard)
 let _convTranscript = []; // [{speaker:'nexai'|'candidate', text:str}, ...]
+
+// ── Strike enforcement state ──────────────────────────────────────────────────
+let _strikes           = 0;    // cumulative strike count for this session
+let _strikeConsecutive = {};   // {flagType: consecutiveTick count} — resets if absent
+let _strikeCooldowns   = {};   // {flagType: lastStrikeTimestampMs}
+let _interviewPaused   = false; // true while warning modal is showing
+let _terminated        = false; // true after auto-terminate; blocks all further interview logic
 
 // ── Proctoring state ──────────────────────────────────────────────────────────
 let _procSessId = null, _procWebcamStream = null, _procScreenStream = null;
@@ -296,7 +338,14 @@ async function apiPublic(path, opts={}) {
     );
     return;
   }
-  if (res._err || !res.valid) { showErr(res.reason || res._err || 'Invalid link'); return; }
+  if (res._err || !res.valid) {
+    if (res.reason === 'already_completed') {
+      showErr('', 'You have successfully completed the interview already.');
+    } else {
+      showErr(res.reason || res._err || 'Invalid link');
+    }
+    return;
+  }
 
   document.getElementById('info-job').textContent     = res.job_title       || '—';
   document.getElementById('info-company').textContent = res.company         || '—';
@@ -635,6 +684,7 @@ async function _startProcAIAnalysis() {
       const vid = document.getElementById('proctor-webcam');
       if (!vid || !vid.videoWidth) return;
       const now = Date.now();
+      const _tickStart = _procFlags.length; // mark position before this tick's flags
       try {
         const faces = await _procTFModels.blaze.estimateFaces(vid, false);
         if (faces.length === 0) {
@@ -649,6 +699,8 @@ async function _startProcAIAnalysis() {
         const phones = objects.filter(o => o.class === 'cell phone' && o.score > 0.55);
         if (phones.length) _procFlags.push({ ts_ms: now, type: 'phone_detected', confidence: phones[0].score, detail: 'Mobile phone detected in frame' });
       } catch (e) { /* ignore individual frame errors */ }
+      // Pass only the flags produced in this tick to the strike evaluator
+      _evalStrikeTick(_procFlags.slice(_tickStart));
     }, 5000);
   } catch (e) {
     console.error('[Proctor] AI models FAILED to load — AI flag analysis disabled. Recording continues normally.', e);
@@ -670,6 +722,138 @@ async function _startProcAIAnalysis() {
       );
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROCTORING STRIKE ENFORCEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _evalStrikeTick(tickFlags) {
+  // Accumulate or reset consecutive-tick counters for every tracked type.
+  // A type absent from this tick resets its counter to 0.
+  for (const t of STRIKE_FLAG_TYPES) {
+    const seen = tickFlags.some(f => f.type === t);
+    _strikeConsecutive[t] = seen ? (_strikeConsecutive[t] || 0) + 1 : 0;
+  }
+
+  // Do not count strikes while the warning modal is showing or after termination.
+  if (_interviewPaused || _terminated) return;
+
+  for (const t of STRIKE_FLAG_TYPES) {
+    if (_strikeConsecutive[t] < STRIKE_PERSIST_DETECTIONS) continue;
+    const lastStrike = _strikeCooldowns[t] || 0;
+    if (Date.now() - lastStrike < STRIKE_COOLDOWN_MS) continue;
+
+    // Qualifies — count one strike
+    _strikeConsecutive[t] = 0;
+    _strikeCooldowns[t]   = Date.now();
+    _strikes++;
+
+    const flag = tickFlags.find(f => f.type === t) || { type: t, detail: t };
+    console.warn(`[Strike] ${_strikes}/${MAX_STRIKES} — ${flag.type}: ${flag.detail}`);
+
+    // Post a 'strike' event so the recruiter sees the history in the flags list
+    if (_procSessId) {
+      apiPublic(
+        `/api/proctoring/candidate/${_procSessId}/flags?token=${encodeURIComponent(_token)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            flags: [{
+              ts_ms: Date.now(),
+              type: 'strike',
+              confidence: 1.0,
+              detail: `Strike ${_strikes}/${MAX_STRIKES}: ${flag.detail || flag.type}`,
+            }],
+          }),
+        }
+      );
+    }
+
+    if (_strikes >= MAX_STRIKES) {
+      _autoTerminate(flag);
+    } else {
+      _showStrikeWarning(flag);
+    }
+    return; // process at most one strike per 5 s tick
+  }
+}
+
+const _STRIKE_LABELS = {
+  no_face:       'No face was detected in the camera frame.',
+  multi_face:    'Multiple faces were detected.',
+  face_away:     'You appear to be looking away from the camera.',
+  phone_detected:'A mobile phone was detected.',
+  unknown_object:'An unrecognised object was detected.',
+};
+
+function _showStrikeWarning(flag) {
+  _interviewPaused = true;
+
+  // Pause TTS — MediaRecorder is NOT stopped, recording continues
+  if (_synth) _synth.cancel();
+
+  // Stop answer-capture so echoed speaker audio is not captured as a response
+  if (_listening) {
+    _listening = false;
+    if (_recog) { try { _recog.stop(); } catch(e) {} _recog = null; }
+  }
+
+  document.getElementById('strike-num').textContent    = _strikes;
+  document.getElementById('strike-max').textContent    = MAX_STRIKES;
+  document.getElementById('strike-reason').textContent =
+    _STRIKE_LABELS[flag.type] || flag.detail || 'A proctoring violation was detected.';
+  document.getElementById('strike-modal').style.display = 'flex';
+}
+
+function strikeAcknowledge() {
+  document.getElementById('strike-modal').style.display = 'none';
+  _interviewPaused = false;
+  // If the API is still in-flight (_convBusy), convTurn() will reach
+  // _convStartListening() naturally once the response arrives.
+  // If idle, restart listening for the bot's already-spoken question.
+  if (_mode === 'conversational' && !_convBusy && !_terminated) {
+    _convStartListening();
+  }
+}
+
+async function _autoTerminate(flag) {
+  if (_terminated) return; // guard against double-trigger from rapid ticks
+  _terminated      = true;
+  _interviewPaused = true;
+
+  // Stop TTS and answer-capture
+  if (_synth) _synth.cancel();
+  if (_listening) {
+    _listening = false;
+    if (_recog) { try { _recog.stop(); } catch(e) {} _recog = null; }
+  }
+
+  // Stop AI detection interval (recorder keeps running until _flushProctoringAndClose)
+  if (_procFlagInterval) { clearInterval(_procFlagInterval); _procFlagInterval = null; }
+
+  document.getElementById('nx-status').textContent = 'Interview ended due to proctoring violations.';
+
+  // Score partial transcript and mark session terminated on backend
+  if (_sessionId) {
+    await apiPublic(
+      `/api/nexai/invite/terminate?token=${encodeURIComponent(_token)}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          strike_count: _strikes,
+          reason: flag?.detail || flag?.type || 'proctoring_violation',
+        }),
+      }
+    );
+  }
+
+  // Flush proctoring: stops recorders, submits remaining flags, marks proctoring complete
+  await _flushProctoringAndClose();
+  _stopOrb();
+  showStep('step-terminated');
 }
 
 function _stopRecorder(rec) {
@@ -808,6 +992,8 @@ async function convTurn(candidateText) {
   // Clear bot text after speaking
   document.getElementById('conv-bot-text').textContent = '';
 
+  if (_terminated) return; // auto-terminated while API was in-flight
+
   if (is_complete) {
     _orbSetState('done');
     document.getElementById('nx-status').textContent = 'Interview complete. Thank you!';
@@ -881,6 +1067,7 @@ function _readAmplitude() {
 
 // ── Start listening for candidate answer ───────────────────────────────────
 function _convStartListening() {
+  if (_interviewPaused || _terminated) return; // blocked during warning / after termination
   _listening       = true;
   _listenText      = '';
   _micAmplitude    = 0;
