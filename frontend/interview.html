@@ -359,6 +359,12 @@ async function startInterview() {
     return;
   }
   _procSessId = pInit.proctoring_session_id;
+  if (!_procSessId) {
+    btn.disabled = false; btn.textContent = 'Start Interview';
+    showErr('Proctoring session could not be created. Please try again.');
+    return;
+  }
+  console.log('[Proctor] session created:', _procSessId);
 
   await apiPublic(
     `/api/proctoring/candidate/${_procSessId}/consent?token=${encodeURIComponent(_token)}`,
@@ -490,6 +496,7 @@ async function startInterview() {
 
   // ── P3/P4: Start webcam + screen recorders ────────────────────────────────
   _startProcRecorders();
+  console.log('[Proctor] recorders started');
 
   // ── P6: Lazy-load TF.js and start AI flag analysis ───────────────────────
   _startProcAIAnalysis();
@@ -617,6 +624,7 @@ async function _startProcAIAnalysis() {
     await _loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
     const [blaze, coco] = await Promise.all([window.blazeface.load(), window.cocoSsd.load()]);
     _procTFModels = { blaze, coco };
+    console.log('[Proctor] AI models loaded OK');
     _procFlagInterval = setInterval(async () => {
       const vid = document.getElementById('proctor-webcam');
       if (!vid || !vid.videoWidth) return;
@@ -637,7 +645,24 @@ async function _startProcAIAnalysis() {
       } catch (e) { /* ignore individual frame errors */ }
     }, 5000);
   } catch (e) {
-    console.warn('[Proctor] TF.js models failed to load — AI flag analysis disabled:', e);
+    console.error('[Proctor] AI models FAILED to load — AI flag analysis disabled. Recording continues normally.', e);
+    if (_procSessId) {
+      apiPublic(
+        `/api/proctoring/candidate/${_procSessId}/flags?token=${encodeURIComponent(_token)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            flags: [{
+              ts_ms: Date.now(),
+              type: 'ai_analysis_unavailable',
+              confidence: 1.0,
+              detail: 'TF.js / BlazeFace / COCO-SSD models failed to load (CDN blocked or network error): ' + e.message,
+            }],
+          }),
+        }
+      );
+    }
   }
 }
 
