@@ -236,7 +236,21 @@ canvas#orb{border-radius:50%}
     <div class="result-box">
       <p class="result-label" style="color:#b91c1c;font-weight:700;font-size:17px">Interview Ended</p>
       <p style="font-size:13px;color:#6b6760;margin-top:8px;line-height:1.6">Your interview has been ended due to repeated proctoring violations and submitted for review. All responses recorded so far have been saved.</p>
-      <div id="terminated-appeal"></div>
+      <div id="terminated-appeal" style="margin-top:20px;border-top:1px solid #e5e3de;padding-top:18px;text-align:left">
+        <p style="font-size:14px;font-weight:600;color:#1a1a1a;margin-bottom:6px">Submit an Appeal</p>
+        <p style="font-size:12px;color:#6b6760;line-height:1.5;margin-bottom:12px">If you believe this was in error — poor lighting, background movement, connectivity issues — explain what happened. The hiring team will review your appeal.</p>
+        <div id="appeal-form">
+          <textarea id="appeal-text" rows="4"
+            placeholder="Describe what happened during your interview…"
+            style="width:100%;border:1px solid #d5d3ce;border-radius:6px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;line-height:1.5"
+          ></textarea>
+          <button id="appeal-btn" class="btn btn-primary btn-full" style="margin-top:10px" onclick="submitAppeal()">Submit Appeal</button>
+        </div>
+        <div id="appeal-success" style="display:none;background:#dff0eb;border-radius:6px;padding:14px 16px;text-align:center">
+          <p style="font-size:14px;font-weight:600;color:#1d6e56">Appeal submitted</p>
+          <p style="font-size:12px;color:#1d6e56;margin-top:4px">Your appeal has been submitted. The hiring team will review it and be in touch.</p>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -854,6 +868,39 @@ async function _autoTerminate(flag) {
   await _flushProctoringAndClose();
   _stopOrb();
   showStep('step-terminated');
+}
+
+async function submitAppeal() {
+  const explanation = (document.getElementById('appeal-text').value || '').trim();
+  if (!explanation) {
+    const ta = document.getElementById('appeal-text');
+    ta.style.borderColor = '#b91c1c';
+    ta.focus();
+    return;
+  }
+  const btn = document.getElementById('appeal-btn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+  try {
+    const res = await fetch(`/api/nexai/invite/appeal?token=${encodeURIComponent(_token)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ explanation }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(j.detail || 'Could not submit appeal. Please contact the hiring team directly.');
+      btn.disabled = false;
+      btn.textContent = 'Submit Appeal';
+      return;
+    }
+    document.getElementById('appeal-form').style.display    = 'none';
+    document.getElementById('appeal-success').style.display = 'block';
+  } catch(e) {
+    alert('Network error. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Submit Appeal';
+  }
 }
 
 function _stopRecorder(rec) {

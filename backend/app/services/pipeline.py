@@ -6,10 +6,12 @@ stages and writes a stage_event row on every transition. Those events power
 all TAT reporting. Automated stages move themselves; human gates wait for a
 recruiter action.
 """
+import json
+import os
+from decimal import Decimal
+
 from ..db import query, query_one
 from . import screening, connectors
-import json
-from decimal import Decimal
 
 
 def _json_safe(obj):
@@ -27,27 +29,60 @@ def log_event(application_id, from_status, to_status, actor_id=None, note=None):
     )
 
 
+def _extract_ai_detail(breakdown: dict) -> dict:
+    """Pull the AI reasoning fields out of a breakdown dict into their own dict."""
+    return {
+        k: breakdown.get(k)
+        for k in ("strengths", "concerns", "rationale", "scored_by", "fallback_reason")
+        if breakdown.get(k) is not None
+    }
+
+
 def intake_and_screen(requisition_id, candidate_id, resume_text, candidate_years):
     """
-    AUTOMATED. Runs when an application arrives: scores it, stores the score,
-    and parks it in the Gate-1 review queue (screen_passed/screen_rejected
-    suggestion) -- but never silently rejects. Returns the application row.
+    AUTOMATED. Runs when an application arrives: scores it, stores all screening
+    columns, and parks it in the Gate-1 review queue. Returns the application row.
     """
-    req = query_one("SELECT * FROM requisition WHERE id = %s", [requisition_id])
+    req = query_one(
+        """SELECT r.*, b.code AS band_code
+           FROM requisition r
+           JOIN band b ON b.id = r.band_id
+           WHERE r.id = %s""",
+        [requisition_id],
+    )
     if not req:
         raise ValueError("requisition not found")
 
     score, breakdown = screening.score_application(resume_text, candidate_years, req)
 
+    ai_fit_score      = breakdown.get("ai_fit_score")
+    ai_screen_detail  = json.dumps(_extract_ai_detail(breakdown), default=_json_safe)
+    avg_tenure_months = breakdown.get("avg_tenure_months")
+    stability_score   = breakdown.get("stability_score")
+    stability_status  = breakdown.get("stability_status", "not_applicable")
+
     app = query_one(
         """INSERT INTO application
-             (requisition_id, candidate_id, match_score, score_breakdown, status)
-           VALUES (%s, %s, %s, %s::jsonb, 'screening')
+             (requisition_id, candidate_id, match_score, score_breakdown,
+              ai_fit_score, ai_screen_detail,
+              avg_tenure_months, stability_score, stability_status,
+              status)
+           VALUES (%s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s, 'screening')
            ON CONFLICT (requisition_id, candidate_id) DO UPDATE
-             SET match_score = EXCLUDED.match_score,
-                 score_breakdown = EXCLUDED.score_breakdown
+             SET match_score        = EXCLUDED.match_score,
+                 score_breakdown    = EXCLUDED.score_breakdown,
+                 ai_fit_score       = EXCLUDED.ai_fit_score,
+                 ai_screen_detail   = EXCLUDED.ai_screen_detail,
+                 avg_tenure_months  = EXCLUDED.avg_tenure_months,
+                 stability_score    = EXCLUDED.stability_score,
+                 stability_status   = EXCLUDED.stability_status
            RETURNING *""",
-        [requisition_id, candidate_id, score, json.dumps(breakdown, default=_json_safe)],
+        [
+            requisition_id, candidate_id, score,
+            json.dumps(breakdown, default=_json_safe),
+            ai_fit_score, ai_screen_detail,
+            avg_tenure_months, stability_score, stability_status,
+        ],
     )
     log_event(app["id"], "applied", "screening", note=f"auto-scored {score}")
     return app
@@ -62,8 +97,8 @@ def run_bot_round(application_id):
     req = query_one("SELECT * FROM requisition WHERE id = %s", [app["requisition_id"]])
     result = connectors.run_bot_interview(app["candidate_id"], req.get("job_description") or "")
 
-    match = float(app["match_score"] or 0)
-    bot = result["bot_score"]
+    match    = float(app["match_score"] or 0)
+    bot      = result["bot_score"]
     combined = round(0.4 * match + 0.6 * bot, 1)  # tunable blend
 
     query(
@@ -102,3 +137,148 @@ def top_chart(requisition_id, limit=50):
            LIMIT %s""",
         [requisition_id, limit],
     )
+
+
+def update_manual_tenure(application_id: str, avg_tenure_months: float, actor_id=None):
+    """
+    Recruiter-provided average tenure for a 'pending_manual' application.
+    Recomputes stability_score and match_score using the four-dimension weights.
+    """
+    app = query_one("SELECT * FROM application WHERE id = %s", [application_id])
+    if not app:
+        raise ValueError("application not found")
+
+    bd = app.get("score_breakdown") or {}
+    if isinstance(bd, str):
+        bd = json.loads(bd)
+
+    stability_s = screening.compute_stability_score(avg_tenure_months)
+
+    skills_s = float(bd.get("skills_score") or 50.0)
+    exp_s    = float(bd.get("experience_score") or 50.0)
+    ai_s     = float(bd.get("ai_score") or 50.0)
+
+    w_kw  = screening.SCORE_WEIGHT_KEYWORD
+    w_exp = screening.SCORE_WEIGHT_EXPERIENCE
+    w_ai  = screening.SCORE_WEIGHT_AI
+    w_st  = screening.SCORE_WEIGHT_STABILITY
+
+    new_score = round(
+        skills_s * w_kw + exp_s * w_exp + ai_s * w_ai + stability_s * w_st, 1
+    )
+
+    bd.update({
+        "stability_score":   round(stability_s, 1),
+        "stability_status":  "computed",
+        "avg_tenure_months": round(avg_tenure_months, 1),
+        "weights": {
+            "keyword": w_kw, "experience": w_exp,
+            "ai": w_ai, "stability": w_st,
+        },
+    })
+
+    query(
+        """UPDATE application
+             SET match_score       = %s,
+                 score_breakdown   = %s::jsonb,
+                 avg_tenure_months = %s,
+                 stability_score   = %s,
+                 stability_status  = 'computed'
+           WHERE id = %s""",
+        [
+            new_score,
+            json.dumps(bd, default=_json_safe),
+            round(avg_tenure_months, 1),
+            round(stability_s, 1),
+            application_id,
+        ],
+        fetch=False,
+    )
+    log_event(
+        application_id, None, None, actor_id,
+        f"manual-tenure {avg_tenure_months:.0f}m → stability {stability_s:.0f}, score {new_score}",
+    )
+    return {
+        "match_score":       new_score,
+        "stability_score":   round(stability_s, 1),
+        "avg_tenure_months": round(avg_tenure_months, 1),
+        "stability_status":  "computed",
+    }
+
+
+def rescreen_application(application_id: str, actor_id=None):
+    """
+    Deliberate recruiter action: re-run AI screening for a single application
+    using the candidate's stored resume file. Overwrites match_score and all
+    screening columns. Does NOT touch bot_score / combined_score / status.
+    """
+    app  = query_one("SELECT * FROM application WHERE id = %s", [application_id])
+    if not app:
+        raise ValueError("application not found")
+
+    cand = query_one("SELECT * FROM candidate WHERE id = %s", [app["candidate_id"]])
+    req  = query_one(
+        """SELECT r.*, b.code AS band_code
+           FROM requisition r JOIN band b ON b.id = r.band_id
+           WHERE r.id = %s""",
+        [app["requisition_id"]],
+    )
+
+    # Re-parse resume from stored file
+    resume_text = ""
+    if cand.get("resume_url"):
+        try:
+            from .resume_parser import extract_text as _parse_resume
+            with open(cand["resume_url"], "rb") as fh:
+                file_bytes = fh.read()
+            filename    = os.path.basename(cand["resume_url"])
+            resume_text, _ = _parse_resume(file_bytes, filename)
+        except Exception as exc:
+            print(f"[rescreen] Could not read resume for {application_id}: {exc}")
+
+    # Recover candidate_years from stored breakdown if available
+    candidate_years = None
+    old_bd = app.get("score_breakdown") or {}
+    if isinstance(old_bd, str):
+        old_bd = json.loads(old_bd)
+    yr = old_bd.get("years")
+    if yr is not None:
+        try:
+            candidate_years = float(yr)
+        except (TypeError, ValueError):
+            pass
+
+    score, breakdown = screening.score_application(resume_text, candidate_years, req)
+
+    ai_fit_score      = breakdown.get("ai_fit_score")
+    ai_screen_detail  = json.dumps(_extract_ai_detail(breakdown), default=_json_safe)
+    avg_tenure_months = breakdown.get("avg_tenure_months")
+    stability_score   = breakdown.get("stability_score")
+    stability_status  = breakdown.get("stability_status", "not_applicable")
+
+    query(
+        """UPDATE application
+             SET match_score       = %s,
+                 score_breakdown   = %s::jsonb,
+                 ai_fit_score      = %s,
+                 ai_screen_detail  = %s::jsonb,
+                 avg_tenure_months = %s,
+                 stability_score   = %s,
+                 stability_status  = %s
+           WHERE id = %s""",
+        [
+            score,
+            json.dumps(breakdown, default=_json_safe),
+            ai_fit_score, ai_screen_detail,
+            avg_tenure_months, stability_score, stability_status,
+            application_id,
+        ],
+        fetch=False,
+    )
+    log_event(application_id, app["status"], app["status"],
+              actor_id, f"re-screened: {score}")
+    return {
+        "match_score":       score,
+        "breakdown":         breakdown,
+        "stability_status":  stability_status,
+    }

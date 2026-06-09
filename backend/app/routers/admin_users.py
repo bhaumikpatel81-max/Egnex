@@ -1,3 +1,4 @@
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -172,6 +173,50 @@ def save_settings(body: SaveSettingsIn, user: dict = Depends(_require_settings_a
             [k, v.strip(), user["sub"]],
             fetch=False,
         )
+    return {"ok": True}
+
+
+# ── Application Form Field Config (admin / ta_manager only) ──────────────────
+
+_FORM_CFG_KEY = "app_form_required_fields"
+_DEFAULT_REQUIRED_FIELDS = ["name", "email", "phone", "requisition", "resume"]
+
+
+class FormFieldConfigIn(BaseModel):
+    required_fields: list[str]
+
+
+@router.get("/form-field-config")
+def get_form_field_config(user: dict = Depends(_require_settings_access)):
+    """Return which application form fields are currently marked required."""
+    row = query_one(
+        "SELECT value FROM system_settings WHERE key = %s", [_FORM_CFG_KEY]
+    )
+    if row:
+        try:
+            required = json.loads(row["value"])
+        except Exception:
+            required = _DEFAULT_REQUIRED_FIELDS
+    else:
+        required = _DEFAULT_REQUIRED_FIELDS
+    return {"required_fields": required}
+
+
+@router.post("/form-field-config")
+def save_form_field_config(
+    body: FormFieldConfigIn, user: dict = Depends(_require_settings_access)
+):
+    """Persist the list of required application form fields."""
+    query(
+        """INSERT INTO system_settings (key, value, updated_by)
+           VALUES (%s, %s, %s)
+           ON CONFLICT (key) DO UPDATE
+             SET value      = EXCLUDED.value,
+                 updated_at = now(),
+                 updated_by = EXCLUDED.updated_by""",
+        [_FORM_CFG_KEY, json.dumps(body.required_fields), user["sub"]],
+        fetch=False,
+    )
     return {"ok": True}
 
 

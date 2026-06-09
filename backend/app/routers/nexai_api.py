@@ -24,8 +24,91 @@ from ..services import tts as _tts_svc
 from ..services import prerender as _prerender_svc
 from ..services.connectors import send_email
 from ..services import interviewer_llm as _llm_svc
+from ..services.email_templates import render_template as _render_email_tmpl
 
 router = APIRouter(prefix="/api/nexai", tags=["nexai"])
+
+
+def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f4f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f4f1;padding:32px 16px">
+  <tr><td align="center">
+  <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);max-width:600px;width:100%">
+
+    <!-- Header -->
+    <tr><td style="background:#1a1a1a;padding:22px 32px">
+      <span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px">Egnex</span>
+      <span style="font-size:24px;font-weight:800;color:#f15a22">.</span>
+      <span style="font-size:12px;color:#9b9893;margin-left:12px;vertical-align:middle">One Click Hire</span>
+    </td></tr>
+
+    <!-- Orange accent bar -->
+    <tr><td style="background:#f15a22;height:4px;font-size:0">&nbsp;</td></tr>
+
+    <!-- Body -->
+    <tr><td style="padding:36px 32px">
+      <p style="font-size:15px;color:#1a1a1a;margin:0 0 6px">Hi <strong>{name}</strong>,</p>
+      <p style="font-size:15px;color:#444444;line-height:1.6;margin:0 0 24px">
+        Congratulations! You have been shortlisted for an <strong>AI Screening Interview</strong>.
+        Please find the details below:
+      </p>
+
+      <!-- Job card -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#faf9f6;border:1px solid #e5e3de;border-radius:8px;margin-bottom:28px">
+        <tr><td style="padding:16px 20px">
+          <p style="font-size:18px;font-weight:700;color:#1a1a1a;margin:0 0 4px">{job}</p>
+          <p style="font-size:13px;color:#6b6760;margin:0">{company}</p>
+        </td></tr>
+      </table>
+
+      <!-- What to expect -->
+      <p style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#f15a22;margin:0 0 10px">What to expect</p>
+      <table cellpadding="0" cellspacing="0" style="margin-bottom:28px">
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🎤&nbsp; Up to 8 spoken questions about your experience &amp; skills</td></tr>
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">⏱&nbsp; Takes approximately <strong>25–30 minutes</strong></td></tr>
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🔇&nbsp; Find a quiet place with a working microphone</td></tr>
+        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">✅&nbsp; NexAI <strong>never auto-rejects</strong> — all scores reviewed by a human recruiter</td></tr>
+      </table>
+
+      <!-- CTA Button -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0">
+        <tr><td align="center">
+          <a href="{invite_url}"
+             style="display:inline-block;background:#f15a22;color:#ffffff;padding:16px 48px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:700;letter-spacing:.3px">
+            Start My AI Interview
+          </a>
+        </td></tr>
+        <tr><td align="center" style="padding-top:14px">
+          <span style="font-size:12px;color:#9b9893">Or paste this link in your browser:</span><br>
+          <a href="{invite_url}" style="font-size:12px;color:#f15a22;word-break:break-all">{invite_url}</a>
+        </td></tr>
+      </table>
+
+      <hr style="border:none;border-top:1px solid #e5e3de;margin:28px 0">
+
+      <!-- Notice -->
+      <table cellpadding="0" cellspacing="0">
+        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">⏳&nbsp; Once you start, you have <strong>48 hours</strong> to complete — you can close and re-open the link within that window.</td></tr>
+        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">📧&nbsp; Reply to this email if you have any questions.</td></tr>
+      </table>
+    </td></tr>
+
+    <!-- Footer -->
+    <tr><td style="background:#f5f4f1;padding:16px 32px;text-align:center;border-top:1px solid #e5e3de">
+      <p style="font-size:11px;color:#9b9893;margin:0">
+        Powered by <strong>Egnex One Click Hire</strong> &nbsp;·&nbsp; {company}<br>
+        This is an automated message — please do not reply directly to this address.
+      </p>
+    </td></tr>
+
+  </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
 
 # ── Question templates ────────────────────────────────────────────────────────
 
@@ -145,6 +228,15 @@ class TerminateSessionIn(BaseModel):
     token: str
     strike_count: int
     reason: str = ""
+
+
+class AppealIn(BaseModel):
+    explanation: str
+
+
+class AppealUpdateIn(BaseModel):
+    status: Optional[str] = None
+    recruiter_notes: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -551,18 +643,21 @@ def invite_tracker(user: dict = Depends(get_current_user)):
                 ns.raw_score,
                 ub.full_name     AS invited_by,
                 CASE
+                  WHEN ns.status = 'terminated_proctoring' THEN 'terminated'
                   WHEN ns.status = 'completed'    THEN 'completed'
                   WHEN ni.used_at IS NOT NULL      THEN 'in_progress'
                   WHEN ni.expires_at < now()       THEN 'expired'
                   ELSE 'pending'
-                END              AS invite_status
+                END              AS invite_status,
+                pa.status        AS appeal_status
             FROM nexai_invite ni
             JOIN application  a  ON a.id  = ni.application_id
             JOIN candidate    c  ON c.id  = a.candidate_id
             JOIN requisition  r  ON r.id  = a.requisition_id
             {scope_join}
-            LEFT JOIN nexai_session  ns ON ns.application_id = a.id
-            LEFT JOIN app_user       ub ON ub.id = ni.created_by
+            LEFT JOIN nexai_session     ns ON ns.application_id = a.id
+            LEFT JOIN proctoring_appeal pa ON pa.application_id = a.id
+            LEFT JOIN app_user          ub ON ub.id = ni.created_by
             ORDER BY a.id, ni.invited_at DESC
         ) latest_invite
         ORDER BY invited_at DESC
@@ -571,7 +666,7 @@ def invite_tracker(user: dict = Depends(get_current_user)):
     )
 
     # Build summary counts
-    counts = {"total": 0, "pending": 0, "in_progress": 0, "completed": 0, "expired": 0}
+    counts = {"total": 0, "pending": 0, "in_progress": 0, "completed": 0, "expired": 0, "terminated": 0}
     for r in (rows or []):
         counts["total"] += 1
         s = r.get("invite_status", "pending")
@@ -579,6 +674,40 @@ def invite_tracker(user: dict = Depends(get_current_user)):
             counts[s] += 1
 
     return {"summary": counts, "invites": rows or []}
+
+
+# ── Base-URL helpers ──────────────────────────────────────────────────────────
+
+def _get_base_url() -> tuple[str, str]:
+    """
+    Resolve the effective base URL for candidate invite links.
+    Returns (url, source) where source is 'db' | 'env' | 'default'.
+    Reads from system_settings at call time — never cached, so a Settings
+    save takes effect immediately for the next invite without a restart.
+    """
+    from ..services.connectors import _load_email_cfg
+    db_val = (_load_email_cfg().get("base_url") or "").strip()
+    if db_val:
+        return db_val.rstrip("/"), "db"
+    env_val = os.environ.get("APP_BASE_URL", "").strip()
+    if env_val:
+        return env_val.rstrip("/"), "env"
+    return "http://localhost:8080", "default"
+
+
+def _is_localhost(url: str) -> bool:
+    return any(x in url for x in ("localhost", "127.0.0.1", "0.0.0.0"))
+
+
+@router.get("/base-url-status")
+def base_url_status(user: dict = Depends(get_current_user)):
+    """Return the currently-resolved invite base URL and whether it is a localhost URL."""
+    url, source = _get_base_url()
+    return {
+        "effective_base_url": url,
+        "is_localhost": _is_localhost(url),
+        "source": source,
+    }
 
 
 # ── Candidate Invite Flow ─────────────────────────────────────────────────────
@@ -657,133 +786,61 @@ def create_nexai_invite(
         _prerender_svc.prerender_interview_videos, _prerender_session_id
     )
 
-    # Read base_url from DB Settings (Admin → Settings → App Base URL)
-    # Falls back to env var, then to localhost:8080 default
-    from ..services.connectors import _load_email_cfg
-    base_url = (_load_email_cfg().get("base_url") or
-                os.environ.get("APP_BASE_URL", "http://localhost:8080")).rstrip("/")
+    # Resolve base URL from DB settings (reads live — no restart needed after save)
+    base_url, _bu_source = _get_base_url()
+    if _is_localhost(base_url):
+        print(
+            f"[nexai-invite] WARNING: invite URL is localhost ({base_url}) — "
+            f"candidate {app_row['email']} will receive a broken link. "
+            f"Set Public Base URL in Admin → Settings before sending real invites."
+        )
     invite_url = f"{base_url}/nexai-interview?token={token}"
 
     name    = app_row["full_name"]
     job     = app_row["job_title"]
     company = app_row["company"]
 
-    plain = (
-        f"Hi {name},\n\n"
-        f"Congratulations! You have been shortlisted for an AI Screening Interview "
-        f"for the position of {job} at {company}.\n\n"
-        f"Please use the link below to attend your interview at your convenience:\n\n"
-        f"  {invite_url}\n\n"
-        f"The interview takes approximately 25-30 minutes. "
-        f"You will need a microphone and a quiet environment.\n\n"
-        f"Important:\n"
-        f"- Once you start, you have 48 hours to complete the interview\n"
-        f"- You can close and re-open the link within that window if needed\n"
-        f"- NexAI never auto-rejects — all scores are reviewed by a human recruiter\n\n"
-        f"Best regards,\nEgnex Hiring Team | {company}"
-    )
+    try:
+        email_subject, plain = _render_email_tmpl("nexai_invite", {
+            "candidate_name": name,
+            "job_title":      job,
+            "company_name":   company,
+            "interview_link": invite_url,
+        })
+    except ValueError as _tmpl_err:
+        email_sent  = False
+        email_error = (
+            f"Email template has unfillable placeholder: {_tmpl_err}. "
+            "Fix the 'NexAI Invite' template in Email Templates settings."
+        )
+        print(f"[nexai-invite] {email_error}")
+        return {
+            "invite_url":     invite_url,
+            "sent_to":        app_row["email"],
+            "email_sent":     False,
+            "email_error":    email_error,
+            "candidate_name": name,
+            "job_title":      job,
+        }
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f5f4f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f4f1;padding:32px 16px">
-  <tr><td align="center">
-  <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);max-width:600px;width:100%">
-
-    <!-- Header -->
-    <tr><td style="background:#1a1a1a;padding:22px 32px">
-      <span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px">Egnex</span>
-      <span style="font-size:24px;font-weight:800;color:#f15a22">.</span>
-      <span style="font-size:12px;color:#9b9893;margin-left:12px;vertical-align:middle">One Click Hire</span>
-    </td></tr>
-
-    <!-- Orange accent bar -->
-    <tr><td style="background:#f15a22;height:4px;font-size:0">&nbsp;</td></tr>
-
-    <!-- Body -->
-    <tr><td style="padding:36px 32px">
-      <p style="font-size:15px;color:#1a1a1a;margin:0 0 6px">Hi <strong>{name}</strong>,</p>
-      <p style="font-size:15px;color:#444444;line-height:1.6;margin:0 0 24px">
-        Congratulations! You have been shortlisted for an <strong>AI Screening Interview</strong>.
-        Please find the details below:
-      </p>
-
-      <!-- Job card -->
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#faf9f6;border:1px solid #e5e3de;border-radius:8px;margin-bottom:28px">
-        <tr><td style="padding:16px 20px">
-          <p style="font-size:18px;font-weight:700;color:#1a1a1a;margin:0 0 4px">{job}</p>
-          <p style="font-size:13px;color:#6b6760;margin:0">{company}</p>
-        </td></tr>
-      </table>
-
-      <!-- What to expect -->
-      <p style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#f15a22;margin:0 0 10px">What to expect</p>
-      <table cellpadding="0" cellspacing="0" style="margin-bottom:28px">
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🎤&nbsp; Up to 8 spoken questions about your experience &amp; skills</td></tr>
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">⏱&nbsp; Takes approximately <strong>25–30 minutes</strong></td></tr>
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🔇&nbsp; Find a quiet place with a working microphone</td></tr>
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">✅&nbsp; NexAI <strong>never auto-rejects</strong> — all scores reviewed by a human recruiter</td></tr>
-      </table>
-
-      <!-- CTA Button -->
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0">
-        <tr><td align="center">
-          <a href="{invite_url}"
-             style="display:inline-block;background:#f15a22;color:#ffffff;padding:16px 48px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:700;letter-spacing:.3px">
-            Start My AI Interview
-          </a>
-        </td></tr>
-        <tr><td align="center" style="padding-top:14px">
-          <span style="font-size:12px;color:#9b9893">Or paste this link in your browser:</span><br>
-          <a href="{invite_url}" style="font-size:12px;color:#f15a22;word-break:break-all">{invite_url}</a>
-        </td></tr>
-      </table>
-
-      <hr style="border:none;border-top:1px solid #e5e3de;margin:28px 0">
-
-      <!-- Notice -->
-      <table cellpadding="0" cellspacing="0">
-        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">⏳&nbsp; Once you start, you have <strong>48 hours</strong> to complete — you can close and re-open the link within that window.</td></tr>
-        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">📧&nbsp; Reply to this email if you have any questions.</td></tr>
-      </table>
-    </td></tr>
-
-    <!-- Footer -->
-    <tr><td style="background:#f5f4f1;padding:16px 32px;text-align:center;border-top:1px solid #e5e3de">
-      <p style="font-size:11px;color:#9b9893;margin:0">
-        Powered by <strong>Egnex One Click Hire</strong> &nbsp;·&nbsp; {company}<br>
-        This is an automated message — please do not reply directly to this address.
-      </p>
-    </td></tr>
-
-  </table>
-  </td></tr>
-</table>
-</body>
-</html>"""
+    html = _build_invite_html(name=name, job=job, company=company, invite_url=invite_url)
 
     try:
-        send_email(
-            app_row["email"],
-            f"AI Interview Invitation: {job} — {company}",
-            plain,
-            html=html,
-        )
-        email_sent = True
+        send_email(app_row["email"], email_subject, plain, html=html)
+        email_sent  = True
         email_error = None
     except Exception as exc:
-        email_sent = False
+        email_sent  = False
         email_error = str(exc)
         print(f"[nexai-invite] Email delivery failed: {exc}")
 
     return {
-        "invite_url": invite_url,
-        "sent_to": app_row["email"],
-        "email_sent": email_sent,
-        "email_error": email_error if not email_sent else None,
+        "invite_url":     invite_url,
+        "sent_to":        app_row["email"],
+        "email_sent":     email_sent,
+        "email_error":    email_error if not email_sent else None,
         "candidate_name": name,
-        "job_title": job,
+        "job_title":      job,
     }
 
 
@@ -1104,20 +1161,20 @@ def _fire_completion_email(session_id: str) -> None:
             if row["raw_score"] is not None
             else "N/A"
         )
-        plain = (
-            f"NexAI Interview Completed\n\n"
-            f"Candidate: {row['candidate_name']}\n"
-            f"Role: {row['requisition_title']}\n"
-            f"AI Score: {score_display}\n\n"
-            f"Strengths:\n{sd.get('strengths', '—')}\n\n"
-            f"Areas to Probe:\n{sd.get('concerns', '—')}\n"
-        )
+        try:
+            _et_subj, plain = _render_email_tmpl("nexai_completion", {
+                "candidate_name": row["candidate_name"],
+                "job_title":      row["requisition_title"],
+                "ai_score":       score_display,
+                "strengths":      sd.get("strengths") or "—",
+                "concerns":       sd.get("concerns") or "—",
+            })
+        except ValueError as _te:
+            print(f"[nexai_email] template error for session {session_id}: {_te}")
+            return
         send_email(
             to_email=row["recruiter_email"],
-            subject=(
-                f"NexAI interview completed — "
-                f"{row['candidate_name']} — {row['requisition_title']}"
-            ),
+            subject=_et_subj,
             body=plain,
             html=html_body,
         )
@@ -1334,6 +1391,162 @@ async def terminate_invite_session(body: TerminateSessionIn, background_tasks: B
     )
 
     return {"ok": True, "raw_score": raw_score}
+
+
+# ── Proctoring Appeal Endpoints ───────────────────────────────────────────────
+
+@router.post("/invite/appeal", status_code=201)
+def create_appeal(token: str, body: AppealIn):
+    """Public (token auth) — candidate submits an appeal for a proctoring-terminated session."""
+    invite = query_one(
+        "SELECT id, application_id FROM nexai_invite WHERE token = %s",
+        [token],
+    )
+    if not invite:
+        raise HTTPException(400, "Invalid invite token")
+
+    sess = query_one(
+        "SELECT id, status FROM nexai_session WHERE application_id = %s",
+        [invite["application_id"]],
+    )
+    if not sess:
+        raise HTTPException(404, "No session found for this invite")
+    if sess["status"] != "terminated_proctoring":
+        raise HTTPException(400, "Appeals are only available for proctoring-terminated sessions")
+
+    existing = query_one(
+        "SELECT id FROM proctoring_appeal WHERE nexai_session_id = %s",
+        [sess["id"]],
+    )
+    if existing:
+        raise HTTPException(409, "An appeal has already been submitted for this session")
+
+    query(
+        """INSERT INTO proctoring_appeal (application_id, nexai_session_id, candidate_explanation)
+           VALUES (%s, %s, %s)""",
+        [invite["application_id"], sess["id"], body.explanation.strip()],
+        fetch=False,
+    )
+    return {"ok": True}
+
+
+@router.get("/appeals")
+def list_appeals(user: dict = Depends(get_current_user)):
+    """JWT — list all proctoring appeals (recruiter/TA manager/admin)."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    rows = query(
+        """SELECT pa.id,
+                  pa.application_id,
+                  pa.nexai_session_id,
+                  pa.candidate_explanation,
+                  pa.status,
+                  pa.recruiter_notes,
+                  pa.created_at,
+                  pa.reviewed_at,
+                  c.full_name   AS candidate_name,
+                  c.email       AS candidate_email,
+                  r.title       AS requisition,
+                  ns.termination_reason,
+                  ns.raw_score,
+                  ps.id         AS proctoring_session_id,
+                  rev.email     AS reviewed_by_email
+           FROM proctoring_appeal pa
+           JOIN application   a   ON a.id  = pa.application_id
+           JOIN candidate     c   ON c.id  = a.candidate_id
+           JOIN requisition   r   ON r.id  = a.requisition_id
+           JOIN nexai_session  ns  ON ns.id = pa.nexai_session_id
+           LEFT JOIN proctoring_session ps ON ps.application_id = pa.application_id
+           LEFT JOIN app_user  rev ON rev.id = pa.reviewed_by
+           ORDER BY pa.created_at DESC""",
+    )
+    return rows or []
+
+
+@router.patch("/appeals/{appeal_id}")
+def update_appeal(appeal_id: str, body: AppealUpdateIn, user: dict = Depends(get_current_user)):
+    """JWT — recruiter updates an appeal's status and/or notes."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    appeal = query_one("SELECT id FROM proctoring_appeal WHERE id = %s", [appeal_id])
+    if not appeal:
+        raise HTTPException(404, "Appeal not found")
+
+    valid_statuses = {"pending", "reviewed", "relink_sent", "rejected"}
+    if body.status and body.status not in valid_statuses:
+        raise HTTPException(400, f"Invalid status — must be one of: {', '.join(sorted(valid_statuses))}")
+
+    sets, vals = [], []
+    if body.status is not None:
+        sets += ["status = %s", "reviewed_by = %s", "reviewed_at = now()"]
+        vals += [body.status, user["sub"]]
+    if body.recruiter_notes is not None:
+        sets.append("recruiter_notes = %s")
+        vals.append(body.recruiter_notes)
+
+    if not sets:
+        raise HTTPException(400, "No fields to update")
+
+    vals.append(appeal_id)
+    query(f"UPDATE proctoring_appeal SET {', '.join(sets)} WHERE id = %s", vals, fetch=False)
+    return {"ok": True}
+
+
+@router.post("/appeals/{appeal_id}/relink", status_code=201)
+def relink_appeal(appeal_id: str, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+    """JWT — give the candidate a fresh interview link after appeal review.
+
+    Resets the terminated session back to pending, expires the old invite token,
+    and calls the existing create_nexai_invite() which issues a new token and sends
+    the standard invite email — no new email infrastructure required.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    appeal = query_one(
+        "SELECT id, application_id, nexai_session_id, status FROM proctoring_appeal WHERE id = %s",
+        [appeal_id],
+    )
+    if not appeal:
+        raise HTTPException(404, "Appeal not found")
+    if appeal["status"] == "relink_sent":
+        raise HTTPException(400, "A fresh interview link has already been sent for this appeal")
+
+    # Reset the session so validate + begin endpoints will accept it again
+    query(
+        """UPDATE nexai_session
+               SET status = 'pending',
+                   conversation = NULL, transcript = NULL,
+                   raw_score = NULL, score_detail = NULL,
+                   termination_reason = NULL, completed_at = NULL
+             WHERE id = %s""",
+        [appeal["nexai_session_id"]],
+        fetch=False,
+    )
+
+    # Expire any open invite tokens for this application (resend logic mirrors resend_nexai_invite)
+    query(
+        """UPDATE nexai_invite SET expires_at = now() - interval '1 second'
+           WHERE application_id = %s AND used_at IS NULL""",
+        [appeal["application_id"]],
+        fetch=False,
+    )
+
+    # Issue fresh invite (creates token + sends standard email) via existing logic
+    result = create_nexai_invite(appeal["application_id"], background_tasks, user)
+
+    # Mark appeal resolved
+    query(
+        """UPDATE proctoring_appeal
+               SET status = 'relink_sent', reviewed_by = %s, reviewed_at = now()
+             WHERE id = %s""",
+        [user["sub"], appeal_id],
+        fetch=False,
+    )
+
+    return {**result, "ok": True}
 
 
 @router.post("/invite/submit/{session_id}")

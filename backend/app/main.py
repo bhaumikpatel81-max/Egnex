@@ -36,6 +36,8 @@ from .routers.reports_api import router as _reports2_router
 from .routers.nexai_api import router as _nexai_router
 from .routers.proctoring_api import router as _proctoring_router
 from .routers.tickets_api import router as _tickets_router
+from .routers.scorecard_api import router as _scorecard_router
+from .routers.email_template_api import router as _email_template_router
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
@@ -47,6 +49,8 @@ app.include_router(_reports2_router)
 app.include_router(_nexai_router)
 app.include_router(_proctoring_router)
 app.include_router(_tickets_router)
+app.include_router(_scorecard_router)
+app.include_router(_email_template_router)
 
 
 @app.on_event("startup")
@@ -108,6 +112,37 @@ def _auto_migrate():
         "ALTER TABLE proctoring_session ADD COLUMN IF NOT EXISTS proctoring_complete BOOLEAN NOT NULL DEFAULT FALSE",
         # Migration 19: email-sent guard to prevent duplicate completion emails (added 2026-06)
         "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS email_sent BOOLEAN NOT NULL DEFAULT FALSE",
+        # Migration 22: real AI screening columns + stability dimension (added 2026-06)
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS ai_fit_score      NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS ai_screen_detail  JSONB",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS avg_tenure_months NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS stability_score   NUMERIC",
+        """ALTER TABLE application ADD COLUMN IF NOT EXISTS stability_status TEXT
+           CHECK (stability_status IS NULL
+               OR stability_status IN ('computed','pending_manual','not_applicable'))""",
+        # Migration 24: scorecard draft/submit workflow (added 2026-06)
+        "ALTER TABLE scorecard ALTER COLUMN submitted_at DROP NOT NULL",
+        "ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS status     TEXT        NOT NULL DEFAULT 'draft'",
+        "ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()",
+        "UPDATE scorecard SET status = 'submitted' WHERE submitted_at IS NOT NULL AND status = 'draft'",
+        # Migration 23: extended application fields — employment snapshot + CTC (added 2026-06)
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_company       TEXT",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_designation   TEXT",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_location      TEXT",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_ctc_fixed     NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_ctc_variable  NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_ctc_bonus     NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_ctc_total     NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS expected_ctc_fixed    NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS expected_ctc_variable NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS expected_ctc_bonus    NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS expected_ctc_total    NUMERIC",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS notice_period_days    INTEGER",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS willing_to_relocate   BOOLEAN",
+        # Migration 25: email template key + placeholder + editor columns (added 2026-06)
+        "ALTER TABLE email_template ADD COLUMN IF NOT EXISTS template_key       TEXT",
+        "ALTER TABLE email_template ADD COLUMN IF NOT EXISTS valid_placeholders JSONB",
+        "ALTER TABLE email_template ADD COLUMN IF NOT EXISTS updated_by         UUID REFERENCES app_user(id)",
     ]
     for sql in migrations:
         try:
@@ -115,6 +150,13 @@ def _auto_migrate():
         except Exception as exc:
             # Log but don't crash — a failed migration shouldn't block startup
             print(f"[auto-migrate] WARNING: {exc}")
+
+    # Seed built-in email template defaults (idempotent — skips existing rows)
+    try:
+        from .services.email_templates import ensure_defaults as _ensure_email_defaults
+        _ensure_email_defaults()
+    except Exception as _edt_exc:
+        print(f"[auto-migrate] email template seed failed: {_edt_exc}")
 
 _UPLOADS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
@@ -292,6 +334,19 @@ class ApplyIn(BaseModel):
     resume_text: str = ""
     years_experience: float | None = None
     source: str = "career_site"
+    # Extended informational fields — captured for recruiter context only.
+    # These do NOT affect the screening score or any algorithm.
+    current_company: str | None = None
+    current_designation: str | None = None
+    current_location: str | None = None
+    current_ctc_fixed: float | None = None
+    current_ctc_variable: float | None = None
+    current_ctc_bonus: float | None = None
+    expected_ctc_fixed: float | None = None
+    expected_ctc_variable: float | None = None
+    expected_ctc_bonus: float | None = None
+    notice_period_days: int | None = None
+    willing_to_relocate: bool | None = None
 
 
 def _find_existing_candidate(email: str, phone: str | None):
@@ -365,6 +420,60 @@ def _dedup_or_create_candidate(
     return row["id"]
 
 
+def _sum_ctc(*parts):
+    """Sum CTC components, returning None if all parts are None/zero."""
+    total = sum(p for p in parts if p is not None)
+    return total if total > 0 else None
+
+
+def _parse_relocate(val) -> bool | None:
+    """Convert FormData string ('yes'/'no'/'open'/'') to bool or None."""
+    if isinstance(val, bool):
+        return val
+    if val in ("yes", "true", "1"):
+        return True
+    if val in ("no", "false", "0"):
+        return False
+    return None
+
+
+def _store_extended_fields(application_id: str, **kwargs):
+    """
+    Update the informational extended columns on an application row.
+    CTC totals are auto-computed. Only non-None kwargs are written.
+    Does NOT touch match_score or any screening column.
+    """
+    cols_vals = [
+        ("current_company",       kwargs.get("current_company")),
+        ("current_designation",   kwargs.get("current_designation")),
+        ("current_location",      kwargs.get("current_location")),
+        ("current_ctc_fixed",     kwargs.get("current_ctc_fixed")),
+        ("current_ctc_variable",  kwargs.get("current_ctc_variable")),
+        ("current_ctc_bonus",     kwargs.get("current_ctc_bonus")),
+        ("current_ctc_total",     _sum_ctc(
+            kwargs.get("current_ctc_fixed"),
+            kwargs.get("current_ctc_variable"),
+            kwargs.get("current_ctc_bonus"),
+        )),
+        ("expected_ctc_fixed",    kwargs.get("expected_ctc_fixed")),
+        ("expected_ctc_variable", kwargs.get("expected_ctc_variable")),
+        ("expected_ctc_bonus",    kwargs.get("expected_ctc_bonus")),
+        ("expected_ctc_total",    _sum_ctc(
+            kwargs.get("expected_ctc_fixed"),
+            kwargs.get("expected_ctc_variable"),
+            kwargs.get("expected_ctc_bonus"),
+        )),
+        ("notice_period_days",    kwargs.get("notice_period_days")),
+        ("willing_to_relocate",   kwargs.get("willing_to_relocate")),
+    ]
+    provided = [(col, val) for col, val in cols_vals if val is not None]
+    if not provided:
+        return
+    sets = ", ".join(f"{col} = %s" for col, _ in provided)
+    vals = [val for _, val in provided] + [application_id]
+    query(f"UPDATE application SET {sets} WHERE id = %s", vals, fetch=False)
+
+
 @app.post("/api/apply")
 def apply(payload: ApplyIn):
     """Text-paste application: create/reuse candidate → auto-screen."""
@@ -379,6 +488,20 @@ def apply(payload: ApplyIn):
     )
     app_row = pipeline.intake_and_screen(
         payload.requisition_id, cand_id, payload.resume_text, payload.years_experience
+    )
+    _store_extended_fields(
+        app_row["id"],
+        current_company=payload.current_company,
+        current_designation=payload.current_designation,
+        current_location=payload.current_location,
+        current_ctc_fixed=payload.current_ctc_fixed,
+        current_ctc_variable=payload.current_ctc_variable,
+        current_ctc_bonus=payload.current_ctc_bonus,
+        expected_ctc_fixed=payload.expected_ctc_fixed,
+        expected_ctc_variable=payload.expected_ctc_variable,
+        expected_ctc_bonus=payload.expected_ctc_bonus,
+        notice_period_days=payload.notice_period_days,
+        willing_to_relocate=payload.willing_to_relocate,
     )
     return {"application_id": app_row["id"], "match_score": app_row["match_score"],
             "breakdown": app_row["score_breakdown"]}
@@ -408,6 +531,18 @@ async def apply_upload(
     gender: str = Form("undisclosed"),
     years_experience: float = Form(None),
     source: str = Form("career_site"),
+    # Extended informational fields — not used in screening
+    current_company: str = Form(""),
+    current_designation: str = Form(""),
+    current_location: str = Form(""),
+    current_ctc_fixed: float = Form(None),
+    current_ctc_variable: float = Form(None),
+    current_ctc_bonus: float = Form(None),
+    expected_ctc_fixed: float = Form(None),
+    expected_ctc_variable: float = Form(None),
+    expected_ctc_bonus: float = Form(None),
+    notice_period_days: int = Form(None),
+    willing_to_relocate: str = Form(""),
     file: UploadFile = File(...),
 ):
     """File-upload path: extract text from PDF/Word, dedup check, then auto-screen."""
@@ -437,6 +572,20 @@ async def apply_upload(
     app_row = pipeline.intake_and_screen(
         requisition_id, cand_id, resume_text, years_experience
     )
+    _store_extended_fields(
+        app_row["id"],
+        current_company=current_company or None,
+        current_designation=current_designation or None,
+        current_location=current_location or None,
+        current_ctc_fixed=current_ctc_fixed,
+        current_ctc_variable=current_ctc_variable,
+        current_ctc_bonus=current_ctc_bonus,
+        expected_ctc_fixed=expected_ctc_fixed,
+        expected_ctc_variable=expected_ctc_variable,
+        expected_ctc_bonus=expected_ctc_bonus,
+        notice_period_days=notice_period_days,
+        willing_to_relocate=_parse_relocate(willing_to_relocate),
+    )
     return {
         "application_id": app_row["id"],
         "match_score": app_row["match_score"],
@@ -449,6 +598,52 @@ async def apply_upload(
 @app.post("/api/applications/{application_id}/bot-round")
 def bot_round(application_id: str):
     return pipeline.run_bot_round(application_id)
+
+
+@app.get("/api/applications/{application_id}/screening-detail")
+def screening_detail(application_id: str):
+    """Full screening breakdown for the 'Why this score?' recruiter panel."""
+    row = query_one(
+        """SELECT a.id, a.match_score, a.score_breakdown, a.ai_screen_detail,
+                  a.avg_tenure_months, a.stability_score, a.stability_status,
+                  a.ai_fit_score, a.status,
+                  c.full_name AS candidate_name
+           FROM application a
+           JOIN candidate c ON c.id = a.candidate_id
+           WHERE a.id = %s""",
+        [application_id],
+    )
+    if not row:
+        raise HTTPException(404, "application not found")
+    return dict(row)
+
+
+class ManualTenureIn(BaseModel):
+    avg_tenure_months: float
+
+
+@app.post("/api/applications/{application_id}/manual-tenure")
+def manual_tenure(application_id: str, payload: ManualTenureIn, request: Request):
+    """
+    Recruiter submits average tenure (months) for a pending_manual application.
+    Recomputes stability_score and match_score with full four-dimension weights.
+    JWT-protected (middleware handles auth).
+    """
+    if payload.avg_tenure_months <= 0:
+        raise HTTPException(400, "avg_tenure_months must be > 0")
+    actor_id = getattr(request.state, "user", {}).get("sub")
+    return pipeline.update_manual_tenure(application_id, payload.avg_tenure_months, actor_id)
+
+
+@app.post("/api/applications/{application_id}/re-screen")
+def re_screen(application_id: str, request: Request):
+    """
+    Deliberate recruiter action: re-run AI screening using the stored resume.
+    Does not affect bot_score / combined_score / pipeline status.
+    JWT-protected (middleware handles auth).
+    """
+    actor_id = getattr(request.state, "user", {}).get("sub")
+    return pipeline.rescreen_application(application_id, actor_id)
 
 
 class AdvanceIn(BaseModel):
@@ -479,8 +674,11 @@ class ScheduleIn(BaseModel):
 @app.post("/api/schedule")
 def schedule(payload: ScheduleIn):
     app_row = query_one(
-        """SELECT a.id, c.email FROM application a
-           JOIN candidate c ON c.id = a.candidate_id WHERE a.id = %s""",
+        """SELECT a.id, c.email, c.full_name, r.title AS job_title
+           FROM application a
+           JOIN candidate c ON c.id = a.candidate_id
+           JOIN requisition r ON r.id = a.requisition_id
+           WHERE a.id = %s""",
         [payload.application_id],
     )
     if not app_row:
@@ -499,15 +697,40 @@ def schedule(payload: ScheduleIn):
            ORDER BY sequence LIMIT 1""",
         [payload.application_id],
     )
-    query(
+    iv = query_one(
         """INSERT INTO interview
              (application_id, round_config_id, scheduled_at, meet_link, gcal_event_id, mode)
-           VALUES (%s, %s, %s, %s, %s, 'virtual')""",
+           VALUES (%s, %s, %s, %s, %s, 'virtual')
+           RETURNING id""",
         [payload.application_id, rc["id"] if rc else None, start,
-         meeting["meet_link"], meeting["gcal_event_id"]], fetch=False,
+         meeting["meet_link"], meeting["gcal_event_id"]],
     )
-    connectors.send_email(app_row["email"], "Interview scheduled",
-                          f"Your interview is at {start}. Link: {meeting['meet_link']}")
+    # Populate interview_panel from panel_emails (look up app_user by email)
+    if iv and payload.panel_emails:
+        for email in payload.panel_emails:
+            pu = query_one(
+                "SELECT id FROM app_user WHERE LOWER(email) = LOWER(%s) AND is_active = TRUE",
+                [email],
+            )
+            if pu:
+                query(
+                    """INSERT INTO interview_panel (interview_id, interviewer_id)
+                       VALUES (%s, %s) ON CONFLICT DO NOTHING""",
+                    [str(iv["id"]), str(pu["id"])],
+                    fetch=False,
+                )
+    try:
+        from .services.email_templates import render_template as _render_sched_tmpl
+        _interview_time = start.strftime("%A, %d %B %Y at %I:%M %p UTC")
+        _et_subj, _et_body = _render_sched_tmpl("interview_scheduled", {
+            "candidate_name": app_row.get("full_name") or "Candidate",
+            "job_title":      app_row.get("job_title") or "the position",
+            "interview_time": _interview_time,
+            "meet_link":      meeting["meet_link"],
+        })
+        connectors.send_email(app_row["email"], _et_subj, _et_body)
+    except Exception as _sched_email_exc:
+        print(f"[schedule] Email send failed: {_sched_email_exc}")
     return meeting
 
 

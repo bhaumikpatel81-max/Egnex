@@ -124,7 +124,52 @@ def extract_contact_info(text: str) -> dict:
         name = stripped.title()
         break
 
-    return {"full_name": name, "email": email, "phone": phone_display}
+    # Current company — compact line containing a known corporate suffix
+    _co_suffix = re.compile(
+        r'\b(pvt\.?|ltd\.?|limited|inc\.?|corp\.?|llc|technologies|solutions|'
+        r'systems|services|software|tech|group|holdings|enterprises|consulting)\b',
+        re.IGNORECASE,
+    )
+    # Current designation — compact line containing a known job title keyword
+    _title_kw = re.compile(
+        r'\b(engineer|developer|analyst|manager|architect|consultant|director|lead|'
+        r'head|officer|executive|specialist|coordinator|associate|programmer|designer|'
+        r'scientist|administrator|intern|trainee)\b',
+        re.IGNORECASE,
+    )
+    _section_words = {
+        'experience', 'education', 'skills', 'summary', 'objective', 'profile',
+        'employment', 'career', 'academic', 'qualification', 'certification',
+    }
+    current_company = None
+    current_designation = None
+    for line in (text or "").splitlines()[:60]:
+        stripped = line.strip()
+        if not stripped or len(stripped) > 100 or len(stripped) < 4:
+            continue
+        if re.search(r'[@/\\|<>{}:;]|http|www\.', stripped):
+            continue
+        words = stripped.split()
+        if not (1 <= len(words) <= 10):
+            continue
+        if name and stripped.lower() == name.lower():
+            continue
+        lower = stripped.lower()
+        # Skip bare section headers
+        if any(sw in lower for sw in _section_words) and len(words) <= 2:
+            continue
+        if current_designation is None and _title_kw.search(stripped):
+            current_designation = stripped
+        if current_company is None and _co_suffix.search(stripped) and not _title_kw.search(stripped):
+            current_company = stripped
+
+    return {
+        "full_name": name,
+        "email": email,
+        "phone": phone_display,
+        "current_company": current_company,
+        "current_designation": current_designation,
+    }
 
 
 def extract_text(file_bytes: bytes, filename: str) -> tuple:

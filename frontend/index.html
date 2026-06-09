@@ -126,6 +126,24 @@ tr:hover td{background:#faf8f5}
 .tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
 .tab{padding:6px 14px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:13px;background:#fff;transition:background .1s}
 .tab.active,.tab:hover{background:var(--text);color:#fff;border-color:var(--text)}
+.am-autofilled{border-color:#1d6e56!important;background:#f0faf5!important}
+/* ── Scorecard ── */
+.sc-comp-row{border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.sc-comp-label{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text)}
+.sc-req{color:var(--accent)}
+.sc-rating-wrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:4px 0 2px}
+.sc-rb{width:38px;height:38px;border-radius:7px;border:1.5px solid var(--border);background:#fff;cursor:pointer;font-size:14px;font-weight:700;color:var(--muted);display:flex;align-items:center;justify-content:center;transition:all .12s;flex-shrink:0}
+.sc-rb.sel{background:var(--accent);border-color:var(--accent);color:#fff}
+.sc-rb:hover:not(.sel):not([disabled]){border-color:var(--accent);color:var(--accent)}
+.sc-rb[disabled]{opacity:.5;cursor:default}
+.sc-rating-lbl{font-size:11px;color:var(--muted);margin-left:4px}
+.sc-note{font-size:12px;margin-top:6px;color:var(--muted)}
+.pf-verdict{display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600}
+.pf-sh{background:#dff0eb;color:#1d6e56}.pf-h{background:#e6f0fb;color:#2563eb}
+.pf-nh{background:#fde8e4;color:#8b2a1a}.pf-snh{background:#8b2a1a;color:#fff}
+.pf-card{border:1px solid var(--border);border-radius:8px;padding:14px 16px;margin-bottom:12px;background:#faf9f6}
+.pf-panel-dot{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-right:5px}
+.pf-panel-dot.pending{background:#ccc}
 .period-bar{display:flex;gap:4px;margin-bottom:20px}
 .period-btn{padding:6px 14px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;background:#fff}
 .period-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -442,36 +460,132 @@ select{background-image:none}
   </div>
 </div>
 
+<!-- ── Score-Why Modal ── -->
+<div class="modal-bg" id="score-why-modal" onclick="if(event.target===this)closeScoreWhy()">
+  <div class="modal" style="max-width:560px">
+    <h2 id="sw-title">Screening Score Breakdown</h2>
+    <div id="sw-body" style="font-size:13px">
+      <p class="empty">Loading…</p>
+    </div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeScoreWhy()">Close</button>
+      <button class="btn btn-ghost btn-sm" id="sw-rescreen-btn" style="display:none"
+              onclick="_doRescreen()">Re-screen</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Apply Modal ── -->
 <div class="modal-bg" id="apply-modal" onclick="if(event.target===this)closeApplyModal()">
-  <div class="modal">
-    <h2>Submit application</h2>
-    <div class="form-group"><label>Requisition</label><select id="am-req"></select></div>
-    <div class="form-row">
-      <div class="form-group"><label>Candidate name</label><input id="am-name" placeholder="Priya Sharma"></div>
-      <div class="form-group"><label>Email</label><input id="am-email" type="email" placeholder="priya@example.com"></div>
+  <div class="modal" style="max-width:640px">
+    <h2 style="margin-bottom:6px">Submit application</h2>
+    <!-- 4-step tab navigation -->
+    <div class="tabs" style="margin-bottom:18px">
+      <div class="tab active" id="am-tab-0" onclick="amGoTab(0)">1 · Personal</div>
+      <div class="tab" id="am-tab-1" onclick="amGoTab(1)">2 · Current role</div>
+      <div class="tab" id="am-tab-2" onclick="amGoTab(2)">3 · Expected</div>
+      <div class="tab" id="am-tab-3" onclick="amGoTab(3)">4 · Review</div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Phone number</label><input id="am-phone" type="tel" placeholder="+91 98765 43210"></div>
-      <div class="form-group"><label>Gender</label><select id="am-gender"><option value="female">Female</option><option value="male">Male</option><option value="undisclosed">Undisclosed</option></select></div>
+
+    <!-- Panel 0: Personal -->
+    <div id="am-panel-0">
+      <div class="form-group"><label id="am-lbl-requisition">Requisition</label><select id="am-req"></select></div>
+      <div class="form-row">
+        <div class="form-group"><label id="am-lbl-name">Candidate name</label><input id="am-name" placeholder="Priya Sharma" autocomplete="off"></div>
+        <div class="form-group"><label id="am-lbl-email">Email</label><input id="am-email" type="email" placeholder="priya@example.com"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label id="am-lbl-phone">Phone</label><input id="am-phone" type="tel" placeholder="+91 98765 43210"></div>
+        <div class="form-group"><label id="am-lbl-gender">Gender</label>
+          <select id="am-gender"><option value="female">Female</option><option value="male">Male</option><option value="undisclosed" selected>Undisclosed</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label id="am-lbl-years_experience">Years of experience</label><input id="am-years" type="number" placeholder="4" min="0" step="0.5"></div>
+        <div class="form-group"><label id="am-lbl-source">Source</label>
+          <select id="am-source">
+            <option value="linkedin">LinkedIn</option>
+            <option value="referral">Referral</option>
+            <option value="vendor">Vendor</option>
+            <option value="job_portal">Job Portal</option>
+            <option value="direct">Direct</option>
+            <option value="career_site">Career Site</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <div id="am-file-wrap">
+        <div id="am-file-area" class="form-group">
+          <label id="am-lbl-resume">Resume <span style="font-weight:400;color:var(--muted);font-size:11px">(PDF, DOCX, DOC, JPEG, PNG)</span></label>
+          <input id="am-file" type="file" accept=".pdf,.docx,.doc,.jpg,.jpeg,.png" style="padding:6px;cursor:pointer" onchange="_autoFillFromResume(this)">
+          <span id="am-parse-status" style="font-size:11px;margin-top:4px;display:block;min-height:16px;white-space:pre-line;line-height:1.6"></span>
+        </div>
+        <div style="text-align:right;margin-top:-8px;margin-bottom:10px">
+          <span style="font-size:11px;color:var(--accent);cursor:pointer" onclick="_amToggleResume()">Or paste resume text instead →</span>
+        </div>
+      </div>
+      <div id="am-text-area" class="form-group" style="display:none">
+        <label>Resume text</label>
+        <textarea id="am-text" rows="3" placeholder="Paste resume text here…"></textarea>
+        <span style="font-size:11px;color:var(--accent);cursor:pointer" onclick="_amToggleResume()">← Use file upload instead</span>
+      </div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Years of experience</label><input id="am-years" type="number" placeholder="4"></div>
+
+    <!-- Panel 1: Current Role & CTC -->
+    <div id="am-panel-1" style="display:none">
+      <div class="form-row">
+        <div class="form-group"><label id="am-lbl-current_company">Current company</label><input id="am-cur-company" placeholder="Infosys Technologies Ltd"></div>
+        <div class="form-group"><label id="am-lbl-current_designation">Current designation</label><input id="am-cur-desig" placeholder="Senior Software Engineer"></div>
+      </div>
+      <div class="form-group"><label id="am-lbl-current_location">Current location</label><input id="am-cur-loc" placeholder="Bangalore"></div>
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px" id="am-lbl-current_ctc">Current CTC (₹/year) — informational only</div>
+      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="form-group"><label>Fixed</label><input id="am-cur-fixed" type="number" placeholder="1500000" oninput="_amSumCTC('cur')"></div>
+        <div class="form-group"><label>Variable</label><input id="am-cur-var" type="number" placeholder="200000" oninput="_amSumCTC('cur')"></div>
+        <div class="form-group"><label>Bonus / Allowances</label><input id="am-cur-bonus" type="number" placeholder="50000" oninput="_amSumCTC('cur')"></div>
+      </div>
+      <div class="form-group">
+        <label>Total current CTC</label>
+        <input id="am-cur-total" readonly placeholder="Auto-calculated" style="color:var(--muted);cursor:not-allowed">
+      </div>
     </div>
-    <div class="tabs">
-      <div class="tab active" id="am-tab-file" onclick="setApplyMode('file')">Upload resume</div>
-      <div class="tab" id="am-tab-text" onclick="setApplyMode('text')">Paste text</div>
+
+    <!-- Panel 2: Expected CTC & Logistics -->
+    <div id="am-panel-2" style="display:none">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px" id="am-lbl-expected_ctc">Expected CTC (₹/year) — informational only</div>
+      <div class="form-row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="form-group"><label>Fixed</label><input id="am-exp-fixed" type="number" placeholder="2000000" oninput="_amSumCTC('exp')"></div>
+        <div class="form-group"><label>Variable</label><input id="am-exp-var" type="number" placeholder="300000" oninput="_amSumCTC('exp')"></div>
+        <div class="form-group"><label>Bonus / Allowances</label><input id="am-exp-bonus" type="number" placeholder="100000" oninput="_amSumCTC('exp')"></div>
+      </div>
+      <div class="form-group">
+        <label>Total expected CTC</label>
+        <input id="am-exp-total" readonly placeholder="Auto-calculated" style="color:var(--muted);cursor:not-allowed">
+      </div>
+      <div class="form-row" style="margin-top:6px">
+        <div class="form-group"><label id="am-lbl-notice_period">Notice period (days)</label><input id="am-notice" type="number" placeholder="30" min="0"></div>
+        <div class="form-group"><label id="am-lbl-willing_to_relocate">Willing to relocate</label>
+          <select id="am-relocate">
+            <option value="">— not specified —</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+            <option value="open">Open to discuss</option>
+          </select>
+        </div>
+      </div>
     </div>
-    <div id="am-file-area" class="form-group">
-      <label>Resume (PDF or Word)</label>
-      <input id="am-file" type="file" accept=".pdf,.docx,.doc" style="padding:6px;cursor:pointer" onchange="_autoFillFromResume(this)">
-      <span id="am-parse-status" style="font-size:11px;color:var(--muted);margin-top:3px;display:none"></span>
+
+    <!-- Panel 3: Review & Submit -->
+    <div id="am-panel-3" style="display:none">
+      <div id="am-review-body" style="font-size:13px"></div>
     </div>
-    <div id="am-text-area" class="form-group" style="display:none"><label>Resume text</label><textarea id="am-text" rows="4" placeholder="Python, PostgreSQL…"></textarea></div>
+
     <div id="am-result" style="display:none;margin-top:12px;padding:14px;background:#faf9f6;border-radius:4px;border:1px solid var(--border)"></div>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeApplyModal()">Close</button>
-      <button class="btn btn-primary" id="am-submit-btn" onclick="submitApply()">Submit &amp; screen</button>
+      <button class="btn btn-ghost" id="am-prev-btn" onclick="amPrevTab()" style="display:none">← Back</button>
+      <button class="btn btn-primary" id="am-next-btn" onclick="amNextTab()">Next →</button>
+      <button class="btn btn-primary" id="am-submit-btn" onclick="submitApply()" style="display:none">Submit &amp; screen</button>
     </div>
   </div>
 </div>
@@ -498,6 +612,12 @@ select{background-image:none}
     <div class="info-row" style="background:#faf9f6;border:1px solid var(--border);border-radius:6px;padding:12px;font-size:13px;line-height:1.8;margin-bottom:16px">
       <strong id="inv-name"></strong><br>
       <span style="color:var(--muted)" id="inv-email"></span>
+    </div>
+    <div id="inv-localhost-warn" style="display:none;background:#fff3cd;border:2px solid #ffc107;border-radius:5px;padding:10px 12px;font-size:13px;color:#856404;margin-bottom:12px">
+      <strong>⚠ Broken-link warning.</strong> The Public Base URL is set to
+      <code id="inv-localhost-url" style="background:rgba(0,0,0,.06);padding:1px 5px;border-radius:3px">localhost</code>
+      — candidates will receive a link that doesn't work.
+      Fix it in <span onclick="closeInviteModal();navigate('settings')" style="color:var(--accent);cursor:pointer;font-weight:600;text-decoration:underline">⚙ Settings → Public Base URL</span>, then resend.
     </div>
     <div id="inv-result" style="display:none;padding:12px;border-radius:6px;font-size:13px;margin-bottom:14px"></div>
     <div class="modal-btns" id="inv-btns">
@@ -590,6 +710,31 @@ select{background-image:none}
   </div>
 </div>
 
+<!-- ── Scorecard fill modal ── -->
+<div class="modal-bg" id="sc-modal" onclick="if(event.target===this)closeScorecardModal()">
+  <div class="modal" style="max-width:620px;max-height:90vh;overflow-y:auto">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:2px" id="sc-interview-info"></div>
+    <h3 id="sc-modal-title" style="margin-bottom:16px">Scorecard</h3>
+    <div id="sc-form-body"></div>
+    <div id="sc-err" style="display:none;color:#c00;font-size:13px;margin-bottom:10px;padding:8px 12px;background:#fde8e4;border-radius:6px"></div>
+    <div class="modal-btns" id="sc-btns">
+      <button class="btn btn-ghost" onclick="closeScorecardModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Panel feedback modal ── -->
+<div class="modal-bg" id="pf-modal" onclick="if(event.target===this)closePanelFeedbackModal()">
+  <div class="modal" style="max-width:700px;max-height:90vh;overflow-y:auto">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:2px" id="pf-interview-info"></div>
+    <h3 style="margin-bottom:16px">Panel Feedback</h3>
+    <div id="pf-body"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closePanelFeedbackModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
 const _tok = localStorage.getItem('egnex_token');
@@ -642,7 +787,8 @@ const NAV_DEF = {
     {id:'bot_health', icon:'🤖', label:'Bot Health'},
     {id:'database',   icon:'📁', label:'CV Database'},
     {id:'sys_logs',   icon:'📋', label:'System Logs'},
-    {id:'settings',   icon:'⚙️', label:'Settings'},
+    {id:'settings',        icon:'⚙️', label:'Settings'},
+    {id:'email_templates', icon:'✉️',  label:'Email Templates'},
   ],
   ta_manager: [
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
@@ -652,8 +798,9 @@ const NAV_DEF = {
     {id:'reports',            icon:'📊', label:'Reports & Analytics'},
     {id:'database',           icon:'📁', label:'CV Database'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
+    {id:'appeals',            icon:'⚖️', label:'Appeals'},
+    {id:'email_templates',    icon:'✉️',  label:'Email Templates'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
-    {id:'settings',           icon:'⚙️', label:'Settings'},
   ],
   recruiter: [
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
@@ -664,6 +811,7 @@ const NAV_DEF = {
     {id:'database',           icon:'📁', label:'CV Database'},
     {id:'my_reports',         icon:'📊', label:'My Reports'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
+    {id:'appeals',            icon:'⚖️', label:'Appeals'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
   hiring_manager: [
@@ -728,9 +876,12 @@ const SCREENS = {
   // nexai sessions drill-down (accessible via dashboard links only)
   nexai_sessions: screenNexAISessions,
   // settings (admin + ta_manager)
-  settings: screenSettings,
+  settings:        screenSettings,
+  // email templates (admin + ta_manager)
+  email_templates: screenEmailTemplates,
   // nexai tracker (ta_manager + recruiter)
   nexai_tracker: screenNexAITracker,
+  appeals:       screenAppeals,
 };
 
 function navigate(id, param) {
@@ -1238,6 +1389,7 @@ async function _dashRecruiter() {
   _mkCohort('dash-cohort',labels,rates,true);
   _mkDiversityDonut('dash-div-donut',fn,mn,un);
   _renderNexAICharts(nx, d.nexai_score_dist, d.nexai_recent, null);
+  _maybeInjectBaseUrlBanner();
 }
 
 // ── TA Manager Dashboard ───────────────────────────────────────────────────
@@ -1321,6 +1473,7 @@ async function _dashTAManager() {
     mkChart('dash-rec-bar',{type:'bar',data:{labels:recLoad.map(r=>r.full_name),datasets:[{label:'Open Reqs',data:recLoad.map(r=>r.open_reqs||0),backgroundColor:'#f15a22',borderRadius:3},{label:'Applications',data:recLoad.map(r=>r.total_applications||0),backgroundColor:'#2563eb',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{ticks:{font:{size:11}}}}}});
   }
   _renderNexAICharts(d.nexai_summary, d.nexai_score_dist, d.nexai_recent, d.nexai_by_recruiter);
+  _maybeInjectBaseUrlBanner();
 }
 
 // ── Hiring Manager Dashboard ───────────────────────────────────────────────
@@ -1748,7 +1901,7 @@ async function screenCandidates() {
       <td>${r.gender||'—'}</td>
       <td style="cursor:pointer;color:var(--accent)" onclick="navigate('kanban','${r.req_id}')">${r.requisition}</td>
       <td style="font-size:12px;color:var(--muted)">${r.recruiter_name||'—'}</td>
-      <td>${r.match_score!=null?Math.round(r.match_score):'—'}</td>
+      <td>${r.match_score!=null?`<span style="display:inline-flex;align-items:center;gap:5px">${Math.round(r.match_score)}<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:10px;line-height:1.4;min-height:0;border-color:var(--border)" onclick="event.stopPropagation();openScoreWhy('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}')">why?</button></span>`:'—'}</td>
       <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
       <td>${actions}</td>
@@ -1772,12 +1925,42 @@ async function screenInterviews() {
     api('/api/interviews'),
     api(`/api/google/status?recruiter_id=${ME.sub}`),
   ]);
-  const tRows = (rows||[]).map(r=>`
-    <tr><td>${r.candidate_name}</td><td>${r.requisition}</td><td>${r.round_name}</td>
-    <td>${r.scheduled_at?new Date(r.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}):'—'}</td>
-    <td><span class="pill ${r.status}">${r.status}</span></td>
-    <td>${r.meet_link?`<a href="${r.meet_link}" target="_blank" style="color:var(--accent)">Join</a>`:'—'}</td>
-    </tr>`).join('');
+  const canViewFeedback = ['admin','ta_manager','recruiter','hiring_manager'].includes(ME.role);
+  const tRows = (rows||[]).map(r=>{
+    const dt = r.scheduled_at
+      ? new Date(r.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})
+      : '—';
+    // Scorecard action for panelists
+    let scBtn = '';
+    if(r.is_on_panel){
+      if(r.my_scorecard_status==='submitted'){
+        scBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--green)" onclick="openScorecardModal('${r.id}')">✓ Submitted</button>`;
+      } else if(r.my_scorecard_status==='draft'){
+        scBtn=`<button class="btn btn-primary btn-sm" onclick="openScorecardModal('${r.id}')">Edit Draft</button>`;
+      } else {
+        scBtn=`<button class="btn btn-primary btn-sm" onclick="openScorecardModal('${r.id}')">Fill Scorecard</button>`;
+      }
+    }
+    // Panel feedback for observers (and panelists who submitted, as a secondary option)
+    let pfBtn = '';
+    if(canViewFeedback && !r.is_on_panel){
+      pfBtn=`<button class="btn btn-ghost btn-sm" onclick="openPanelFeedbackModal('${r.id}',false)">Panel Feedback</button>`;
+    } else if(r.is_on_panel && r.my_scorecard_status==='submitted'){
+      pfBtn=`<button class="btn btn-ghost btn-sm" onclick="openPanelFeedbackModal('${r.id}',true)">Panel Feedback</button>`;
+    }
+    const actions = scBtn||pfBtn
+      ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${scBtn}${pfBtn}</div>`
+      : '—';
+    return `<tr>
+      <td>${r.candidate_name}</td>
+      <td>${r.requisition}</td>
+      <td>${r.round_name}</td>
+      <td style="white-space:nowrap">${dt}</td>
+      <td><span class="pill ${r.status}">${r.status}</span></td>
+      <td>${r.meet_link?`<a href="${r.meet_link}" target="_blank" style="color:var(--accent)">Join</a>`:'—'}</td>
+      <td>${actions}</td>
+    </tr>`;
+  }).join('');
   document.getElementById('content').innerHTML = `
     <div class="page-header"><h1>Interviews</h1></div>
     <div class="card" style="margin-bottom:20px;max-width:400px">
@@ -1789,11 +1972,328 @@ async function screenInterviews() {
           <button class="btn btn-primary btn-sm" onclick="connectGCal()">Connect Google Calendar</button>`}
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      ${tRows?`<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th></tr></thead><tbody>${tRows}</tbody></table>`:'<p class="empty">No interviews scheduled yet.</p>'}
+      ${tRows
+        ?`<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th><th>Scorecard / Feedback</th></tr></thead><tbody>${tRows}</tbody></table>`
+        :'<p class="empty">No interviews scheduled yet.</p>'}
     </div>`;
 }
 function connectGCal(){window.location.href=`/api/google/connect?recruiter_id=${ME.sub}`;}
 async function disconnectGCal(){await api(`/api/google/disconnect?recruiter_id=${ME.sub}`,{method:'POST'});flash('Disconnected');screenInterviews();}
+
+// ── Scorecard modal ───────────────────────────────────────────────────────────
+let _scInterviewId = null;
+let _scFormSchema  = null;
+let _scLocked      = false;
+
+const _SC_LABELS = {1:'Poor',2:'Below avg',3:'Average',4:'Good',5:'Excellent'};
+const _VERDICT_COLOR = {
+  'Strong Hire':'pf-sh','Hire':'pf-h','No Hire':'pf-nh','Strong No Hire':'pf-snh',
+};
+
+function closeScorecardModal(){ document.getElementById('sc-modal').classList.remove('open'); }
+
+async function openScorecardModal(interviewId){
+  _scInterviewId = interviewId;
+  const modal = document.getElementById('sc-modal');
+  modal.classList.add('open');
+  document.getElementById('sc-form-body').innerHTML = '<p class="empty" style="padding:20px">Loading…</p>';
+  document.getElementById('sc-err').style.display = 'none';
+
+  const data = await api(`/api/interviews/${interviewId}/scorecard-form`);
+  if(!data){ document.getElementById('sc-form-body').innerHTML='<p class="empty" style="padding:20px">Could not load scorecard form.</p>'; return; }
+
+  _scFormSchema = data.form.schema;
+  _scLocked = data.my_scorecard.status === 'submitted';
+
+  document.getElementById('sc-interview-info').textContent =
+    `${data.interview.candidate_name} · ${data.interview.round_name} · ${data.interview.requisition}`;
+  document.getElementById('sc-modal-title').textContent =
+    _scLocked ? 'Scorecard (Submitted — read only)' :
+    (data.my_scorecard.status === 'draft' ? 'Scorecard (Draft saved)' : 'Fill Scorecard');
+
+  document.getElementById('sc-form-body').innerHTML =
+    _scRenderForm(data.form.schema, data.my_scorecard.form_data || {}, _scLocked);
+
+  const pfBtn = (data.can_see_others && !data.is_panelist) ||
+                (data.is_panelist && _scLocked)
+    ? `<button class="btn btn-ghost" onclick="closeScorecardModal();openPanelFeedbackModal('${interviewId}',${data.is_panelist})">View Panel Feedback →</button>`
+    : '';
+
+  if(_scLocked){
+    document.getElementById('sc-btns').innerHTML =
+      `<button class="btn btn-ghost" onclick="closeScorecardModal()">Close</button>${pfBtn}`;
+  } else if(data.is_panelist){
+    document.getElementById('sc-btns').innerHTML =
+      `<button class="btn btn-ghost" onclick="closeScorecardModal()">Cancel</button>
+       <button class="btn btn-ghost" id="sc-draft-btn" onclick="scSaveDraft()">Save Draft</button>
+       <button class="btn btn-primary" onclick="scSubmit()">Submit Scorecard</button>`;
+  } else {
+    document.getElementById('sc-btns').innerHTML =
+      `<button class="btn btn-ghost" onclick="closeScorecardModal()">Close</button>${pfBtn}`;
+  }
+}
+
+function _scRenderForm(schema, formData, locked){
+  let html = '';
+  let i = 0;
+  while(i < schema.length){
+    const f = schema[i];
+    // Note field — rendered inline with its parent rating; skip standalone
+    if(f.parent){ i++; continue; }
+
+    if(f.type === 'rating_5'){
+      const noteF = (i+1 < schema.length && schema[i+1].parent === f.key) ? schema[i+1] : null;
+      const curVal = formData[f.key] || 0;
+      const btns = [1,2,3,4,5].map(n=>
+        `<button type="button" class="sc-rb${curVal==n?' sel':''}" data-key="${f.key}" data-val="${n}"
+          onclick="scSetRating(this)" ${locked?'disabled':''}>${n}</button>`
+      ).join('');
+      const lbl = curVal ? `<span class="sc-rating-lbl">${_SC_LABELS[curVal]}</span>` : `<span class="sc-rating-lbl" id="scr-${f.key}-lbl"></span>`;
+      const noteHtml = noteF
+        ? `<input type="text" id="scf-${noteF.key}" class="sc-note"
+            style="width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:5px"
+            placeholder="Notes (optional)"
+            value="${(formData[noteF.key]||'').replace(/"/g,'&quot;')}"
+            ${locked?'disabled':''}>`
+        : '';
+      html += `<div class="sc-comp-row">
+        <div class="sc-comp-label">${f.label}${f.required?` <span class="sc-req">*</span>`:''}</div>
+        <div class="sc-rating-wrap" data-parent="${f.key}">${btns}${lbl}</div>
+        ${noteHtml}
+      </div>`;
+      i += noteF ? 2 : 1;
+      continue;
+    }
+
+    if(f.type === 'single_choice'){
+      const opts = (f.options||[]).map(opt=>{
+        const chk = formData[f.key]===opt ? 'checked' : '';
+        return `<label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;margin-right:8px">
+          <input type="radio" name="scr_${f.key}" value="${opt}" ${chk} ${locked?'disabled':''}
+            onchange="if(!this.disabled)scSetChoice('${f.key}',this.value)">${opt}</label>`;
+      }).join('');
+      html += `<div class="sc-comp-row">
+        <div class="sc-comp-label">${f.label}${f.required?` <span class="sc-req">*</span>`:''}</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">${opts}</div>
+      </div>`;
+    }
+
+    if(f.type === 'textarea'){
+      html += `<div class="sc-comp-row">
+        <div class="sc-comp-label">${f.label}${f.required?` <span class="sc-req">*</span>`:''}</div>
+        <textarea id="scf-${f.key}" rows="3"
+          style="width:100%;font-size:13px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;margin-top:6px;resize:vertical"
+          placeholder="Enter ${f.label.toLowerCase()}…"
+          ${locked?'disabled':''}>${formData[f.key]||''}</textarea>
+      </div>`;
+    }
+
+    i++;
+  }
+  return html;
+}
+
+function scSetRating(btn){
+  if(_scLocked) return;
+  const key = btn.dataset.key;
+  const val = parseInt(btn.dataset.val);
+  document.querySelectorAll(`.sc-rb[data-key="${key}"]`).forEach(b=>{
+    b.classList.toggle('sel', parseInt(b.dataset.val)===val);
+  });
+  const lbl = document.getElementById(`scr-${key}-lbl`);
+  if(lbl) lbl.textContent = _SC_LABELS[val] || '';
+}
+
+function scSetChoice(key, val){
+  // radio change is handled by onchange — nothing extra needed
+}
+
+function _scCollect(){
+  const fd = {};
+  if(!_scFormSchema) return fd;
+  for(const f of _scFormSchema){
+    if(f.type==='rating_5'){
+      const sel = document.querySelector(`.sc-rb[data-key="${f.key}"].sel`);
+      if(sel) fd[f.key] = parseInt(sel.dataset.val);
+    } else if(f.type==='single_choice'){
+      const chk = document.querySelector(`input[name="scr_${f.key}"]:checked`);
+      if(chk) fd[f.key] = chk.value;
+    } else if(f.type==='text'||f.type==='textarea'){
+      const el = document.getElementById(`scf-${f.key}`);
+      if(el && el.value.trim()) fd[f.key] = el.value.trim();
+    }
+  }
+  return fd;
+}
+
+async function scSaveDraft(){
+  const btn = document.getElementById('sc-draft-btn');
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  const res = await api(`/api/interviews/${_scInterviewId}/scorecard`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({form_data:_scCollect(),action:'draft'}),
+  });
+  if(btn){ btn.disabled=false; btn.textContent='Save Draft'; }
+  if(res){ flash('Draft saved.'); document.getElementById('sc-modal-title').textContent='Scorecard (Draft saved)'; }
+}
+
+async function scSubmit(){
+  document.getElementById('sc-err').style.display='none';
+  const fd = _scCollect();
+
+  // Client-side required check (mirrors server)
+  const missing = (_scFormSchema||[]).filter(f=>f.required && !fd[f.key]).map(f=>f.label);
+  if(missing.length){
+    const errEl = document.getElementById('sc-err');
+    errEl.textContent = 'Please fill required fields: ' + missing.join(', ');
+    errEl.style.display = 'block';
+    errEl.scrollIntoView({behavior:'smooth',block:'nearest'});
+    return;
+  }
+
+  const res = await api(`/api/interviews/${_scInterviewId}/scorecard`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({form_data:fd,action:'submit'}),
+  });
+  if(!res) return;
+
+  _scLocked = true;
+  flash('Scorecard submitted!');
+  const sc = res.scorecard;
+  const scoreDisplay = sc.overall_score ? sc.overall_score.toFixed(1) : '—';
+
+  document.getElementById('sc-form-body').innerHTML = `
+    <div style="text-align:center;padding:30px 0">
+      <p style="font-size:36px;margin-bottom:10px">✅</p>
+      <p style="font-weight:700;font-size:16px;margin-bottom:6px">Scorecard submitted</p>
+      <p style="font-size:13px;color:var(--muted)">Overall score: <strong>${scoreDisplay}/5</strong></p>
+    </div>`;
+
+  document.getElementById('sc-btns').innerHTML =
+    `<button class="btn btn-ghost" onclick="closeScorecardModal()">Close</button>
+     <button class="btn btn-primary" onclick="closeScorecardModal();openPanelFeedbackModal('${_scInterviewId}',true)">View Panel Feedback →</button>`;
+}
+
+// ── Panel feedback modal ──────────────────────────────────────────────────────
+
+function closePanelFeedbackModal(){ document.getElementById('pf-modal').classList.remove('open'); }
+
+async function openPanelFeedbackModal(interviewId, isPanelist){
+  const modal = document.getElementById('pf-modal');
+  modal.classList.add('open');
+  document.getElementById('pf-interview-info').textContent = '';
+  document.getElementById('pf-body').innerHTML = '<p class="empty" style="padding:20px">Loading…</p>';
+
+  // Bias guard: if panelist, verify they've submitted before fetching
+  if(isPanelist){
+    const formData = await api(`/api/interviews/${interviewId}/scorecard-form`);
+    if(formData && formData.is_panelist && formData.my_scorecard.status !== 'submitted'){
+      document.getElementById('pf-interview-info').textContent =
+        formData.interview ? `${formData.interview.candidate_name} · ${formData.interview.round_name}` : '';
+      document.getElementById('pf-body').innerHTML = `
+        <div style="text-align:center;padding:30px">
+          <p style="font-size:28px;margin-bottom:10px">🔒</p>
+          <p style="font-weight:600;margin-bottom:8px">Submit your scorecard first</p>
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">You must submit your own evaluation before you can see the rest of the panel's feedback.</p>
+          <button class="btn btn-primary" onclick="closePanelFeedbackModal();openScorecardModal('${interviewId}')">Fill my scorecard →</button>
+        </div>`;
+      return;
+    }
+  }
+
+  const data = await api(`/api/interviews/${interviewId}/panel-feedback`);
+  if(!data){
+    document.getElementById('pf-body').innerHTML = `
+      <div style="text-align:center;padding:30px;color:var(--muted)">
+        <p>Panel feedback not available.</p>
+        <p style="font-size:12px;margin-top:6px">If you are a panel member, make sure to submit your scorecard first.</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('pf-interview-info').textContent =
+    `${data.interview.candidate_name} · ${data.interview.round_name} · ${data.interview.requisition}`;
+  document.getElementById('pf-body').innerHTML = _renderPanelFeedbackHtml(data);
+}
+
+function _renderPanelFeedbackHtml(data){
+  const r = data.rollup;
+  const rl = r.rating_labels || {};
+
+  // Verdict pill helper
+  function pill(v){ return v ? `<span class="pf-verdict ${_VERDICT_COLOR[v]||''}">${v}</span>` : '—'; }
+
+  // Verdict roll-up bar
+  const vcHtml = Object.entries(r.verdict_counts||{}).map(([v,n])=>
+    `<span style="margin-right:10px">${pill(v)} <strong>${n}</strong></span>`
+  ).join('') || '<span style="color:var(--muted);font-size:12px">No submissions yet</span>';
+
+  // Panel completeness
+  const panelHtml = (data.panel_members||[]).map(m=>
+    `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:12px">
+      <span class="pf-panel-dot${m.submitted?'':' pending'}"></span>
+      ${m.full_name}${m.submitted?' ✓':''}
+    </span>`
+  ).join('') || '<span style="color:var(--muted);font-size:12px">No panel members found</span>';
+
+  // Avg ratings bar
+  const avgHtml = Object.keys(rl).length
+    ? Object.entries(rl).map(([k,lbl])=>{
+        const avg = r.avg_ratings[k];
+        return avg
+          ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px">
+              <span style="width:160px;color:var(--muted);flex-shrink:0">${lbl}</span>
+              <div style="flex:1;background:var(--border);border-radius:4px;height:8px">
+                <div style="width:${(avg/5*100).toFixed(0)}%;background:var(--accent);height:8px;border-radius:4px"></div>
+              </div>
+              <span style="width:30px;text-align:right;font-weight:600">${avg.toFixed(1)}</span>
+            </div>`
+          : '';
+      }).join('')
+    : '';
+
+  // Individual scorecards
+  const cardsHtml = (data.scorecards||[]).map(sc=>{
+    const ratingsHtml = Object.entries(sc.ratings||{}).map(([k,v])=>
+      rl[k] ? `<span style="font-size:11px;color:var(--muted);margin-right:10px">${rl[k]}: <strong>${v}/5</strong></span>` : ''
+    ).join('');
+    return `<div class="pf-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div>
+          <strong style="font-size:13px">${sc.interviewer_name}</strong>
+          <span style="font-size:11px;color:var(--muted);margin-left:6px">${sc.interviewer_role.replace(/_/g,' ')}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          ${pill(sc.recommendation)}
+          ${sc.overall_score ? `<span style="font-size:12px;font-weight:700;color:var(--accent)">${sc.overall_score.toFixed(1)}/5</span>` : ''}
+        </div>
+      </div>
+      ${ratingsHtml ? `<div style="margin-bottom:8px">${ratingsHtml}</div>` : ''}
+      ${sc.strengths ? `<p style="font-size:12px;margin-bottom:4px"><strong>Strengths:</strong> ${sc.strengths}</p>` : ''}
+      ${sc.concerns  ? `<p style="font-size:12px;margin-bottom:4px"><strong>Concerns:</strong> ${sc.concerns}</p>` : ''}
+      <p style="font-size:11px;color:var(--muted);margin-top:6px">Submitted ${sc.submitted_at ? new Date(sc.submitted_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '—'}</p>
+    </div>`;
+  }).join('') || '<p class="empty" style="padding:12px">No submitted scorecards yet.</p>';
+
+  return `
+    <!-- Roll-up summary -->
+    <div class="card" style="padding:16px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Recommendation Roll-up</div>
+      <div style="margin-bottom:10px">${vcHtml}</div>
+      ${r.avg_overall_score ? `<div style="font-size:13px;margin-bottom:12px">Average overall score: <strong style="color:var(--accent)">${r.avg_overall_score.toFixed(1)} / 5</strong></div>` : ''}
+      ${avgHtml ? `<div style="margin-top:8px">${avgHtml}</div>` : ''}
+    </div>
+
+    <!-- Panel completeness -->
+    <div style="margin-bottom:16px;font-size:13px">
+      <strong>Panel (${r.total_submitted}/${(data.panel_members||[]).length} submitted):</strong>
+      <div style="margin-top:6px">${panelHtml}</div>
+    </div>
+
+    <!-- Individual scorecards -->
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Individual Scorecards</div>
+    ${cardsHtml}`;
+}
 
 // ── SCREEN: Profiles to Review (HM) ──────────────────────────────────────────
 async function screenProfiles() {
@@ -2211,12 +2711,21 @@ async function screenNexAITracker(){
   const rows=data.invites||[];
 
   function statusPill(st){
-    const map={pending:'<span class="pill interviewing">Pending</span>',
-               in_progress:'<span class="pill open">In Progress</span>',
-               completed:'<span class="pill joined">Completed</span>',
-               expired:'<span class="pill on_hold">Expired</span>'};
+    const map={
+      pending:    '<span class="pill interviewing">Pending</span>',
+      in_progress:'<span class="pill open">In Progress</span>',
+      completed:  '<span class="pill joined">Completed</span>',
+      expired:    '<span class="pill on_hold">Expired</span>',
+      terminated: '<span class="pill rejected">Terminated</span>',
+    };
     return map[st]||st;
   }
+  const appealPillMap={
+    pending:     '<span class="pill p1" style="font-size:10px">Appeal pending</span>',
+    reviewed:    '<span class="pill open" style="font-size:10px">Appeal reviewed</span>',
+    relink_sent: '<span class="pill screen_passed" style="font-size:10px">Relinked</span>',
+    rejected:    '<span class="pill rejected" style="font-size:10px">Appeal rejected</span>',
+  };
   function fmt(dt){
     if(!dt) return '—';
     return new Date(dt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -2246,7 +2755,12 @@ async function screenNexAITracker(){
                 <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>
                 ${r.session_id?`<button class="btn btn-ghost btn-sm" style="font-size:11px;border-color:var(--accent);color:var(--accent)" onclick="openTranscript('${r.session_id}')">View transcript</button>`:''}
               </div>`
-            :''}
+            :r.invite_status==='terminated'
+              ?`<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">
+                  ${r.appeal_status?appealPillMap[r.appeal_status]||'':''}
+                  <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="navigate('appeals')">View appeal</button>
+                </div>`
+              :''}
       </td>
     </tr>`).join('');
 
@@ -2279,6 +2793,11 @@ async function screenNexAITracker(){
         <div style="font-size:12px;color:var(--muted);margin-top:4px">Expired</div>
         <div style="font-size:10px;color:var(--muted)">7-day limit passed</div>
       </div>
+      ${s.terminated?`<div class="card" style="text-align:center;padding:16px 12px;border-left:3px solid #c0392b">
+        <div style="font-size:28px;font-weight:800;color:#c0392b">${s.terminated}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Terminated</div>
+        <div style="font-size:10px;color:var(--muted)">Proctoring violation</div>
+      </div>`:''}
     </div>
 
     <!-- Detail table -->
@@ -2297,7 +2816,13 @@ async function screenNexAITracker(){
 }
 
 async function resendInvite(appId, name, email){
-  if(!confirm(`Resend AI interview invite to ${name} (${email})?`)) return;
+  const buStatus = await _ensureBaseUrlStatus();
+  if(buStatus?.is_localhost){
+    const msg = `⚠ BROKEN-LINK WARNING\n\nThe Public Base URL is set to:\n${buStatus.effective_base_url}\n\nCandidates will receive a link that does not work.\n\nTo fix: Admin → Settings → Public Base URL\n\nSend anyway?`;
+    if(!confirm(msg)) return;
+  } else {
+    if(!confirm(`Resend AI interview invite to ${name} (${email})?`)) return;
+  }
   let raw,res;
   try{
     raw=await fetch(`/api/nexai/resend-invite/${appId}`,{method:'POST',headers:{Authorization:`Bearer ${_tok}`}});
@@ -2434,11 +2959,189 @@ function closeTranscript() {
   document.getElementById('transcript-modal').classList.remove('open');
 }
 
+// ── SCREEN: Appeals ──────────────────────────────────────────────────────────
+
+async function screenAppeals() {
+  setTitle('Appeals');
+  const rows = await api('/api/nexai/appeals');
+  if (!rows) { showErr('Could not load appeals.'); return; }
+
+  if (!rows.length) {
+    document.getElementById('content').innerHTML = `
+      <div class="page-header"><h1>Appeals</h1></div>
+      <div class="card"><p class="empty">No proctoring appeals have been submitted yet.</p></div>`;
+    return;
+  }
+
+  const statusPillMap = {
+    pending:     '<span class="pill p1">Pending</span>',
+    reviewed:    '<span class="pill open">Reviewed</span>',
+    relink_sent: '<span class="pill screen_passed">Relinked</span>',
+    rejected:    '<span class="pill rejected">Rejected</span>',
+  };
+
+  const tRows = rows.map(r => `
+    <tr class="clickable-row" onclick="openAppealDetail('${r.id}')">
+      <td>
+        <strong>${r.candidate_name||'—'}</strong><br>
+        <span style="font-size:11px;color:var(--muted)">${r.candidate_email||''}</span>
+      </td>
+      <td style="font-size:12px">${r.requisition||'—'}</td>
+      <td style="font-size:12px;color:#b91c1c;max-width:160px">${r.termination_reason||'—'}</td>
+      <td style="font-size:12px;max-width:220px;white-space:normal;line-height:1.4">${(r.candidate_explanation||'—').slice(0,140)}${(r.candidate_explanation||'').length>140?'…':''}</td>
+      <td style="font-size:11px;color:var(--muted);white-space:nowrap">${r.created_at?new Date(r.created_at).toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'}):'—'}</td>
+      <td>${statusPillMap[r.status]||r.status}</td>
+    </tr>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>Appeals</h1></div>
+    <div class="card" style="padding:0;overflow:hidden">
+      <table>
+        <thead><tr>
+          <th>Candidate</th><th>Requisition</th><th>Termination reason</th>
+          <th>Candidate explanation</th><th>Submitted</th><th>Status</th>
+        </tr></thead>
+        <tbody>${tRows}</tbody>
+      </table>
+    </div>`;
+}
+
+async function openAppealDetail(appealId) {
+  const rows = await api('/api/nexai/appeals');
+  if (!rows) return;
+  const r = rows.find(x => x.id === appealId);
+  if (!r) return;
+
+  const fmt = dt => dt ? new Date(dt).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '—';
+  const statusOpts = ['pending','reviewed','relink_sent','rejected']
+    .map(s => `<option value="${s}"${s===r.status?' selected':''}>${s.replace('_',' ')}</option>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div style="margin-bottom:16px">
+      <button class="btn btn-ghost btn-sm" onclick="navigate('appeals')">← Back to Appeals</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+      <!-- Candidate & session info -->
+      <div class="card">
+        <div class="card-title">Appeal Details</div>
+        <table style="font-size:13px">
+          <tr><td style="color:var(--muted);padding:4px 8px 4px 0;white-space:nowrap">Candidate</td><td><strong>${r.candidate_name||'—'}</strong></td></tr>
+          <tr><td style="color:var(--muted);padding:4px 8px 4px 0">Email</td><td>${r.candidate_email||'—'}</td></tr>
+          <tr><td style="color:var(--muted);padding:4px 8px 4px 0">Requisition</td><td>${r.requisition||'—'}</td></tr>
+          <tr><td style="color:var(--muted);padding:4px 8px 4px 0">Submitted</td><td>${fmt(r.created_at)}</td></tr>
+          <tr><td style="color:var(--muted);padding:4px 8px 4px 0">Partial score</td><td>${r.raw_score!=null?Math.round(r.raw_score)+'%':'—'}</td></tr>
+        </table>
+        ${r.proctoring_session_id?`
+          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost btn-sm" onclick="navigate('proctoring_review')">View proctoring recording &amp; flags →</button>
+          </div>`:''}
+      </div>
+
+      <!-- Termination summary -->
+      <div class="card">
+        <div class="card-title">Termination Reason</div>
+        <p style="font-size:13px;color:#b91c1c;line-height:1.5">${r.termination_reason||'Not recorded'}</p>
+      </div>
+    </div>
+
+    <!-- Candidate explanation -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">Candidate Explanation</div>
+      <p style="font-size:13px;line-height:1.6;white-space:pre-wrap">${r.candidate_explanation||'—'}</p>
+    </div>
+
+    <!-- Recruiter review panel -->
+    <div class="card" id="appeal-review-card">
+      <div class="card-title">Recruiter Review</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:6px">Status</label>
+          <select id="appeal-status-sel" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px;font-family:inherit">
+            ${statusOpts}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:6px">Reviewer notes</label>
+          <textarea id="appeal-notes-ta" rows="3"
+            style="width:100%;border:1px solid var(--border);border-radius:4px;padding:8px 10px;font-size:13px;font-family:inherit;resize:vertical"
+            placeholder="Internal notes visible only to the recruiting team…">${r.recruiter_notes||''}</textarea>
+        </div>
+      </div>
+
+      ${r.reviewed_at?`<p style="font-size:11px;color:var(--muted);margin-top:10px">Last reviewed ${fmt(r.reviewed_at)}${r.reviewed_by_email?' by '+r.reviewed_by_email:''}</p>`:''}
+
+      <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+        <button class="btn btn-ghost" onclick="saveAppealNotes('${appealId}')">Save notes &amp; status</button>
+        ${r.status!=='relink_sent'&&r.status!=='rejected'?`
+          <button class="btn btn-primary" onclick="relinkAppeal('${appealId}','${(r.candidate_name||'').replace(/'/g,"\\'")}')">Reshare interview link</button>
+          <button class="btn btn-danger" onclick="rejectAppeal('${appealId}')">Reject appeal</button>
+        `:`<span style="font-size:12px;color:var(--muted);align-self:center">${r.status==='relink_sent'?'Fresh invite already sent.':'Appeal rejected.'}</span>`}
+      </div>
+    </div>`;
+}
+
+async function saveAppealNotes(appealId) {
+  const status = document.getElementById('appeal-status-sel').value;
+  const notes  = document.getElementById('appeal-notes-ta').value;
+  const ok = await api(`/api/nexai/appeals/${appealId}`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ status, recruiter_notes: notes }),
+  });
+  if (ok) flash('Saved.', true);
+}
+
+async function relinkAppeal(appealId, candidateName) {
+  if (!confirm(`Send a fresh interview link to ${candidateName}?\n\nThis will reset the terminated session and send a new invite email.`)) return;
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  const result = await api(`/api/nexai/appeals/${appealId}/relink`, { method: 'POST' });
+  if (result) {
+    flash(`Fresh invite sent to ${result.sent_to||candidateName}.`, true);
+    navigate('appeals');
+  } else {
+    btn.disabled = false;
+    btn.textContent = 'Reshare interview link';
+  }
+}
+
+async function rejectAppeal(appealId) {
+  if (!confirm('Reject this appeal? The candidate will not receive another link unless manually actioned.')) return;
+  const notes = document.getElementById('appeal-notes-ta').value;
+  const ok = await api(`/api/nexai/appeals/${appealId}`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ status: 'rejected', recruiter_notes: notes }),
+  });
+  if (ok) {
+    flash('Appeal rejected.', false);
+    navigate('appeals');
+  }
+}
+
 // ── SCREEN: Settings (TA Manager / Admin) ────────────────────────────────────
 async function screenSettings(){
   setTitle('Settings');
-  const cfg=await api('/api/admin/settings');
+  if(ME.role !== 'admin'){
+    document.getElementById('content').innerHTML=`
+      <div class="card" style="text-align:center;padding:60px 40px;max-width:480px;margin:40px auto">
+        <p style="font-size:32px;margin-bottom:12px">🔒</p>
+        <p style="font-weight:600;font-size:16px;margin-bottom:8px">Access restricted</p>
+        <p style="color:var(--muted);font-size:13px">Settings is for administrators only.<br>Contact your Egnex admin if you need to change system settings.</p>
+      </div>`;
+    return;
+  }
+  const [cfg,formCfg,baseUrlStatus]=await Promise.all([
+    api('/api/admin/settings'),
+    api('/api/admin/form-field-config').catch(()=>null),
+    api('/api/nexai/base-url-status').catch(()=>null),
+  ]);
   if(!cfg){showErr('Could not load settings.');return;}
+  const _buEffective = baseUrlStatus?.effective_base_url || cfg.app_base_url || 'http://localhost:8080';
+  const _buSource    = baseUrlStatus?.source || 'default';
+  const _buIsLocal   = baseUrlStatus?.is_localhost ?? _buEffective.includes('localhost');
 
   document.getElementById('content').innerHTML=`
     <div class="page-header"><h1>Settings</h1></div>
@@ -2490,11 +3193,19 @@ async function screenSettings(){
         </div>
       </details>
 
-      <div class="form-group" style="margin-bottom:12px">
-        <label>App base URL</label>
-        <input id="cfg-base-url" value="${cfg.app_base_url||'http://localhost:8000'}" placeholder="https://egnex.yourcompany.com">
-        <span style="font-size:11px;color:var(--muted)">Used in interview invite links sent to candidates.</span>
+      <div class="form-group" style="margin-bottom:4px">
+        <label>Public Base URL</label>
+        <input id="cfg-base-url" value="${cfg.app_base_url||''}" placeholder="https://egnex.amnex.com">
+        <span style="font-size:11px;color:var(--muted)">The URL candidates use to reach interviews, e.g. https://egnex.amnex.com. Must NOT be localhost in production.</span>
       </div>
+      ${_buIsLocal
+        ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:9px 12px;font-size:12px;color:#856404;margin-bottom:12px;display:flex;gap:8px">
+            <span style="flex-shrink:0">⚠</span>
+            <div><strong>Interview links are currently broken.</strong> Resolved URL: <code style="background:rgba(0,0,0,.07);padding:1px 4px;border-radius:3px">${_buEffective}</code> <span style="color:#a07020">(source: ${_buSource})</span>. Set a real production URL above and save.</div>
+           </div>`
+        : `<div style="background:#f0faf5;border:1px solid #b7e4cd;border-radius:4px;padding:9px 12px;font-size:12px;color:#1d6e56;margin-bottom:12px">
+            ✓ Resolved effective URL: <strong>${_buEffective}</strong> <span style="color:var(--muted)">(source: ${_buSource})</span>
+           </div>`}
 
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
@@ -2516,6 +3227,66 @@ async function screenSettings(){
         <li>Paste into the <strong>SendGrid API key</strong> field above → Save settings → Send test email</li>
       </ol>
     </div>`:''}`;
+  _appendAfsCard(formCfg);
+}
+
+function _appendAfsCard(formCfg){
+  const allFields=[
+    {key:'name',          label:'Candidate Name',    always:true},
+    {key:'email',         label:'Email',             always:true},
+    {key:'requisition',   label:'Requisition',       always:true},
+    {key:'phone',         label:'Phone Number'},
+    {key:'gender',        label:'Gender'},
+    {key:'years_experience', label:'Years of Experience'},
+    {key:'source',        label:'Source'},
+    {key:'resume',        label:'Resume Upload'},
+    {key:'current_company',     label:'Current Company'},
+    {key:'current_designation', label:'Current Designation'},
+    {key:'current_location',    label:'Current Location'},
+    {key:'current_ctc',         label:'Current CTC'},
+    {key:'expected_ctc',        label:'Expected CTC'},
+    {key:'notice_period',       label:'Notice Period'},
+    {key:'willing_to_relocate', label:'Willing to Relocate'},
+  ];
+  const required=new Set(formCfg?.required_fields||['name','email','phone','requisition','resume']);
+  const rows=allFields.map(f=>`
+    <tr>
+      <td style="padding:7px 10px 7px 0;font-size:13px">${f.label}</td>
+      <td style="padding:7px 0;text-align:center">
+        <input type="checkbox" id="afs-${f.key}"${(required.has(f.key)||f.always)?' checked':''}${f.always?' disabled':''}>
+      </td>
+      <td style="font-size:11px;color:var(--muted);padding:7px 0 7px 10px">${f.always?'Always required':''}</td>
+    </tr>`).join('');
+  const html=`<div class="card" style="max-width:580px;margin-top:20px">
+    <div class="card-title">Application Form Settings</div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Toggle which fields are required on the Submit Application form. Candidates see a * marker and cannot submit without filling required fields. CTC fields are always informational and never affect the screening score.</p>
+    <table style="margin-bottom:4px">
+      <thead><tr><th>Field</th><th style="text-align:center;min-width:70px">Required</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:14px">
+      <button class="btn btn-primary" onclick="_saveFormFieldConfig()">Save field settings</button>
+      <span id="afs-msg" style="font-size:13px"></span>
+    </div>
+  </div>`;
+  document.getElementById('content').insertAdjacentHTML('beforeend',html);
+}
+
+async function _saveFormFieldConfig(){
+  const keys=['name','email','requisition','phone','gender','years_experience','source','resume',
+    'current_company','current_designation','current_location','current_ctc',
+    'expected_ctc','notice_period','willing_to_relocate'];
+  const required=[];
+  for(const k of keys){
+    const el=document.getElementById('afs-'+k);
+    if(el&&(el.checked||el.disabled))required.push(k);
+  }
+  const msg=document.getElementById('afs-msg');
+  msg.textContent='Saving…';msg.style.color='var(--muted)';
+  const res=await api('/api/admin/form-field-config',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({required_fields:required})});
+  if(res?.ok){msg.textContent='Saved.';msg.style.color='#1d6e56';setTimeout(()=>msg.textContent='',2000);}
+  else{msg.textContent='Save failed.';msg.style.color='#c0392b';}
 }
 
 async function saveSettings(){
@@ -2535,6 +3306,7 @@ async function saveSettings(){
   const res=await api('/api/admin/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(res?.ok){
     msg.textContent='Saved successfully.';msg.style.color='#1d6e56';
+    _baseUrlStatus=null; // invalidate cache so next invite/banner reflects new URL
     document.getElementById('test-email-btn').disabled=false;
     setTimeout(()=>{msg.textContent='';},3000);
   } else {
@@ -2563,6 +3335,189 @@ async function testEmail(){
     msgEl.innerHTML=`<span style="color:#c0392b">⚠ ${detail}</span>`;
   }
   btn.disabled=false;btn.textContent='Send test email';
+}
+
+// ── SCREEN: Email Templates (Admin / TA Manager) ──────────────────────────────
+let _etTemplates = [];
+let _etCurrent   = null;
+
+async function screenEmailTemplates() {
+  setTitle('Email Templates');
+  if (!['admin','ta_manager'].includes(ME.role)) {
+    document.getElementById('content').innerHTML = `
+      <div class="card" style="text-align:center;padding:60px 40px;max-width:480px;margin:40px auto">
+        <p style="font-size:32px;margin-bottom:12px">🔒</p>
+        <p style="font-weight:600;font-size:16px;margin-bottom:8px">Access restricted</p>
+        <p style="color:var(--muted);font-size:13px">Email template management is for admins and TA managers only.</p>
+      </div>`;
+    return;
+  }
+  document.getElementById('content').innerHTML = `
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start">
+      <div>
+        <div class="card-title" style="margin-bottom:10px">Templates</div>
+        <div id="et-list" style="display:flex;flex-direction:column;gap:8px">
+          <div style="color:var(--muted);font-size:13px">Loading…</div>
+        </div>
+      </div>
+      <div id="et-editor">
+        <div class="card" style="text-align:center;padding:60px 20px;color:var(--muted);font-size:13px">
+          Select a template to edit
+        </div>
+      </div>
+    </div>`;
+  const templates = await api('/api/email-templates');
+  _etTemplates = templates;
+  _etRenderList();
+}
+
+function _etRenderList() {
+  const el = document.getElementById('et-list');
+  if (!el) return;
+  el.innerHTML = _etTemplates.map(t => `
+    <div class="card" id="et-card-${t.template_key}"
+         style="cursor:pointer;padding:12px 14px;transition:border-color .12s;border:1.5px solid ${_etCurrent===t.template_key?'var(--accent)':'var(--border)'}"
+         onclick="etOpenTemplate('${t.template_key}')">
+      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${t.name}</div>
+      <div style="font-size:11px;color:var(--muted)">${t.category||''}
+        ${t.is_customised
+          ? `<span style="margin-left:6px;background:#dff0eb;color:#1d6e56;border-radius:8px;padding:1px 7px;font-size:11px">customised</span>`
+          : `<span style="margin-left:6px;background:#f3f2ef;color:#9b9893;border-radius:8px;padding:1px 7px;font-size:11px">default</span>`}
+      </div>
+    </div>`).join('');
+}
+
+async function etOpenTemplate(key) {
+  _etCurrent = key;
+  _etRenderList();
+  const t = await api(`/api/email-templates/${key}`);
+  const phBtns = (t.valid_placeholders||[]).map(p =>
+    `<button class="btn btn-ghost btn-sm" onclick="etInsertPlaceholder('${p}')"
+       style="font-family:monospace;font-size:11px">{{${p}}}</button>`
+  ).join('');
+  document.getElementById('et-editor').innerHTML = `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div>
+          <div style="font-size:15px;font-weight:700">${t.name}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">
+            Key: <code style="background:#f3f2ef;padding:1px 4px;border-radius:4px">${t.template_key}</code>
+            ${t.source==='db'
+              ? `<span style="margin-left:8px;color:#1d6e56">● customised</span>`
+              : `<span style="margin-left:8px;color:var(--muted)">○ using default</span>`}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="etReset('${key}')">Reset to default</button>
+          <button class="btn btn-ghost btn-sm" onclick="etTestSend('${key}')">Send test</button>
+          <button class="btn btn-primary btn-sm" onclick="etSave('${key}')">Save</button>
+        </div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Available placeholders</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${phBtns}</div>
+      </div>
+
+      <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Subject</label>
+      <input id="et-subject" type="text" class="form-input"
+             style="margin:6px 0 14px" value="${_escAttr(t.subject)}" oninput="etUpdatePreview()">
+
+      <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Body (plain text)</label>
+      <textarea id="et-body" class="form-input" rows="12"
+                style="margin:6px 0 14px;font-family:monospace;font-size:13px;line-height:1.55;resize:vertical"
+                oninput="etUpdatePreview()">${_escText(t.body)}</textarea>
+
+      <div id="et-status" style="font-size:13px;min-height:18px;margin-bottom:14px"></div>
+
+      <div style="border-top:1px solid var(--border);padding-top:16px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+          Live preview
+          <span style="font-size:11px;color:#d97706;font-weight:400;text-transform:none;letter-spacing:0;margin-left:8px">sample values shown in amber</span>
+        </div>
+        <div id="et-preview-subject" style="font-size:13px;color:var(--muted);margin-bottom:6px"></div>
+        <pre id="et-preview-body"
+             style="background:#faf9f6;border:1px solid var(--border);border-radius:6px;padding:14px 16px;
+                    font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+      </div>
+    </div>`;
+
+  window._etSampleValues = t.sample_values || {};
+  etUpdatePreview();
+}
+
+function _escAttr(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function _escText(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function _etHighlight(text) {
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\{\{(\w+)\}\}/g, (_, k) => {
+      const v = window._etSampleValues && window._etSampleValues[k];
+      if (v) return `<span style="background:#fef3c7;color:#92400e;border-radius:2px;padding:0 2px">${v.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`;
+      return `<span style="background:#fee2e2;color:#991b1b;border-radius:2px;padding:0 2px">{{${k}}}</span>`;
+    });
+}
+
+function etUpdatePreview() {
+  const subj = document.getElementById('et-subject');
+  const body = document.getElementById('et-body');
+  const ps   = document.getElementById('et-preview-subject');
+  const pb   = document.getElementById('et-preview-body');
+  if (!subj || !body || !ps || !pb) return;
+  ps.innerHTML = '<span style="color:var(--muted);font-size:11px">Subject: </span>' + _etHighlight(subj.value);
+  pb.innerHTML = _etHighlight(body.value);
+}
+
+function etInsertPlaceholder(ph) {
+  const active = document.activeElement;
+  const target = (active && (active.id==='et-body'||active.id==='et-subject')) ? active
+                 : document.getElementById('et-body');
+  if (!target) return;
+  const s = target.selectionStart, e = target.selectionEnd;
+  const tok = `{{${ph}}}`;
+  target.value = target.value.slice(0,s) + tok + target.value.slice(e);
+  target.selectionStart = target.selectionEnd = s + tok.length;
+  target.focus();
+  etUpdatePreview();
+}
+
+async function etSave(key) {
+  const subject = (document.getElementById('et-subject')?.value||'').trim();
+  const body    = (document.getElementById('et-body')?.value||'').trim();
+  const status  = document.getElementById('et-status');
+  if (!subject || !body) { status.innerHTML = '<span style="color:#c00">Subject and body cannot be empty.</span>'; return; }
+  status.textContent = 'Saving…';
+  const res = await api(`/api/email-templates/${key}`, {method:'PUT', body:{subject, body}});
+  if (!res || res.detail) { status.innerHTML = `<span style="color:#c00">${res?.detail||'Save failed.'}</span>`; return; }
+  const warns = res.warnings || [];
+  status.innerHTML = warns.length
+    ? `<span style="color:#d97706">Saved. Warnings: ${warns.join('; ')}</span>`
+    : `<span style="color:#1d6e56">Saved.</span>`;
+  const templates = await api('/api/email-templates');
+  _etTemplates = templates;
+  _etRenderList();
+}
+
+async function etReset(key) {
+  if (!confirm('Reset to built-in default? Any customisations will be lost.')) return;
+  const status = document.getElementById('et-status');
+  status.textContent = 'Resetting…';
+  const res = await api(`/api/email-templates/${key}/reset`, {method:'POST'});
+  if (!res || res.detail) { status.innerHTML = `<span style="color:#c00">${res?.detail||'Reset failed.'}</span>`; return; }
+  status.innerHTML = '<span style="color:#1d6e56">Reset to default.</span>';
+  await etOpenTemplate(key);
+}
+
+async function etTestSend(key) {
+  const status = document.getElementById('et-status');
+  status.textContent = 'Sending test email…';
+  const res = await api(`/api/email-templates/${key}/test-send`, {method:'POST'});
+  if (!res || res.detail) {
+    status.innerHTML = `<span style="color:#c00">Failed: ${res?.detail||'unknown error'}</span>`;
+  } else {
+    status.innerHTML = `<span style="color:#1d6e56">Test email sent to <strong>${res.sent_to}</strong>.</span>`;
+  }
 }
 
 // ── SCREEN: TA Manager Reports ────────────────────────────────────────────────
@@ -2740,18 +3695,61 @@ async function openReqModal(){
 }
 function closeReqModal(){document.getElementById('req-modal').classList.remove('open');}
 
+// ── Base-URL status (cached, loaded lazily) ──────────────────────────────────
+let _baseUrlStatus = null;
+async function _ensureBaseUrlStatus(){
+  if(!_baseUrlStatus){
+    _baseUrlStatus = await api('/api/nexai/base-url-status').catch(()=>null);
+  }
+  return _baseUrlStatus;
+}
+function _baseUrlWarningBannerHtml(){
+  const url = _baseUrlStatus?.effective_base_url || 'localhost';
+  return `<div class="base-url-banner" style="background:#fff3cd;border:2px solid #ffc107;border-radius:6px;padding:12px 16px;margin-bottom:18px;display:flex;gap:10px;align-items:flex-start">
+    <span style="font-size:18px;flex-shrink:0">⚠</span>
+    <div style="font-size:13px;color:#856404;line-height:1.5">
+      <strong>Invite links are currently broken.</strong>
+      The resolved Public Base URL is <code style="background:rgba(0,0,0,.07);padding:1px 5px;border-radius:3px">${url}</code> — candidates will receive a link that does not work.
+      <span onclick="navigate('settings')" style="color:var(--accent);cursor:pointer;font-weight:600;text-decoration:underline;margin-left:4px">Set Public Base URL in Settings →</span>
+    </div>
+  </div>`;
+}
+async function _maybeInjectBaseUrlBanner(){
+  const status = await _ensureBaseUrlStatus();
+  if(!status?.is_localhost) return;
+  const content = document.getElementById('content');
+  if(content && !content.querySelector('.base-url-banner')){
+    content.insertAdjacentHTML('afterbegin', _baseUrlWarningBannerHtml());
+  }
+}
+
 // ── NexAI Invite helpers ─────────────────────────────────────────────────────
 let _inviteAppId=null;
-function sendNexAIInvite(appId, name, email, event){
+let _inviteLocalhostConfirmed=false;
+async function sendNexAIInvite(appId, name, email, event){
   if(event) event.stopPropagation();
   _inviteAppId=appId;
+  _inviteLocalhostConfirmed=false;
   document.getElementById('inv-name').textContent=name||'Candidate';
   document.getElementById('inv-email').textContent=email||'(no email on record)';
   document.getElementById('inv-result').style.display='none';
   document.getElementById('inv-btns').style.display='';
   document.getElementById('inv-send-btn').disabled=false;
   document.getElementById('inv-send-btn').textContent='📧 Send invite';
+  document.getElementById('inv-send-btn').style.background='';
   document.getElementById('nexai-invite-modal').classList.add('open');
+  // Check base URL in background — show warning if localhost
+  const status = await _ensureBaseUrlStatus();
+  const warnEl = document.getElementById('inv-localhost-warn');
+  const urlEl  = document.getElementById('inv-localhost-url');
+  if(status?.is_localhost){
+    if(urlEl) urlEl.textContent = status.effective_base_url;
+    if(warnEl) warnEl.style.display='';
+    const btn = document.getElementById('inv-send-btn');
+    if(btn){ btn.textContent='⚠ Send anyway (broken link)'; btn.style.background='#b08423'; }
+  } else {
+    if(warnEl) warnEl.style.display='none';
+  }
 }
 function closeInviteModal(){document.getElementById('nexai-invite-modal').classList.remove('open');}
 async function confirmSendInvite(){
@@ -3024,122 +4022,405 @@ async function submitReq(){
 }
 
 // ── Apply helpers ─────────────────────────────────────────────────────────────
-let _applyMode='file';
+let _amCurrentTab=0;
+let _amTextMode=false;
+let _amRequiredFields=new Set(['name','email','phone','requisition','resume']);
+
+function _amVal(id){return(document.getElementById(id)?.value||'').trim();}
+
 async function openApplyModal(reqId){
   document.getElementById('am-result').style.display='none';
-  ['am-name','am-email','am-phone','am-years'].forEach(id=>document.getElementById(id).value='');
+  _amTextMode=false;
+  document.getElementById('am-text-area').style.display='none';
+  document.getElementById('am-file-wrap').style.display='';
+  ['am-name','am-email','am-phone','am-years',
+   'am-cur-company','am-cur-desig','am-cur-loc',
+   'am-cur-fixed','am-cur-var','am-cur-bonus','am-cur-total',
+   'am-exp-fixed','am-exp-var','am-exp-bonus','am-exp-total',
+   'am-notice','am-text'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){el.value='';el.classList.remove('am-autofilled');}
+  });
   document.getElementById('am-file').value='';
-  document.getElementById('am-text').value='';
-  const ps=document.getElementById('am-parse-status');if(ps){ps.style.display='none';ps.textContent='';}
+  document.getElementById('am-relocate').value='';
+  document.getElementById('am-source').value='linkedin';
+  document.getElementById('am-gender').value='undisclosed';
+  const ps=document.getElementById('am-parse-status');
+  if(ps){ps.style.display='block';ps.textContent='';}
   const reqs=await api('/api/requisitions');
-  document.getElementById('am-req').innerHTML=(reqs||[]).map(r=>`<option value="${r.id}"${r.id===reqId?' selected':''}>${r.title} — ${r.business_unit}</option>`).join('');
-  setApplyMode('file');
+  document.getElementById('am-req').innerHTML=(reqs||[]).map(r=>
+    `<option value="${r.id}"${r.id===reqId?' selected':''}>${r.title} — ${r.business_unit}</option>`
+  ).join('');
+  try{
+    const cfg=await api('/api/admin/form-field-config');
+    _amRequiredFields=new Set(cfg?.required_fields||['name','email','phone','requisition','resume']);
+  }catch{
+    _amRequiredFields=new Set(['name','email','phone','requisition','resume']);
+  }
+  _amApplyRequiredMarkers();
+  amGoTab(0);
   document.getElementById('apply-modal').classList.add('open');
 }
+
 function closeApplyModal(){document.getElementById('apply-modal').classList.remove('open');}
-function setApplyMode(m){
-  _applyMode=m;
-  document.getElementById('am-tab-file').classList.toggle('active',m==='file');
-  document.getElementById('am-tab-text').classList.toggle('active',m==='text');
-  document.getElementById('am-file-area').style.display=m==='file'?'':'none';
-  document.getElementById('am-text-area').style.display=m==='text'?'':'none';
+
+function amGoTab(n){
+  for(let i=0;i<4;i++){
+    document.getElementById('am-panel-'+i).style.display='none';
+    document.getElementById('am-tab-'+i).classList.remove('active');
+  }
+  document.getElementById('am-panel-'+n).style.display='';
+  document.getElementById('am-tab-'+n).classList.add('active');
+  _amCurrentTab=n;
+  if(n===3)_amBuildReview();
+  document.getElementById('am-prev-btn').style.display=n>0?'':'none';
+  document.getElementById('am-next-btn').style.display=n<3?'':'none';
+  document.getElementById('am-submit-btn').style.display=n===3?'':'none';
 }
+function amNextTab(){if(_amCurrentTab<3)amGoTab(_amCurrentTab+1);}
+function amPrevTab(){if(_amCurrentTab>0)amGoTab(_amCurrentTab-1);}
+
+function _amToggleResume(){
+  _amTextMode=!_amTextMode;
+  document.getElementById('am-file-wrap').style.display=_amTextMode?'none':'';
+  document.getElementById('am-text-area').style.display=_amTextMode?'':'none';
+}
+
+function _amSumCTC(prefix){
+  const f=parseFloat(document.getElementById(`am-${prefix}-fixed`).value)||0;
+  const v=parseFloat(document.getElementById(`am-${prefix}-var`).value)||0;
+  const b=parseFloat(document.getElementById(`am-${prefix}-bonus`).value)||0;
+  const t=f+v+b;
+  document.getElementById(`am-${prefix}-total`).value=t>0?'₹'+t.toLocaleString('en-IN'):'';
+}
+
+function _amApplyRequiredMarkers(){
+  const map={
+    requisition:'am-lbl-requisition',name:'am-lbl-name',email:'am-lbl-email',
+    phone:'am-lbl-phone',gender:'am-lbl-gender',years_experience:'am-lbl-years_experience',
+    source:'am-lbl-source',resume:'am-lbl-resume',
+    current_company:'am-lbl-current_company',current_designation:'am-lbl-current_designation',
+    current_location:'am-lbl-current_location',current_ctc:'am-lbl-current_ctc',
+    expected_ctc:'am-lbl-expected_ctc',notice_period:'am-lbl-notice_period',
+    willing_to_relocate:'am-lbl-willing_to_relocate',
+  };
+  for(const[key,lblId]of Object.entries(map)){
+    const el=document.getElementById(lblId);
+    if(!el)continue;
+    el.textContent=el.textContent.replace(/\s*\*$/,'');
+    if(_amRequiredFields.has(key))el.textContent+=' *';
+  }
+}
+
 async function _autoFillFromResume(input){
-  const file=input.files[0];
-  if(!file) return;
+  const file=input.files[0];if(!file)return;
   const statusEl=document.getElementById('am-parse-status');
-  statusEl.textContent='Parsing resume…';statusEl.style.display='block';
+  statusEl.textContent='Parsing resume…';statusEl.style.display='block';statusEl.style.color='var(--muted)';
   const fd=new FormData();fd.append('file',file);
   let res;
   try{
     const r=await fetch('/api/parse-resume-contact',{method:'POST',headers:{Authorization:`Bearer ${_tok}`},body:fd});
-    if(r.ok) res=await r.json();
+    if(r.ok)res=await r.json();
   }catch{}
   if(res){
     const filled=[],missing=[];
-    if(res.full_name){document.getElementById('am-name').value=res.full_name;filled.push('name');}else{missing.push('name');}
-    if(res.email){document.getElementById('am-email').value=res.email;filled.push('email');}else{missing.push('email');}
-    if(res.phone){document.getElementById('am-phone').value=res.phone;filled.push('phone');}else{missing.push('phone');}
+    function _setFill(id,val,label){
+      const el=document.getElementById(id);if(!el)return;
+      if(val){el.value=val;el.classList.add('am-autofilled');filled.push(label);
+        el.addEventListener('input',()=>el.classList.remove('am-autofilled'),{once:true});}
+      else missing.push(label);
+    }
+    _setFill('am-name',res.full_name,'name');
+    _setFill('am-email',res.email,'email');
+    _setFill('am-phone',res.phone,'phone');
+    _setFill('am-cur-company',res.current_company,'company');
+    _setFill('am-cur-desig',res.current_designation,'designation');
     let msg='';
-    if(filled.length) msg+=`Auto-filled: ${filled.join(', ')}.`;
-    if(missing.length) msg+=(msg?' ':'')+`Please fill manually: ${missing.join(', ')}.`;
-    statusEl.textContent=msg||'Resume parsed.';
-    statusEl.style.color=missing.length?'#c0392b':'var(--muted)';
-  } else {
+    if(filled.length)msg+=`Auto-filled: ${filled.join(', ')}.`;
+    const manual=[];
+    if(!res.current_company)manual.push('current company');
+    if(!res.current_designation)manual.push('current designation');
+    manual.push('CTC','notice period','relocation');
+    const notFound=missing.filter(f=>['name','email','phone'].includes(f));
+    if(notFound.length)msg+=(msg?' ':'')+`Please fill manually: ${notFound.join(', ')}.`;
+    if(manual.length)msg+=`\nNot found in resume — fill manually: ${manual.join(', ')}.`;
+    statusEl.innerHTML=msg.split('\n').map(l=>`<span>${l}</span>`).join('<br>');
+    statusEl.style.color=notFound.length?'#c0392b':'#1d6e56';
+  }else{
     statusEl.textContent='Could not parse resume — please fill in details manually.';
     statusEl.style.color='#c0392b';
   }
 }
 
+function _amBuildReview(){
+  const get=id=>(document.getElementById(id)?.value||'').trim();
+  const reqOpt=document.getElementById('am-req');
+  const reqText=reqOpt?reqOpt.options[reqOpt.selectedIndex]?.text||'':'';
+  const relocOpt=document.getElementById('am-relocate');
+  const relocText=relocOpt?relocOpt.options[relocOpt.selectedIndex]?.text||'':'';
+  const fileEl=document.getElementById('am-file');
+  const resumeLabel=fileEl?.files[0]?.name||(get('am-text')?'Pasted text':'—');
+  const sections=[
+    {title:'Personal',rows:[
+      ['Requisition',reqText],['Name',get('am-name')],['Email',get('am-email')],
+      ['Phone',get('am-phone')],['Gender',get('am-gender')],
+      ['Years of exp.',get('am-years')],['Source',get('am-source')],['Resume',resumeLabel],
+    ]},
+    {title:'Current role',rows:[
+      ['Current company',get('am-cur-company')],['Designation',get('am-cur-desig')],
+      ['Location',get('am-cur-loc')],
+      ['CTC Fixed',get('am-cur-fixed')?'₹'+Number(get('am-cur-fixed')).toLocaleString('en-IN'):''],
+      ['CTC Variable',get('am-cur-var')?'₹'+Number(get('am-cur-var')).toLocaleString('en-IN'):''],
+      ['CTC Total',get('am-cur-total')],
+    ]},
+    {title:'Expected',rows:[
+      ['Exp. CTC Fixed',get('am-exp-fixed')?'₹'+Number(get('am-exp-fixed')).toLocaleString('en-IN'):''],
+      ['Exp. CTC Variable',get('am-exp-var')?'₹'+Number(get('am-exp-var')).toLocaleString('en-IN'):''],
+      ['Exp. CTC Total',get('am-exp-total')],
+      ['Notice period',get('am-notice')?get('am-notice')+' days':''],
+      ['Willing to relocate',relocText&&relocText!=='— not specified —'?relocText:''],
+    ]},
+  ];
+  let html='';
+  for(const s of sections){
+    const rows=s.rows.filter(r=>r[1]&&r[1]!=='—').map(r=>
+      `<tr><td style="color:var(--muted);width:42%;padding:5px 10px 5px 0;font-size:12px">${r[0]}</td>
+       <td style="font-weight:500;font-size:13px;padding:5px 0">${r[1]}</td></tr>`
+    ).join('');
+    if(!rows)continue;
+    html+=`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin:14px 0 4px">${s.title}</div>
+      <table style="width:100%;margin-bottom:2px">${rows}</table>`;
+  }
+  document.getElementById('am-review-body').innerHTML=html||'<p style="color:var(--muted)">No fields filled.</p>';
+}
+
 async function submitApply(){
   const btn=document.getElementById('am-submit-btn');
-  btn.disabled=true;btn.textContent='Screening…';
+  btn.disabled=true;btn.textContent='Screening candidate…';
   const resEl=document.getElementById('am-result');resEl.style.display='none';
   let _reqId=null;
-  try {
+  try{
     _reqId=document.getElementById('am-req').value;
-    const name=document.getElementById('am-name').value.trim();
-    const email=document.getElementById('am-email').value.trim();
-    if(!name){_showApplyErr('Candidate name is required.');return;}
-    if(!email||!email.includes('@')){_showApplyErr('Valid email is required.');return;}
-    const phone=document.getElementById('am-phone').value.trim();
+    const name=_amVal('am-name'),email=_amVal('am-email'),phone=_amVal('am-phone');
     const gender=document.getElementById('am-gender').value;
     const years=document.getElementById('am-years').value;
-    let res,rawErr=null;
-    if(_applyMode==='file'){
-      const file=document.getElementById('am-file').files[0];
-      if(!file){_showApplyErr('Select a resume file first.');return;}
+    const source=document.getElementById('am-source').value;
+    const errs=[];
+    if(_amRequiredFields.has('requisition')&&!_reqId)errs.push('Requisition is required');
+    if(_amRequiredFields.has('name')&&!name)errs.push('Candidate name is required');
+    if(_amRequiredFields.has('email')&&(!email||!email.includes('@')))errs.push('Valid email is required');
+    if(_amRequiredFields.has('phone')&&!phone)errs.push('Phone number is required');
+    if(_amRequiredFields.has('current_company')&&!_amVal('am-cur-company'))errs.push('Current company is required');
+    if(_amRequiredFields.has('current_designation')&&!_amVal('am-cur-desig'))errs.push('Current designation is required');
+    if(_amRequiredFields.has('current_location')&&!_amVal('am-cur-loc'))errs.push('Current location is required');
+    if(_amRequiredFields.has('notice_period')&&!document.getElementById('am-notice').value)errs.push('Notice period is required');
+    if(_amRequiredFields.has('willing_to_relocate')&&!document.getElementById('am-relocate').value)errs.push('Willing to relocate is required');
+    const fileEl=document.getElementById('am-file');
+    const hasFile=fileEl.files[0];
+    const hasText=document.getElementById('am-text').value.trim();
+    if(_amRequiredFields.has('resume')&&!hasFile&&!hasText)errs.push('Resume is required');
+    if(errs.length){_showApplyErr(errs.join('<br>'));return;}
+    const relocVal=document.getElementById('am-relocate').value;
+    const ext={
+      source,
+      current_company:_amVal('am-cur-company')||null,
+      current_designation:_amVal('am-cur-desig')||null,
+      current_location:_amVal('am-cur-loc')||null,
+      current_ctc_fixed:parseFloat(document.getElementById('am-cur-fixed').value)||null,
+      current_ctc_variable:parseFloat(document.getElementById('am-cur-var').value)||null,
+      current_ctc_bonus:parseFloat(document.getElementById('am-cur-bonus').value)||null,
+      expected_ctc_fixed:parseFloat(document.getElementById('am-exp-fixed').value)||null,
+      expected_ctc_variable:parseFloat(document.getElementById('am-exp-var').value)||null,
+      expected_ctc_bonus:parseFloat(document.getElementById('am-exp-bonus').value)||null,
+      notice_period_days:parseInt(document.getElementById('am-notice').value)||null,
+      willing_to_relocate:relocVal==='yes'?'yes':relocVal==='no'?'no':null,
+    };
+    let res;
+    if(!_amTextMode&&hasFile){
       const fd=new FormData();
       fd.append('requisition_id',_reqId);fd.append('full_name',name);fd.append('email',email);
-      if(phone) fd.append('phone',phone);
-      fd.append('gender',gender);if(years)fd.append('years_experience',years);fd.append('file',file);
+      if(phone)fd.append('phone',phone);fd.append('gender',gender);
+      if(years)fd.append('years_experience',years);fd.append('file',hasFile);
+      for(const[k,v]of Object.entries(ext)){if(v!==null&&v!==undefined)fd.append(k,String(v));}
       let r;
       try{r=await fetch('/api/apply/upload',{method:'POST',headers:{Authorization:`Bearer ${_tok}`},body:fd});}
       catch{_showApplyErr('Network error — check your connection.');return;}
-      if(!r.ok){
-        let d='Server error';try{const j=await r.json();d=j.detail||d;}catch{}
-        _showApplyErr(d);return;
-      }
+      if(!r.ok){let d='Server error';try{const j=await r.json();d=j.detail||d;}catch{}_showApplyErr(d);return;}
       res=await r.json();
     }else{
-      const text=document.getElementById('am-text').value.trim();
-      if(!text){_showApplyErr('Paste resume text first.');return;}
+      if(!hasText){_showApplyErr('Paste resume text or upload a file.');return;}
       let _tr;
       try{_tr=await fetch('/api/apply',{method:'POST',
         headers:{'Content-Type':'application/json',Authorization:`Bearer ${_tok}`},
-        body:JSON.stringify({requisition_id:_reqId,full_name:name,email,phone:phone||null,gender,
-          years_experience:parseFloat(years)||null,resume_text:text})});}
+        body:JSON.stringify({requisition_id:_reqId,full_name:name,email,
+          phone:phone||null,gender,years_experience:parseFloat(years)||null,
+          resume_text:hasText,...ext})});}
       catch{_showApplyErr('Network error — check your connection.');return;}
-      if(!_tr.ok){
-        let d='Server error';try{const j=await _tr.json();d=j.detail||d;}catch{}
-        _showApplyErr(d);return;
-      }
+      if(!_tr.ok){let d='Server error';try{const j=await _tr.json();d=j.detail||d;}catch{}_showApplyErr(d);return;}
       res=await _tr.json();
     }
     if(res.detail){_showApplyErr(res.detail);return;}
     const b=res.breakdown||{};
     const scoreColor=res.match_score>=60?'#1d6e56':res.match_score>=40?'var(--gold)':'var(--accent)';
+    const dimRows=_screeningDimRows(b);
+    const aiHtml=_screeningAiHtml(b);
+    const stabilityWarn=b.stability_status==='pending_manual'
+      ?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ Tenure could not be parsed — stability pending recruiter input</p>`:'';
     resEl.innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
         <div>
           <span style="font-size:28px;font-weight:700;color:${scoreColor}">${Math.round(res.match_score??0)}</span>
           <span style="font-size:12px;color:var(--muted)"> / 100</span>
-          <div style="margin-top:6px;font-size:13px">
-            Skills matched: <strong>${b.skills_matched_count??'—'}/${b.skills_total??'—'}</strong><br>
-            Matched: ${(b.matched_skills||[]).join(', ')||'—'}<br>
-            Missing: ${(b.missing_skills||[]).join(', ')||'—'}
-          </div>
-          ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ ${res.warning}</p>`:''}
         </div>
         <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="closeApplyModal();navigate('kanban','${_reqId}')">View in pipeline →</button>
-      </div>`;
+      </div>
+      <div style="font-size:13px;margin-bottom:8px">
+        Skills matched: <strong>${b.skills_matched_count??'—'}/${b.skills_total??'—'}</strong>
+        &nbsp;·&nbsp; Matched: ${(b.matched_skills||[]).join(', ')||'—'}
+        ${(b.missing_skills||[]).length?`<br>Missing: <span style="color:var(--muted)">${b.missing_skills.join(', ')}</span>`:''}
+      </div>
+      ${dimRows?`<table style="font-size:12px;margin-bottom:8px;width:100%">${dimRows}</table>`:''}
+      ${aiHtml}
+      ${stabilityWarn}
+      ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:4px">⚠ ${res.warning}</p>`:''}`;
     resEl.style.display='block';
-  } finally {btn.disabled=false;btn.textContent='Submit & screen';}
+  }finally{btn.disabled=false;btn.textContent='Submit & screen';}
 }
 function _showApplyErr(msg){
   const resEl=document.getElementById('am-result');
   resEl.innerHTML=`<p style="color:#c0392b;font-size:13px;margin:0">⚠ ${msg}</p>`;
   resEl.style.display='block';
+}
+
+// ── Screening breakdown helpers ───────────────────────────────────────────────
+
+function _screeningDimRows(b) {
+  if (!b||!b.weights) return '';
+  const w=b.weights;
+  const dims=[
+    {label:'Keyword match',   score:b.skills_score,     weight:w.keyword,    show: w.keyword>0},
+    {label:'Experience',      score:b.experience_score, weight:w.experience, show: w.experience>0},
+    {label:'AI holistic fit', score:b.ai_score,         weight:w.ai,         show: w.ai>0},
+    {label:'Stability',       score:b.stability_score,  weight:w.stability,  show: w.stability>0},
+  ].filter(d=>d.show && d.score!=null);
+  if(!dims.length) return '';
+  return `<thead><tr><th style="font-weight:600;color:var(--muted)">Dimension</th><th>Score</th><th>Weight</th><th>Contrib</th></tr></thead><tbody>`+
+    dims.map(d=>{
+      const contrib=Math.round(d.score*d.weight);
+      const c=_scoreColor(d.score);
+      return `<tr><td>${d.label}</td><td style="font-weight:700;color:${c}">${Math.round(d.score)}</td><td style="color:var(--muted)">${Math.round(d.weight*100)}%</td><td>${contrib}</td></tr>`;
+    }).join('')+'</tbody>';
+}
+
+function _screeningAiHtml(b) {
+  if (!b||b.scored_by==='fallback'||(!b.strengths&&!b.concerns&&!b.rationale)) return '';
+  return `<div style="margin-top:8px;padding:10px 12px;background:#faf9f6;border-radius:6px;border:1px solid var(--border);font-size:12px">
+    <div style="font-weight:600;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">AI Assessment</div>
+    ${b.strengths?`<div style="margin-bottom:4px"><span style="color:#1d6e56;font-weight:600">Strengths:</span> ${b.strengths}</div>`:''}
+    ${b.concerns?`<div style="margin-bottom:4px"><span style="color:#c0392b;font-weight:600">Concerns:</span> ${b.concerns}</div>`:''}
+    ${b.rationale?`<div><span style="font-weight:600;color:var(--muted)">Rationale:</span> ${b.rationale}</div>`:''}
+  </div>`;
+}
+
+// ── Score-Why modal ───────────────────────────────────────────────────────────
+
+let _swAppId = null;
+
+async function openScoreWhy(appId, candidateName) {
+  _swAppId = appId;
+  document.getElementById('sw-title').textContent = 'Score Breakdown — '+candidateName;
+  document.getElementById('sw-body').innerHTML = '<p class="empty" style="padding:16px 0">Loading…</p>';
+  document.getElementById('sw-rescreen-btn').style.display = 'none';
+  document.getElementById('score-why-modal').classList.add('open');
+
+  const d = await api('/api/applications/'+appId+'/screening-detail');
+  if (!d) {
+    document.getElementById('sw-body').innerHTML = '<p style="color:#c0392b">Could not load screening detail.</p>';
+    return;
+  }
+
+  const b   = d.score_breakdown || {};
+  const aid = d.ai_screen_detail || {};
+  // Merge AI detail into b for helper functions
+  const merged = Object.assign({}, b, aid);
+
+  const dimRows      = _screeningDimRows(merged);
+  const aiHtml       = _screeningAiHtml(merged);
+  const isPending    = d.stability_status === 'pending_manual';
+  const isExperienced= b.is_experienced;
+
+  let stabilityBlock = '';
+  if (d.stability_status === 'computed' && d.avg_tenure_months != null) {
+    stabilityBlock = `<div style="font-size:12px;color:var(--muted);margin-top:4px">
+      Avg tenure: <strong>${Math.round(d.avg_tenure_months)} months</strong>
+      &nbsp;·&nbsp; Stability score: <strong>${Math.round(d.stability_score??0)}</strong>
+    </div>`;
+  } else if (isPending) {
+    stabilityBlock = `<div style="margin-top:10px;padding:10px 12px;background:#fffbee;border:1px solid #f6d860;border-radius:6px;font-size:12px">
+      <div style="font-weight:600;margin-bottom:6px;color:#7a5c00">Tenure pending — stability score not yet computed</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label style="white-space:nowrap">Avg tenure (months):</label>
+        <input id="sw-tenure-input" type="number" min="1" max="600" placeholder="e.g. 18"
+               style="width:80px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+        <button class="btn btn-primary btn-sm" onclick="_saveManualTenure()">Save &amp; recalculate</button>
+      </div>
+      <div id="sw-tenure-err" style="color:#c0392b;font-size:11px;margin-top:4px;display:none"></div>
+    </div>`;
+  } else if (d.stability_status === 'not_applicable') {
+    stabilityBlock = `<div style="font-size:12px;color:var(--muted);margin-top:4px">
+      Stability: not applicable (fresher / low-experience candidate)
+    </div>`;
+  }
+
+  const scoreColor = _scoreColor(d.match_score);
+  document.getElementById('sw-body').innerHTML = `
+    <div style="margin-bottom:12px">
+      <span style="font-size:26px;font-weight:700;color:${scoreColor}">${d.match_score!=null?Math.round(d.match_score):'—'}</span>
+      <span style="font-size:12px;color:var(--muted)"> / 100 match score</span>
+      ${isPending?'<span style="margin-left:10px;font-size:11px;color:#7a5c00;background:#fffbee;padding:2px 7px;border-radius:8px;border:1px solid #f6d860">stability pending</span>':''}
+    </div>
+    ${dimRows?`<table style="font-size:12px;margin-bottom:10px;width:100%">${dimRows}</table>`:'<p style="font-size:12px;color:var(--muted)">No dimension detail available.</p>'}
+    ${stabilityBlock}
+    ${aiHtml}`;
+
+  document.getElementById('sw-rescreen-btn').style.display = 'inline-flex';
+}
+
+function closeScoreWhy() {
+  document.getElementById('score-why-modal').classList.remove('open');
+  _swAppId = null;
+}
+
+async function _saveManualTenure() {
+  const input  = document.getElementById('sw-tenure-input');
+  const errEl  = document.getElementById('sw-tenure-err');
+  const months = parseFloat(input.value);
+  errEl.style.display = 'none';
+  if (!months || months <= 0) {
+    errEl.textContent = 'Enter a positive number of months.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const r = await api('/api/applications/'+_swAppId+'/manual-tenure', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({avg_tenure_months: months}),
+  });
+  if (!r) { errEl.textContent = 'Save failed. Retry.'; errEl.style.display='block'; return; }
+  flash('Tenure saved — score updated to '+r.match_score);
+  closeScoreWhy();
+}
+
+async function _doRescreen() {
+  if (!_swAppId) return;
+  document.getElementById('sw-rescreen-btn').disabled = true;
+  document.getElementById('sw-rescreen-btn').textContent = 'Rescreening…';
+  const r = await api('/api/applications/'+_swAppId+'/re-screen', {method:'POST'});
+  document.getElementById('sw-rescreen-btn').disabled = false;
+  document.getElementById('sw-rescreen-btn').textContent = 'Re-screen';
+  if (!r) { flash('Re-screen failed. Check server logs.'); return; }
+  flash('Re-screened — new score: '+r.match_score);
+  closeScoreWhy();
 }
 
 // ── Change password ───────────────────────────────────────────────────────────
@@ -4157,6 +5438,7 @@ async function screenSysHealth() {
     const TC={'open':'#f15a22','in_progress':'#2563eb','resolved':'#1d6e56'};
     mkChart('sh-tickets-pie',{type:'doughnut',data:{labels:tStats.map(t=>t.status.replace(/_/g,' ')),datasets:[{data:tStats.map(t=>parseInt(t.n||0)),backgroundColor:tStats.map(t=>TC[t.status]||'#6b6760'),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
+  _maybeInjectBaseUrlBanner();
 }
 
 // ── SCREEN: Admin — Support Tickets ──────────────────────────────────────────

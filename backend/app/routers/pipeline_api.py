@@ -710,12 +710,24 @@ def list_candidates(user: dict = Depends(get_current_user)):
 def list_interviews(user: dict = Depends(get_current_user)):
     role = user["role"]
     uid  = user["sub"]
+
+    _sc_status_sub = (
+        "(SELECT s.status FROM scorecard s "
+        "WHERE s.interview_id = i.id AND s.interviewer_id = %s LIMIT 1) AS my_scorecard_status"
+    )
+    _panel_sub = (
+        "EXISTS(SELECT 1 FROM interview_panel ip "
+        "WHERE ip.interview_id = i.id AND ip.interviewer_id = %s) AS is_on_panel"
+    )
+
     if role == "recruiter":
         return query(
-            """
+            f"""
             SELECT i.id, i.scheduled_at, i.status, i.meet_link, i.mode,
                    c.full_name AS candidate_name, r.title AS requisition,
-                   rc.name AS round_name
+                   rc.name AS round_name, a.id AS application_id,
+                   {_panel_sub},
+                   {_sc_status_sub}
             FROM interview i
             JOIN application  a  ON a.id  = i.application_id
             JOIN candidate    c  ON c.id  = a.candidate_id
@@ -725,13 +737,36 @@ def list_interviews(user: dict = Depends(get_current_user)):
                  ON rr.requisition_id = r.id AND rr.recruiter_id = %s
             ORDER BY i.scheduled_at DESC NULLS LAST
             """,
-            [uid],
+            [uid, uid, uid],
         )
+
+    if role == "interviewer":
+        # Pure interviewers see only their own panel assignments
+        return query(
+            f"""
+            SELECT i.id, i.scheduled_at, i.status, i.meet_link, i.mode,
+                   c.full_name AS candidate_name, r.title AS requisition,
+                   rc.name AS round_name, a.id AS application_id,
+                   TRUE AS is_on_panel,
+                   {_sc_status_sub}
+            FROM interview i
+            JOIN application  a  ON a.id  = i.application_id
+            JOIN candidate    c  ON c.id  = a.candidate_id
+            JOIN requisition  r  ON r.id  = a.requisition_id
+            JOIN round_config rc ON rc.id = i.round_config_id
+            JOIN interview_panel ip ON ip.interview_id = i.id AND ip.interviewer_id = %s
+            ORDER BY i.scheduled_at DESC NULLS LAST
+            """,
+            [uid, uid],
+        )
+
     return query(
-        """
+        f"""
         SELECT i.id, i.scheduled_at, i.status, i.meet_link, i.mode,
                c.full_name AS candidate_name, r.title AS requisition,
-               rc.name AS round_name
+               rc.name AS round_name, a.id AS application_id,
+               {_panel_sub},
+               {_sc_status_sub}
         FROM interview i
         JOIN application  a  ON a.id  = i.application_id
         JOIN candidate    c  ON c.id  = a.candidate_id
@@ -739,7 +774,7 @@ def list_interviews(user: dict = Depends(get_current_user)):
         JOIN round_config rc ON rc.id = i.round_config_id
         ORDER BY i.scheduled_at DESC NULLS LAST
         """,
-        [],
+        [uid, uid],
     )
 
 
