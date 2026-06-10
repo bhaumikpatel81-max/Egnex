@@ -3769,7 +3769,6 @@ async function screenTAReports(){
 }
 
 function setPeriod(p){_period=p;const s=SCREENS[_currentScreen||'reports'];if(s)s();else screenTAReports();}
-let _currentScreen=null;
 
 async function loadAllPivots(scope, yr){
   const base=`/api/reports2/${scope}`;
