@@ -126,8 +126,14 @@ def _require_settings_access(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def _require_admin_settings(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    return user
+
+
 @router.get("/settings")
-def get_settings(user: dict = Depends(_require_settings_access)):
+def get_settings(user: dict = Depends(_require_admin_settings)):
     rows = query("SELECT key, value, updated_at FROM system_settings")
     stored = {r["key"]: r["value"] for r in (rows or [])}
     result = {}
@@ -149,7 +155,7 @@ class SaveSettingsIn(BaseModel):
 
 
 @router.post("/settings")
-def save_settings(body: SaveSettingsIn, user: dict = Depends(_require_settings_access)):
+def save_settings(body: SaveSettingsIn, user: dict = Depends(_require_admin_settings)):
     updates = {
         "smtp_user":      body.smtp_user,
         "smtp_host":      body.smtp_host,
@@ -221,7 +227,7 @@ def save_form_field_config(
 
 
 @router.post("/settings/test-email")
-async def test_email(user: dict = Depends(_require_settings_access)):
+async def test_email(user: dict = Depends(_require_admin_settings)):
     """
     Verify SMTP credentials and send a test email.
     Runs async with a hard 10-second timeout so the browser never hangs.

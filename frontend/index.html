@@ -894,6 +894,10 @@ const NAV_DEF = {
     {id:'my_reports',   icon:'📊', label:'My Reports'},
     {id:'raise_ticket', icon:'🎫', label:'Raise a Ticket'},
   ],
+  interviewer: [
+    {id:'interviews',   icon:'📅', label:'Interviews'},
+    {id:'raise_ticket', icon:'🎫', label:'Raise a Ticket'},
+  ],
 };
 
 function buildNav() {
@@ -1871,7 +1875,7 @@ async function screenKanban(reqId) {
             <button class="btn btn-ghost btn-sm" style="font-size:11px;color:#c0392b;border-color:#e8c5c0" onclick="rejectScreening('${c.app_id}');event.stopPropagation()">✕</button>
           </div>`:''}
         ${canNexAI&&col.status==='screen_passed'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%" onclick="sendNexAIInvite('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}','${(c.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`:''}
-        ${canApply&&col.status==='selected'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%;background:var(--green)" onclick="openCreateOfferModal('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}',event)">📄 Create Offer</button>`:''}
+        ${canApply&&col.status==='selected'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%;background:var(--green)" onclick="openCreateOfferModal('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}',event,'${reqId}')">📄 Create Offer</button>`:''}
       </div>`).join('');
     return `
       <div class="kb-col">
@@ -1970,7 +1974,7 @@ async function screenCandidates() {
       } else if(r.status==='screen_passed'){
         actions=`<button class="btn btn-primary btn-sm" onclick="sendNexAIInvite('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}','${(r.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`;
       } else if(r.status==='selected'){
-        actions=`<button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openCreateOfferModal('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}',event)">📄 Create Offer</button>`;
+        actions=`<button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openCreateOfferModal('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}',event,'${r.req_id||''}')">📄 Create Offer</button>`;
       } else if(r.req_id){
         actions=`<button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>`;
       }
@@ -5900,7 +5904,7 @@ async function screenOffers(){
 }
 
 // ── Create Offer modal ───────────────────────────────────────────────────────
-let _coAppId=null;
+let _coAppId=null,_coReqId=null;
 function _calcOfferCTC(){
   const f=parseFloat(document.getElementById('co-fixed').value)||0;
   const v=parseFloat(document.getElementById('co-variable').value)||0;
@@ -5908,18 +5912,31 @@ function _calcOfferCTC(){
   document.getElementById('co-total').value=(f||v||b)?f+v+b:'';
 }
 
-async function openCreateOfferModal(appId,candidateName,event){
+async function openCreateOfferModal(appId,candidateName,event,reqId){
   if(event) event.stopPropagation();
   _coAppId=appId;
+  _coReqId=reqId||null;
   document.getElementById('co-cand-name').textContent=candidateName||'Candidate';
   ['co-designation','co-notes'].forEach(id=>document.getElementById(id).value='');
   ['co-fixed','co-variable','co-bonus','co-total'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('co-joining').value='';
-  // Show chain preview for this candidate's requisition
-  const appInfo=await api(`/api/offers`).then(rows=>(rows||[]).find(r=>false)).catch(()=>null);
-  document.getElementById('co-chain-preview').innerHTML='<em>Approval chain will be loaded from the requisition configuration.</em>';
+  // Load actual approval chain for this requisition
+  const preview=document.getElementById('co-chain-preview');
+  if(reqId){
+    preview.innerHTML='<em style="color:var(--muted)">Loading approval chain…</em>';
+    const chain=await api(`/api/requisitions/${reqId}/offer-approvers`).catch(()=>null);
+    if(chain&&chain.length){
+      const steps=chain.map(s=>`<span style="display:inline-flex;align-items:center;gap:4px"><span style="background:var(--accent);color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0">${s.sequence}</span>${s.full_name}</span>`).join('<span style="margin:0 4px;color:var(--muted)">→</span>');
+      preview.innerHTML=`<div style="border:1px solid var(--border);border-radius:4px;padding:7px 10px"><div style="font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--muted);margin-bottom:4px">APPROVAL CHAIN</div><div style="font-size:12px;display:flex;flex-wrap:wrap;align-items:center;gap:4px">${steps}</div></div>`;
+    } else {
+      preview.innerHTML=`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:6px 10px;font-size:12px">⚠ No approval chain configured for this requisition. Set one up in <strong>Offers &amp; Approvals</strong> before creating an offer.</div>`;
+    }
+  } else {
+    preview.innerHTML='';
+  }
   document.getElementById('co-submit-btn').disabled=false;
   document.getElementById('co-submit-btn').textContent='Send for Approval';
+  document.getElementById('co-submit-btn').onclick=submitCreateOffer;
   document.getElementById('create-offer-modal').classList.add('open');
 }
 function closeCreateOfferModal(){document.getElementById('create-offer-modal').classList.remove('open');}

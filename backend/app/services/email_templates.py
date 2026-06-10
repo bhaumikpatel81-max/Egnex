@@ -190,16 +190,31 @@ DEFAULTS: dict[str, dict] = {
 
 # ── Sample data for live preview ──────────────────────────────────────────────
 SAMPLE_VALUES: dict[str, str] = {
-    "candidate_name":  "Rimjhim Rai",
-    "job_title":       "Account Manager – Sales",
-    "company_name":    "Amnex Infotechnologies Pvt Ltd",
-    "interview_link":  "https://egnex.amnex.com/nexai-interview?token=preview_sample",
-    "ai_score":        "78/100",
-    "strengths":       "Strong communication, relevant industry experience, clear articulation of achievements.",
-    "concerns":        "Limited enterprise CRM experience — probe on technical sales cycle management.",
-    "interview_time":  "Thursday, 12 June 2026 at 11:00 AM IST",
-    "meet_link":       "https://meet.google.com/abc-defg-hij",
-    "recruiter_name":  "Priya Sharma",
+    "candidate_name":     "Rimjhim Rai",
+    "job_title":          "Account Manager – Sales",
+    "company_name":       "Amnex Infotechnologies Pvt Ltd",
+    "interview_link":     "https://egnex.amnex.com/nexai-interview?token=preview_sample",
+    "ai_score":           "78/100",
+    "strengths":          "Strong communication, relevant industry experience, clear articulation of achievements.",
+    "concerns":           "Limited enterprise CRM experience — probe on technical sales cycle management.",
+    "interview_time":     "Thursday, 12 June 2026 at 11:00 AM IST",
+    "meet_link":          "https://meet.google.com/abc-defg-hij",
+    "recruiter_name":     "Priya Sharma",
+    # meeting_summary placeholders
+    "interview_date":     "12 June 2026",
+    "discussion_points":  "Candidate's sales experience, key accounts managed, CRM tools used.",
+    "overall_note":       "Strong candidate — recommend advancing to panel interview.",
+    # offer email placeholders
+    "approver_name":      "Rajesh Mehta",
+    "designation":        "Senior Account Manager",
+    "total_ctc":          "₹14,00,000",
+    "joining_date":       "01 August 2026",
+    "step_num":           "1",
+    "total_steps":        "3",
+    "approved_at":        "12 June 2026 at 2:30 PM",
+    "rejected_at":        "12 June 2026 at 2:30 PM",
+    "notes":              "All requirements met.",
+    "darwin_ref":         "STUB-DRW-2026001",
 }
 
 

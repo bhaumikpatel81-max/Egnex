@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth import get_current_user
+from ..auth_utils import get_current_user
 from ..connectors import send_email
 from ..db import query, query_one
 from ..services.email_templates import (
@@ -92,7 +92,7 @@ def save_template(key: str, payload: TemplateSavePayload, user=Depends(_require_
             """UPDATE email_template
                SET subject = %s, body = %s, updated_at = now(), updated_by = %s
                WHERE template_key = %s""",
-            [payload.subject, payload.body, user["id"], key],
+            [payload.subject, payload.body, user["sub"], key],
             fetch=False,
         )
     else:
@@ -104,7 +104,7 @@ def save_template(key: str, payload: TemplateSavePayload, user=Depends(_require_
                 dflt["name"], payload.subject, payload.body,
                 dflt.get("category", ""), key,
                 json.dumps(dflt["valid_placeholders"]),
-                user["id"],
+                user["sub"],
             ],
             fetch=False,
         )
@@ -123,7 +123,7 @@ def reset_template(key: str, user=Depends(_require_template_access)):
         """UPDATE email_template
            SET subject = %s, body = %s, updated_at = now(), updated_by = %s
            WHERE template_key = %s""",
-        [dflt["subject"], dflt["body"], user["id"], key],
+        [dflt["subject"], dflt["body"], user["sub"], key],
         fetch=False,
     )
     return {"ok": True}
@@ -138,7 +138,7 @@ def test_send_template(key: str, user=Depends(_require_template_access)):
     if key not in DEFAULTS:
         raise HTTPException(404, f"Unknown template key '{key}'")
 
-    user_row = query_one("SELECT email, full_name FROM app_user WHERE id = %s", [user["id"]])
+    user_row = query_one("SELECT email, full_name FROM app_user WHERE id = %s", [user["sub"]])
     if not user_row:
         raise HTTPException(404, "User not found")
 

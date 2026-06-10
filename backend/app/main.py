@@ -116,6 +116,37 @@ def _auto_migrate():
         "ALTER TABLE proctoring_session ADD COLUMN IF NOT EXISTS proctoring_complete BOOLEAN NOT NULL DEFAULT FALSE",
         # Migration 19: email-sent guard to prevent duplicate completion emails (added 2026-06)
         "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS email_sent BOOLEAN NOT NULL DEFAULT FALSE",
+        # Migration 20: nexai_session terminated_proctoring status + termination_reason (added 2026-06)
+        # Drop + recreate the status CHECK so it includes 'terminated_proctoring'
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'nexai_session'::regclass AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE nexai_session DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """ALTER TABLE nexai_session ADD CONSTRAINT nexai_session_status_check
+           CHECK (status IN ('pending','in_progress','completed','failed','terminated_proctoring'))""",
+        "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS termination_reason TEXT",
+        # Migration 21: proctoring appeal workflow (added 2026-06)
+        """CREATE TABLE IF NOT EXISTS proctoring_appeal (
+            id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            application_id        UUID NOT NULL REFERENCES application(id),
+            nexai_session_id      UUID NOT NULL REFERENCES nexai_session(id),
+            candidate_explanation TEXT NOT NULL,
+            status                TEXT NOT NULL DEFAULT 'pending'
+                CHECK (status IN ('pending','reviewed','relink_sent','rejected')),
+            recruiter_notes       TEXT,
+            created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+            reviewed_by           UUID REFERENCES app_user(id),
+            reviewed_at           TIMESTAMPTZ,
+            UNIQUE (nexai_session_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_proctoring_appeal_application ON proctoring_appeal(application_id)",
+        "CREATE INDEX IF NOT EXISTS idx_proctoring_appeal_status ON proctoring_appeal(status)",
         # Migration 22: real AI screening columns + stability dimension (added 2026-06)
         "ALTER TABLE application ADD COLUMN IF NOT EXISTS ai_fit_score      NUMERIC",
         "ALTER TABLE application ADD COLUMN IF NOT EXISTS ai_screen_detail  JSONB",
@@ -743,8 +774,10 @@ class AdvanceIn(BaseModel):
 
 
 @app.post("/api/applications/{application_id}/advance")
-def advance(application_id: str, payload: AdvanceIn):
-    return pipeline.advance(application_id, payload.to_status, payload.actor_id, payload.note)
+def advance(application_id: str, payload: AdvanceIn, request: Request):
+    if request.state.user.get("role") not in ("recruiter", "ta_manager", "admin"):
+        return JSONResponse(status_code=403, content={"detail": "Not authorised to advance application stage"})
+    return pipeline.advance(application_id, payload.to_status, request.state.user.get("sub"), payload.note)
 
 
 @app.get("/api/requisitions/{requisition_id}/chart")
@@ -762,7 +795,9 @@ class ScheduleIn(BaseModel):
 
 
 @app.post("/api/schedule")
-def schedule(payload: ScheduleIn):
+def schedule(payload: ScheduleIn, request: Request):
+    if request.state.user.get("role") not in ("recruiter", "ta_manager", "admin"):
+        return JSONResponse(status_code=403, content={"detail": "Not authorised to schedule interviews"})
     app_row = query_one(
         """SELECT a.id, c.email, c.full_name, r.title AS job_title
            FROM application a

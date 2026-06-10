@@ -529,12 +529,12 @@ def process_transcript(interview_id: str, recruiter_id: str) -> None:
                       fetch_status="summary_failed",
                       fetch_error=f"Groq summarization failed: {exc}")
         print(f"[transcript] {interview_id}: Groq failed: {exc}")
-        # Still send email with raw transcript fallback
+        # Still send email but with a clean message — never expose raw exception to recruiter
         summary = {
             "discussion_points": [],
-            "strengths":    "— (summarization failed, see raw transcript below)",
+            "strengths":    "Automatic summary could not be generated. The full transcript is available in Egnex for your review.",
             "concerns":     "—",
-            "overall_note": f"Summarization failed: {exc}",
+            "overall_note": "Automatic summary could not be generated; please review the full transcript in Egnex.",
         }
 
     # ── Step 6: email recruiter ────────────────────────────────────────────────
