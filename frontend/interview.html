@@ -353,7 +353,9 @@ async function apiPublic(path, opts={}) {
     return;
   }
   if (res._err || !res.valid) {
-    if (res.reason === 'already_completed') {
+    if (res.reason === 'terminated_proctoring') {
+      showStep('step-terminated');
+    } else if (res.reason === 'already_completed') {
       showErr('', 'You have successfully completed the interview already.');
     } else {
       showErr(res.reason || res._err || 'Invalid link');

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..auth_utils import get_current_user
-from ..connectors import send_email
+from ..services.connectors import send_email
 from ..db import query, query_one
 from ..services.email_templates import (
     DEFAULTS,

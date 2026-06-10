@@ -885,8 +885,10 @@ def validate_invite(token: str):
     )
     if not row:
         return {"valid": False, "reason": "This interview link is invalid."}
-    # Permanently closed after completion or proctoring termination
-    if row["session_status"] in ("completed", "terminated_proctoring"):
+    # Permanently closed after completion; terminated sessions show the appeal screen instead
+    if row["session_status"] == "terminated_proctoring":
+        return {"valid": False, "reason": "terminated_proctoring"}
+    if row["session_status"] == "completed":
         return {"valid": False, "reason": "already_completed"}
     exp = row["expires_at"]
     if exp and exp.replace(tzinfo=None) < datetime.utcnow():
