@@ -1,0 +1,856 @@
+"""
+Offers & Approvals API — Feature 5.
+
+Approval flow (sequential per requisition chain)
+-------------------------------------------------
+ Create offer   → status=pending_approval, current_step=1
+                  → email step-1 approver ("action required")
+
+ Approve step N → if N < total: current_step=N+1
+                               → email next approver
+                  if N = total: status=approved
+                               → push_offer_to_darwin()
+                               → status=sent_to_darwinbox
+                               → application→offered
+                  → audit email (recruiter + all TA managers) on EACH step
+
+ Reject step N  → status=revising, revise_note=reason
+                  application stays at offer_stage
+                  → email recruiter + TA managers
+
+ Resubmit       → restart chain (delete + recreate pending steps)
+                  current_step=1, status=pending_approval
+                  → email step-1 approver again
+
+ On Hold        → offer status=on_hold, application→offer_on_hold
+ Cancel         → offer status=cancelled, application→offer_cancelled
+
+Role-based visibility (server-enforced)
+---------------------------------------
+ recruiter           — offers for their requisitions only
+ ta_manager / admin  — all offers + full history
+ hiring_manager      — offers for reqs they are HM of
+ any authenticated   — if they are in a pending step, they see that offer
+"""
+import json
+from datetime import date, datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from ..db import query, query_one
+from ..auth_utils import get_current_user
+from ..services.connectors import send_email, push_offer_to_darwin
+from ..services.email_templates import render_template
+
+router = APIRouter(prefix="/api", tags=["offers"])
+
+# ── Pydantic models ────────────────────────────────────────────────────────────
+
+class ApproverChainIn(BaseModel):
+    approvers: list[str]   # ordered list of app_user UUIDs
+
+
+class CreateOfferIn(BaseModel):
+    application_id: str
+    designation: str
+    joining_date: str           # ISO date  "YYYY-MM-DD"
+    fixed_ctc: Optional[float]   = None
+    variable_ctc: Optional[float] = None
+    bonus_ctc: Optional[float]   = None
+    notes: Optional[str]         = None
+
+
+class EditOfferIn(BaseModel):
+    designation: Optional[str]   = None
+    joining_date: Optional[str]  = None
+    fixed_ctc: Optional[float]   = None
+    variable_ctc: Optional[float] = None
+    bonus_ctc: Optional[float]   = None
+    notes: Optional[str]         = None
+
+
+class ApproveIn(BaseModel):
+    notes: Optional[str] = None
+
+
+class RejectIn(BaseModel):
+    notes: str    # mandatory — approver must state a reason
+
+
+class OfferStatusIn(BaseModel):
+    status: str   # "on_hold" or "cancelled"
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _assert_offer_role(user: dict, offer_row: dict):
+    """
+    Raise 403 if the calling user cannot see this offer at all.
+    Allowed:
+      - admin / ta_manager → always
+      - recruiter           → must own the requisition
+      - hiring_manager      → must be HM for the requisition
+      - any                 → if they have any approval step on this offer
+    """
+    role = user["role"]
+    uid  = user["sub"]
+
+    if role in ("admin", "ta_manager"):
+        return
+
+    if role == "recruiter":
+        ok = query_one(
+            "SELECT 1 FROM requisition_recruiter WHERE requisition_id=%s AND recruiter_id=%s",
+            [str(offer_row["requisition_id"]), uid],
+        )
+        if ok:
+            return
+
+    if role == "hiring_manager":
+        ok = query_one(
+            "SELECT 1 FROM requisition WHERE id=%s AND hiring_manager_id=%s",
+            [str(offer_row["requisition_id"]), uid],
+        )
+        if ok:
+            return
+
+    # Any role: check if they are in the approval chain for this offer
+    step_ok = query_one(
+        "SELECT 1 FROM offer_approval_step WHERE offer_id=%s AND approver_id=%s",
+        [str(offer_row["id"]), uid],
+    )
+    if step_ok:
+        return
+
+    raise HTTPException(403, "Not authorised to view this offer")
+
+
+def _total_ctc(fixed, variable, bonus):
+    return round((fixed or 0) + (variable or 0) + (bonus or 0), 2)
+
+
+def _fmt_inr(val) -> str:
+    if val is None:
+        return "—"
+    try:
+        return f"₹{int(val):,}"
+    except Exception:
+        return str(val)
+
+
+def _send_offer_email(template_key: str, values: dict, to_emails: list[str]) -> None:
+    """Fire-and-forget offer notification — never crashes the workflow."""
+    if not to_emails:
+        return
+    try:
+        subject, body = render_template(template_key, values)
+        for addr in to_emails:
+            try:
+                send_email(addr, subject, body)
+            except Exception as exc:
+                print(f"[offers] email to {addr} failed: {exc}")
+    except Exception as exc:
+        print(f"[offers] render_template({template_key}) failed: {exc}")
+
+
+def _ta_manager_emails() -> list[str]:
+    rows = query(
+        "SELECT email FROM app_user WHERE role='ta_manager' AND is_active=TRUE",
+        [],
+    )
+    return [r["email"] for r in (rows or []) if r.get("email")]
+
+
+def _recruiter_email(submitted_by: str) -> Optional[str]:
+    row = query_one("SELECT email FROM app_user WHERE id=%s", [submitted_by])
+    return row["email"] if row else None
+
+
+def _approver_email(approver_id: str) -> Optional[str]:
+    row = query_one("SELECT email, full_name FROM app_user WHERE id=%s", [approver_id])
+    return (row["email"], row["full_name"]) if row else (None, "—")
+
+
+def _create_pending_steps(offer_id: str, requisition_id: str) -> int:
+    """
+    Delete ALL existing steps for this offer and recreate them from the
+    current req_offer_approver chain.  Returns total step count.
+
+    Called on initial create (no prior steps) and on resubmit (need clean slate so
+    previously-approved/rejected history rows don't collide with new pending rows).
+    """
+    query(
+        "DELETE FROM offer_approval_step WHERE offer_id=%s",
+        [offer_id], fetch=False,
+    )
+    chain = query(
+        """SELECT approver_id, sequence FROM req_offer_approver
+           WHERE requisition_id=%s ORDER BY sequence""",
+        [requisition_id],
+    )
+    for step in (chain or []):
+        query(
+            """INSERT INTO offer_approval_step (offer_id, approver_id, sequence, status)
+               VALUES (%s, %s, %s, 'pending')""",
+            [offer_id, str(step["approver_id"]), step["sequence"]],
+            fetch=False,
+        )
+    return len(chain or [])
+
+
+# ── Approval chain management ──────────────────────────────────────────────────
+
+@router.get("/requisitions/{req_id}/offer-approvers")
+def get_offer_approvers(req_id: str, user: dict = Depends(get_current_user)):
+    """Return the ordered approval chain for a requisition (with user names)."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    if not query_one("SELECT id FROM requisition WHERE id=%s", [req_id]):
+        raise HTTPException(404, "Requisition not found")
+    rows = query(
+        """SELECT roa.sequence, roa.approver_id,
+                  u.full_name, u.email, u.role
+           FROM req_offer_approver roa
+           JOIN app_user u ON u.id = roa.approver_id
+           WHERE roa.requisition_id = %s
+           ORDER BY roa.sequence""",
+        [req_id],
+    )
+    return rows or []
+
+
+@router.put("/requisitions/{req_id}/offer-approvers")
+def set_offer_approvers(
+    req_id: str,
+    body: ApproverChainIn,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Replace the entire approval chain for a requisition.
+    Sending an empty list removes the chain.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    if not query_one("SELECT id FROM requisition WHERE id=%s", [req_id]):
+        raise HTTPException(404, "Requisition not found")
+
+    # Validate all approver IDs exist
+    for uid in body.approvers:
+        if not query_one("SELECT id FROM app_user WHERE id=%s AND is_active=TRUE", [uid]):
+            raise HTTPException(400, f"User {uid} not found or inactive")
+
+    # Replace chain
+    query("DELETE FROM req_offer_approver WHERE requisition_id=%s", [req_id], fetch=False)
+    for i, uid in enumerate(body.approvers, start=1):
+        query(
+            """INSERT INTO req_offer_approver (requisition_id, approver_id, sequence)
+               VALUES (%s, %s, %s)""",
+            [req_id, uid, i],
+            fetch=False,
+        )
+    return {"ok": True, "total_steps": len(body.approvers)}
+
+
+# ── Create offer ───────────────────────────────────────────────────────────────
+
+@router.post("/offers", status_code=201)
+def create_offer(body: CreateOfferIn, user: dict = Depends(get_current_user)):
+    """
+    Create an offer for a selected candidate and kick off the approval chain.
+    Application must be at status='selected'.
+    Requisition must have at least one approver in its chain.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    app_row = query_one(
+        """SELECT a.id, a.status, a.requisition_id,
+                  c.full_name AS candidate_name, c.email AS candidate_email,
+                  r.title AS job_title
+           FROM application a
+           JOIN candidate   c ON c.id = a.candidate_id
+           JOIN requisition r ON r.id = a.requisition_id
+           WHERE a.id = %s""",
+        [body.application_id],
+    )
+    if not app_row:
+        raise HTTPException(404, "Application not found")
+    if app_row["status"] != "selected":
+        raise HTTPException(400, f"Application must be at 'selected' stage (current: {app_row['status']})")
+
+    # Check req has a chain
+    chain = query(
+        "SELECT approver_id, sequence FROM req_offer_approver WHERE requisition_id=%s ORDER BY sequence",
+        [str(app_row["requisition_id"])],
+    )
+    if not chain:
+        raise HTTPException(400, "This requisition has no offer approval chain. Add approvers first.")
+
+    # Prevent duplicate offers
+    existing = query_one(
+        "SELECT id, status FROM offer WHERE application_id=%s", [body.application_id]
+    )
+    if existing and existing["status"] not in ("cancelled",):
+        raise HTTPException(409, f"An active offer already exists for this application (status: {existing['status']})")
+
+    total = _total_ctc(body.fixed_ctc, body.variable_ctc, body.bonus_ctc)
+
+    # Create offer row
+    offer_row = query_one(
+        """INSERT INTO offer
+           (application_id, designation, joining_date, fixed_ctc, variable_ctc,
+            bonus_ctc, total_ctc, status, current_step, submitted_by, submitted_at, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, 'pending_approval', 1, %s, now(), now())
+           RETURNING id""",
+        [body.application_id, body.designation, body.joining_date,
+         body.fixed_ctc, body.variable_ctc, body.bonus_ctc, total,
+         user["sub"]],
+    )
+    offer_id = str(offer_row["id"])
+
+    # Persist notes if provided
+    if body.notes:
+        query("UPDATE offer SET notes=%s WHERE id=%s", [body.notes, offer_id], fetch=False)
+
+    # Create pending approval steps
+    _create_pending_steps(offer_id, str(app_row["requisition_id"]))
+
+    # Advance application status
+    old_status = app_row["status"]
+    query(
+        "UPDATE application SET status='offer_stage' WHERE id=%s",
+        [body.application_id], fetch=False,
+    )
+    query(
+        "INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note) VALUES (%s,%s,'offer_stage',%s,'Offer created')",
+        [body.application_id, old_status, user["sub"]], fetch=False,
+    )
+
+    # Notify step-1 approver
+    step1_user_id = str(chain[0]["approver_id"])
+    approver_email, approver_name = _approver_email(step1_user_id)
+    if approver_email:
+        _send_offer_email("offer_awaiting_approval", {
+            "candidate_name": app_row["candidate_name"],
+            "job_title":      app_row["job_title"],
+            "designation":    body.designation,
+            "approver_name":  approver_name,
+            "total_ctc":      _fmt_inr(total),
+            "joining_date":   body.joining_date,
+            "step_num":       "1",
+            "total_steps":    str(len(chain)),
+        }, [approver_email])
+
+    return {"offer_id": offer_id, "status": "pending_approval", "total_steps": len(chain)}
+
+
+# ── List offers (role-scoped) ──────────────────────────────────────────────────
+
+@router.get("/offers")
+def list_offers(
+    status: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Return offers the caller is authorised to see, with chain progress.
+    - admin / ta_manager: all offers
+    - recruiter:          offers on their requisitions
+    - hiring_manager:     offers on reqs where they are HM
+    - any other role:     offers where they have any approval step
+    """
+    role = user["role"]
+    uid  = user["sub"]
+    join_parts, where_parts, params = [], [], []
+
+    if role == "recruiter":
+        join_parts.append(
+            "JOIN requisition_recruiter rr_s ON rr_s.requisition_id = r.id AND rr_s.recruiter_id = %s"
+        )
+        params.append(uid)
+    elif role == "hiring_manager":
+        where_parts.append("r.hiring_manager_id = %s")
+        params.append(uid)
+    elif role not in ("admin", "ta_manager"):
+        # Any role — show offers where they are an approver
+        join_parts.append(
+            "JOIN offer_approval_step my_step ON my_step.offer_id = o.id AND my_step.approver_id = %s"
+        )
+        params.append(uid)
+
+    if status:
+        where_parts.append("o.status = %s")
+        params.append(status)
+
+    join_sql  = "\n    ".join(join_parts)
+    where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+    rows = query(
+        f"""
+        SELECT
+            o.id,  o.status, o.current_step, o.designation,
+            o.fixed_ctc, o.variable_ctc, o.bonus_ctc, o.total_ctc,
+            o.joining_date, o.notes, o.revise_note,
+            o.darwin_ref, o.submitted_at, o.updated_at,
+            c.full_name  AS candidate_name,
+            c.email      AS candidate_email,
+            r.title      AS job_title,
+            r.id         AS requisition_id,
+            a.id         AS application_id,
+            a.status     AS application_status,
+            sub.full_name AS submitted_by_name,
+            (SELECT COUNT(*) FROM req_offer_approver roa
+             WHERE roa.requisition_id = r.id) AS total_steps,
+            (SELECT u2.full_name
+             FROM req_offer_approver roa2
+             JOIN app_user u2 ON u2.id = roa2.approver_id
+             WHERE roa2.requisition_id = r.id AND roa2.sequence = o.current_step
+             LIMIT 1) AS pending_approver_name
+        FROM offer o
+        JOIN application  a   ON a.id  = o.application_id
+        JOIN candidate    c   ON c.id  = a.candidate_id
+        JOIN requisition  r   ON r.id  = a.requisition_id
+        LEFT JOIN app_user sub ON sub.id = o.submitted_by
+        {join_sql}
+        {where_sql}
+        ORDER BY o.updated_at DESC NULLS LAST, o.submitted_at DESC
+        LIMIT 200
+        """,
+        params,
+    )
+    return rows or []
+
+
+# ── Offer detail + full step log ───────────────────────────────────────────────
+
+@router.get("/offers/{offer_id}")
+def get_offer(offer_id: str, user: dict = Depends(get_current_user)):
+    """Return full offer detail with approval step history."""
+    offer = query_one(
+        """SELECT o.*, a.status AS application_status,
+                  c.full_name  AS candidate_name,
+                  c.email      AS candidate_email,
+                  r.title      AS job_title,
+                  r.id         AS requisition_id,
+                  sub.full_name AS submitted_by_name
+           FROM offer o
+           JOIN application  a   ON a.id  = o.application_id
+           JOIN candidate    c   ON c.id  = a.candidate_id
+           JOIN requisition  r   ON r.id  = a.requisition_id
+           LEFT JOIN app_user sub ON sub.id = o.submitted_by
+           WHERE o.id = %s""",
+        [offer_id],
+    )
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+
+    _assert_offer_role(user, offer)
+
+    # Approval chain definition
+    chain = query(
+        """SELECT roa.sequence, u.id AS approver_id, u.full_name, u.role
+           FROM req_offer_approver roa
+           JOIN app_user u ON u.id = roa.approver_id
+           WHERE roa.requisition_id = %s ORDER BY roa.sequence""",
+        [str(offer["requisition_id"])],
+    )
+
+    # Approval step log (history)
+    steps = query(
+        """SELECT oas.sequence, oas.status, oas.notes, oas.acted_at,
+                  u.full_name AS approver_name, u.role AS approver_role
+           FROM offer_approval_step oas
+           JOIN app_user u ON u.id = oas.approver_id
+           WHERE oas.offer_id = %s ORDER BY oas.sequence""",
+        [offer_id],
+    )
+
+    return {
+        **{k: v for k, v in offer.items()},
+        "chain":       chain or [],
+        "steps":       steps or [],
+        "total_steps": len(chain or []),
+    }
+
+
+# ── Edit offer (only while in 'revising' state) ────────────────────────────────
+
+@router.put("/offers/{offer_id}")
+def edit_offer(offer_id: str, body: EditOfferIn, user: dict = Depends(get_current_user)):
+    """Update offer fields. Only allowed when status='revising'."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    offer = query_one("SELECT id, status, fixed_ctc, variable_ctc, bonus_ctc FROM offer WHERE id=%s", [offer_id])
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+    if offer["status"] != "revising":
+        raise HTTPException(400, "Offer can only be edited while in 'revising' state")
+
+    sets, vals = [], []
+    if body.designation  is not None: sets.append("designation=%s");   vals.append(body.designation)
+    if body.joining_date is not None: sets.append("joining_date=%s");  vals.append(body.joining_date)
+    if body.fixed_ctc    is not None: sets.append("fixed_ctc=%s");     vals.append(body.fixed_ctc)
+    if body.variable_ctc is not None: sets.append("variable_ctc=%s");  vals.append(body.variable_ctc)
+    if body.bonus_ctc    is not None: sets.append("bonus_ctc=%s");     vals.append(body.bonus_ctc)
+    if body.notes        is not None: sets.append("notes=%s");         vals.append(body.notes)
+
+    if sets:
+        # Recompute total using latest values
+        new_fixed    = body.fixed_ctc    if body.fixed_ctc    is not None else (offer["fixed_ctc"]    or 0)
+        new_variable = body.variable_ctc if body.variable_ctc is not None else (offer["variable_ctc"] or 0)
+        new_bonus    = body.bonus_ctc    if body.bonus_ctc    is not None else (offer["bonus_ctc"]    or 0)
+        sets.append("total_ctc=%s");  vals.append(_total_ctc(new_fixed, new_variable, new_bonus))
+        sets.append("updated_at=now()")
+        vals.append(offer_id)
+        query(f"UPDATE offer SET {', '.join(sets)} WHERE id=%s", vals, fetch=False)
+
+    return {"ok": True}
+
+
+# ── Resubmit offer (restart chain after rejection) ────────────────────────────
+
+@router.post("/offers/{offer_id}/resubmit")
+def resubmit_offer(offer_id: str, user: dict = Depends(get_current_user)):
+    """
+    Resubmit a 'revising' offer: restarts the approval chain from step 1.
+    Any previous pending steps are deleted and recreated.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    offer = query_one(
+        """SELECT o.id, o.status, o.application_id, o.designation,
+                  o.total_ctc, o.joining_date,
+                  a.requisition_id,
+                  c.full_name AS candidate_name,
+                  r.title     AS job_title
+           FROM offer o
+           JOIN application a ON a.id = o.application_id
+           JOIN candidate   c ON c.id = a.candidate_id
+           JOIN requisition r ON r.id = a.requisition_id
+           WHERE o.id = %s""",
+        [offer_id],
+    )
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+    if offer["status"] != "revising":
+        raise HTTPException(400, "Only 'revising' offers can be resubmitted")
+
+    req_id = str(offer["requisition_id"])
+    chain  = query(
+        "SELECT approver_id, sequence FROM req_offer_approver WHERE requisition_id=%s ORDER BY sequence",
+        [req_id],
+    )
+    if not chain:
+        raise HTTPException(400, "No approval chain on this requisition")
+
+    total_steps = _create_pending_steps(offer_id, req_id)
+
+    query(
+        "UPDATE offer SET status='pending_approval', current_step=1, revise_note=NULL, updated_at=now() WHERE id=%s",
+        [offer_id], fetch=False,
+    )
+    query(
+        "UPDATE application SET status='offer_stage' WHERE id=%s",
+        [str(offer["application_id"])], fetch=False,
+    )
+
+    # Notify first approver
+    approver_email, approver_name = _approver_email(str(chain[0]["approver_id"]))
+    if approver_email:
+        _send_offer_email("offer_awaiting_approval", {
+            "candidate_name": offer["candidate_name"],
+            "job_title":      offer["job_title"],
+            "designation":    offer["designation"] or "—",
+            "approver_name":  approver_name,
+            "total_ctc":      _fmt_inr(offer["total_ctc"]),
+            "joining_date":   str(offer["joining_date"]) if offer["joining_date"] else "—",
+            "step_num":       "1",
+            "total_steps":    str(total_steps),
+        }, [approver_email])
+
+    return {"ok": True, "status": "pending_approval", "total_steps": total_steps}
+
+
+# ── Approve current step ───────────────────────────────────────────────────────
+
+@router.post("/offers/{offer_id}/approve")
+def approve_offer_step(offer_id: str, body: ApproveIn, user: dict = Depends(get_current_user)):
+    """
+    Approve the current pending step of the offer.
+    Only the current-step approver (or admin) may act.
+    On the final step: sets offer to approved → calls Darwinbox stub
+    → status=sent_to_darwinbox → application→offered.
+    Audit email sent to recruiter + all TA managers after every step.
+    """
+    offer = query_one(
+        """SELECT o.id, o.status, o.current_step, o.application_id,
+                  o.designation, o.total_ctc, o.joining_date, o.submitted_by,
+                  a.requisition_id,
+                  c.full_name AS candidate_name,
+                  r.title     AS job_title
+           FROM offer o
+           JOIN application a ON a.id = o.application_id
+           JOIN candidate   c ON c.id = a.candidate_id
+           JOIN requisition r ON r.id = a.requisition_id
+           WHERE o.id = %s""",
+        [offer_id],
+    )
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+    if offer["status"] != "pending_approval":
+        raise HTTPException(400, f"Offer is not pending approval (status: {offer['status']})")
+
+    current_step = offer["current_step"]
+    uid  = user["sub"]
+    role = user["role"]
+
+    # Load the pending step row
+    step_row = query_one(
+        "SELECT id, approver_id FROM offer_approval_step WHERE offer_id=%s AND sequence=%s AND status='pending'",
+        [offer_id, current_step],
+    )
+    if not step_row:
+        raise HTTPException(400, "No pending step found at current position")
+
+    # Server-side enforcement: only the designated approver or admin may act
+    if role != "admin" and str(step_row["approver_id"]) != uid:
+        raise HTTPException(403, "It is not your turn to approve this offer")
+
+    # Load approver name for audit email
+    approver_row = query_one("SELECT full_name FROM app_user WHERE id=%s", [str(step_row["approver_id"])])
+    approver_name = approver_row["full_name"] if approver_row else "—"
+
+    # Mark step approved
+    query(
+        "UPDATE offer_approval_step SET status='approved', notes=%s, acted_at=now() WHERE id=%s",
+        [body.notes, str(step_row["id"])],
+        fetch=False,
+    )
+
+    req_id      = str(offer["requisition_id"])
+    # Count against offer_approval_step (the steps created at offer-time / resubmit-time),
+    # not req_offer_approver — so chain edits after creation don't affect in-flight approvals.
+    total_steps = query_one(
+        "SELECT COUNT(*) AS n FROM offer_approval_step WHERE offer_id=%s",
+        [offer_id],
+    )["n"]
+
+    now_str = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
+
+    # Audit email to recruiter + TA managers
+    audit_to = []
+    if offer["submitted_by"]:
+        rec_email = _recruiter_email(str(offer["submitted_by"]))
+        if rec_email:
+            audit_to.append(rec_email)
+    audit_to += _ta_manager_emails()
+    audit_to  = list(dict.fromkeys(audit_to))  # deduplicate, preserve order
+
+    _send_offer_email("offer_step_approved", {
+        "candidate_name": offer["candidate_name"],
+        "job_title":      offer["job_title"],
+        "approver_name":  approver_name,
+        "step_num":       str(current_step),
+        "total_steps":    str(total_steps),
+        "approved_at":    now_str,
+        "notes":          body.notes or "—",
+    }, audit_to)
+
+    # ── Final step? ────────────────────────────────────────────────────────────
+    if current_step >= total_steps:
+        # All steps approved → Darwinbox handoff
+        darwin_result = push_offer_to_darwin({
+            "id":          str(offer["id"]),
+            "designation": offer["designation"],
+            "total_ctc":   float(offer["total_ctc"] or 0),
+            "joining_date":str(offer["joining_date"]) if offer["joining_date"] else None,
+            "candidate":   offer["candidate_name"],
+            "job_title":   offer["job_title"],
+        })
+        darwin_ref = darwin_result.get("darwin_ref", "—")
+
+        query(
+            """UPDATE offer SET status='sent_to_darwinbox', darwin_ref=%s, updated_at=now()
+               WHERE id=%s""",
+            [darwin_ref, offer_id],
+            fetch=False,
+        )
+        query(
+            "UPDATE application SET status='offered' WHERE id=%s",
+            [str(offer["application_id"])],
+            fetch=False,
+        )
+        query(
+            """INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note)
+               VALUES (%s,'offer_stage','offered',%s,'Offer fully approved — sent to Darwinbox')""",
+            [str(offer["application_id"]), uid],
+            fetch=False,
+        )
+
+        _send_offer_email("offer_approved_darwinbox", {
+            "candidate_name": offer["candidate_name"],
+            "job_title":      offer["job_title"],
+            "designation":    offer["designation"] or "—",
+            "total_ctc":      _fmt_inr(offer["total_ctc"]),
+            "joining_date":   str(offer["joining_date"]) if offer["joining_date"] else "—",
+            "darwin_ref":     darwin_ref,
+            "approved_at":    now_str,
+        }, audit_to)
+
+        return {"ok": True, "status": "sent_to_darwinbox", "darwin_ref": darwin_ref}
+
+    # ── More steps remain ─────────────────────────────────────────────────────
+    next_step  = current_step + 1
+    query(
+        "UPDATE offer SET current_step=%s, updated_at=now() WHERE id=%s",
+        [next_step, offer_id],
+        fetch=False,
+    )
+
+    # Notify next approver — read from offer_approval_step (same source as total_steps)
+    next_approver_row = query_one(
+        "SELECT approver_id FROM offer_approval_step WHERE offer_id=%s AND sequence=%s",
+        [offer_id, next_step],
+    )
+    if next_approver_row:
+        next_email, next_name = _approver_email(str(next_approver_row["approver_id"]))
+        if next_email:
+            _send_offer_email("offer_awaiting_approval", {
+                "candidate_name": offer["candidate_name"],
+                "job_title":      offer["job_title"],
+                "designation":    offer["designation"] or "—",
+                "approver_name":  next_name,
+                "total_ctc":      _fmt_inr(offer["total_ctc"]),
+                "joining_date":   str(offer["joining_date"]) if offer["joining_date"] else "—",
+                "step_num":       str(next_step),
+                "total_steps":    str(total_steps),
+            }, [next_email])
+
+    return {"ok": True, "status": "pending_approval", "current_step": next_step, "total_steps": int(total_steps)}
+
+
+# ── Reject current step ────────────────────────────────────────────────────────
+
+@router.post("/offers/{offer_id}/reject")
+def reject_offer_step(offer_id: str, body: RejectIn, user: dict = Depends(get_current_user)):
+    """
+    Reject the current pending step. Offer moves to 'revising'.
+    The recruiter must edit and resubmit to restart the chain.
+    Audit email sent to recruiter + all TA managers.
+    """
+    offer = query_one(
+        """SELECT o.id, o.status, o.current_step, o.application_id,
+                  o.submitted_by,
+                  c.full_name AS candidate_name,
+                  r.title     AS job_title
+           FROM offer o
+           JOIN application a ON a.id = o.application_id
+           JOIN candidate   c ON c.id = a.candidate_id
+           JOIN requisition r ON r.id = a.requisition_id
+           WHERE o.id = %s""",
+        [offer_id],
+    )
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+    if offer["status"] != "pending_approval":
+        raise HTTPException(400, f"Offer is not pending approval (status: {offer['status']})")
+
+    current_step = offer["current_step"]
+    uid  = user["sub"]
+    role = user["role"]
+
+    step_row = query_one(
+        "SELECT id, approver_id FROM offer_approval_step WHERE offer_id=%s AND sequence=%s AND status='pending'",
+        [offer_id, current_step],
+    )
+    if not step_row:
+        raise HTTPException(400, "No pending step found at current position")
+
+    if role != "admin" and str(step_row["approver_id"]) != uid:
+        raise HTTPException(403, "It is not your turn to act on this offer")
+
+    approver_row = query_one("SELECT full_name FROM app_user WHERE id=%s", [str(step_row["approver_id"])])
+    approver_name = approver_row["full_name"] if approver_row else "—"
+
+    # Mark step rejected
+    query(
+        "UPDATE offer_approval_step SET status='rejected', notes=%s, acted_at=now() WHERE id=%s",
+        [body.notes, str(step_row["id"])],
+        fetch=False,
+    )
+
+    # Offer → revising
+    query(
+        "UPDATE offer SET status='revising', revise_note=%s, updated_at=now() WHERE id=%s",
+        [body.notes, offer_id],
+        fetch=False,
+    )
+
+    now_str = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
+
+    # Notify recruiter + TA managers
+    notify_to = []
+    if offer["submitted_by"]:
+        rec_email = _recruiter_email(str(offer["submitted_by"]))
+        if rec_email:
+            notify_to.append(rec_email)
+    notify_to += _ta_manager_emails()
+    notify_to   = list(dict.fromkeys(notify_to))
+
+    _send_offer_email("offer_rejected", {
+        "candidate_name": offer["candidate_name"],
+        "job_title":      offer["job_title"],
+        "approver_name":  approver_name,
+        "step_num":       str(current_step),
+        "notes":          body.notes,
+        "rejected_at":    now_str,
+    }, notify_to)
+
+    return {"ok": True, "status": "revising"}
+
+
+# ── Set on-hold or cancel ──────────────────────────────────────────────────────
+
+@router.patch("/offers/{offer_id}/status")
+def update_offer_status(offer_id: str, body: OfferStatusIn, user: dict = Depends(get_current_user)):
+    """
+    Recruiter or TA manager can set an offer to 'on_hold' or 'cancelled' at any time.
+    Both states are reflected back on the application record.
+    """
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    if body.status not in ("on_hold", "cancelled"):
+        raise HTTPException(400, "status must be 'on_hold' or 'cancelled'")
+
+    offer = query_one(
+        "SELECT id, application_id, status FROM offer WHERE id=%s", [offer_id]
+    )
+    if not offer:
+        raise HTTPException(404, "Offer not found")
+    if offer["status"] in ("sent_to_darwinbox",):
+        raise HTTPException(400, "Cannot hold or cancel an offer that has already been sent to Darwinbox")
+
+    app_status = "offer_on_hold" if body.status == "on_hold" else "offer_cancelled"
+
+    query(
+        "UPDATE offer SET status=%s, updated_at=now() WHERE id=%s",
+        [body.status, offer_id],
+        fetch=False,
+    )
+    query(
+        "UPDATE application SET status=%s WHERE id=%s",
+        [app_status, str(offer["application_id"])],
+        fetch=False,
+    )
+    query(
+        """INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note)
+           VALUES (%s,%s,%s,%s,%s)""",
+        [str(offer["application_id"]), offer["status"], app_status,
+         user["sub"], f"Offer set to {body.status}"],
+        fetch=False,
+    )
+
+    return {"ok": True, "status": body.status, "application_status": app_status}

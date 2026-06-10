@@ -71,6 +71,16 @@ tr:hover td{background:#faf8f5}
 .pill.offer_stage,.pill.offered{background:#e6f0fb;color:#2563eb}
 .pill.rejected,.pill.screen_rejected,.pill.dropped{background:#fde8e4;color:#8b2a1a}
 .pill.p1{background:#fff3cd;color:#856404;border:1px solid #ffc107}
+.pill.pending_approval{background:#e6f0fb;color:#2563eb}
+.pill.revising{background:#fff3cd;color:#856404}
+.pill.sent_to_darwinbox{background:#dff0eb;color:var(--green);font-weight:700}
+.pill.offer_on_hold{background:#f3e9d0;color:var(--gold)}
+.pill.offer_cancelled{background:#fde8e4;color:#8b2a1a}
+.pill.fetch_failed{background:#fde8e4;color:#8b2a1a}
+.pill.summary_failed{background:#fff0e4;color:#b45309}
+.pill.summarizing{background:#fff3cd;color:#856404}
+.pill.fetching{background:#ede9e2;color:#888}
+.pill.done{background:#dff0eb;color:var(--green);font-weight:600}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:4px;font-family:inherit;font-size:13px;cursor:pointer;font-weight:500;transition:background .12s}
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#d14d1e}
 .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border)}.btn-ghost:hover{background:var(--border)}
@@ -453,6 +463,17 @@ select{background-image:none}
       <div id="rounds-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px"></div>
       <button class="btn btn-ghost btn-sm" type="button" onclick="addRound()">+ Add level</button>
     </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:6px">Offer Approval Chain</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Add approvers IN SEQUENCE. Each offer on this requisition will go through these approvers in order before being sent to Darwinbox.</div>
+      <div id="approver-chain-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="rf-approver-pick" style="flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+          <option value="">— select approver to add —</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="addApproverStep()">+ Add</button>
+      </div>
+    </div>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeReqModal()">Cancel</button>
       <button class="btn btn-primary" onclick="submitReq()">Create requisition</button>
@@ -471,6 +492,55 @@ select{background-image:none}
       <button class="btn btn-ghost" onclick="closeScoreWhy()">Close</button>
       <button class="btn btn-ghost btn-sm" id="sw-rescreen-btn" style="display:none"
               onclick="_doRescreen()">Re-screen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Create Offer Modal ── -->
+<div class="modal-bg" id="create-offer-modal" onclick="if(event.target===this)closeCreateOfferModal()">
+  <div class="modal" style="max-width:520px">
+    <h2>Create Offer — <span id="co-cand-name" style="font-weight:400;color:var(--muted)"></span></h2>
+    <div class="form-row">
+      <div class="form-group"><label>Designation / Role Title</label><input id="co-designation" placeholder="Senior Account Manager"></div>
+      <div class="form-group"><label>Joining Date</label><input id="co-joining" type="date"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Fixed CTC (₹)</label><input id="co-fixed" type="number" placeholder="1800000" oninput="_calcOfferCTC()"></div>
+      <div class="form-group"><label>Variable CTC (₹)</label><input id="co-variable" type="number" placeholder="200000" oninput="_calcOfferCTC()"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Bonus (₹)</label><input id="co-bonus" type="number" placeholder="0" oninput="_calcOfferCTC()"></div>
+      <div class="form-group"><label>Total CTC (₹)</label><input id="co-total" type="number" readonly style="background:var(--bg-alt,#f5f5f5);color:var(--muted);cursor:not-allowed"></div>
+    </div>
+    <div class="form-group"><label>Notes (optional)</label><textarea id="co-notes" rows="2" placeholder="Any notes for the approvers…"></textarea></div>
+    <div id="co-chain-preview" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeCreateOfferModal()">Cancel</button>
+      <button class="btn btn-primary" id="co-submit-btn" onclick="submitCreateOffer()">Send for Approval</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Offer Detail Modal ── -->
+<div class="modal-bg" id="offer-detail-modal" onclick="if(event.target===this)closeOfferDetail()">
+  <div class="modal" style="max-width:600px">
+    <h2 id="od-title">Offer Details</h2>
+    <div id="od-body" style="font-size:13px"></div>
+    <div class="modal-btns" style="margin-top:16px" id="od-action-btns">
+      <button class="btn btn-ghost" onclick="closeOfferDetail()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Meeting Transcript Modal (Feature 7 — Google Meet notetaker) ── -->
+<div class="modal-bg" id="meet-transcript-modal" onclick="if(event.target===this)closeTranscriptModal()">
+  <div class="modal" style="max-width:680px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="margin:0">Interview Transcript</h2>
+      <button class="btn btn-ghost btn-sm" onclick="closeTranscriptModal()">✕ Close</button>
+    </div>
+    <div id="tx-modal-body" style="font-size:13px;max-height:70vh;overflow-y:auto">
+      <p class="empty">Loading…</p>
     </div>
   </div>
 </div>
@@ -799,6 +869,7 @@ const NAV_DEF = {
     {id:'database',           icon:'📁', label:'CV Database'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'appeals',            icon:'⚖️', label:'Appeals'},
+    {id:'offers',             icon:'📄', label:'Offers & Approvals'},
     {id:'email_templates',    icon:'✉️',  label:'Email Templates'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
@@ -812,12 +883,14 @@ const NAV_DEF = {
     {id:'my_reports',         icon:'📊', label:'My Reports'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'appeals',            icon:'⚖️', label:'Appeals'},
+    {id:'offers',             icon:'📄', label:'Offers & Approvals'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
   hiring_manager: [
     {id:'dashboard',    icon:'⬛', label:'Dashboard'},
     {id:'profiles',     icon:'✅', label:'Profiles to Review'},
     {id:'interviews',   icon:'📅', label:'Interviews'},
+    {id:'offers',       icon:'📄', label:'Offers & Approvals'},
     {id:'my_reports',   icon:'📊', label:'My Reports'},
     {id:'raise_ticket', icon:'🎫', label:'Raise a Ticket'},
   ],
@@ -882,6 +955,8 @@ const SCREENS = {
   // nexai tracker (ta_manager + recruiter)
   nexai_tracker: screenNexAITracker,
   appeals:       screenAppeals,
+  // offers & approvals (ta_manager + recruiter + hiring_manager)
+  offers: screenOffers,
 };
 
 function navigate(id, param) {
@@ -925,7 +1000,9 @@ function goNexAI(label, nexaiStatus, scoreMin, scoreMax) {
   navigate('nexai_sessions');
 }
 
+let _currentScreen=null;
 function runRoute(id, param) {
+  _currentScreen=id;
   setActive(id);
   document.getElementById('content').innerHTML = '<p class="empty">Loading…</p>';
   if (id === 'kanban' && param) { setTitle('Kanban'); screenKanban(param); return; }
@@ -1794,6 +1871,7 @@ async function screenKanban(reqId) {
             <button class="btn btn-ghost btn-sm" style="font-size:11px;color:#c0392b;border-color:#e8c5c0" onclick="rejectScreening('${c.app_id}');event.stopPropagation()">✕</button>
           </div>`:''}
         ${canNexAI&&col.status==='screen_passed'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%" onclick="sendNexAIInvite('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}','${(c.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`:''}
+        ${canApply&&col.status==='selected'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%;background:var(--green)" onclick="openCreateOfferModal('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}',event)">📄 Create Offer</button>`:''}
       </div>`).join('');
     return `
       <div class="kb-col">
@@ -1891,6 +1969,8 @@ async function screenCandidates() {
         </div>`;
       } else if(r.status==='screen_passed'){
         actions=`<button class="btn btn-primary btn-sm" onclick="sendNexAIInvite('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}','${(r.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`;
+      } else if(r.status==='selected'){
+        actions=`<button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openCreateOfferModal('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}',event)">📄 Create Offer</button>`;
       } else if(r.req_id){
         actions=`<button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>`;
       }
@@ -1926,6 +2006,16 @@ async function screenInterviews() {
     api(`/api/google/status?recruiter_id=${ME.sub}`),
   ]);
   const canViewFeedback = ['admin','ta_manager','recruiter','hiring_manager'].includes(ME.role);
+  const canFetchTranscript = ['admin','ta_manager','recruiter'].includes(ME.role);
+
+  // Drive scope banner — shown to recruiters who haven't reconnected yet
+  const driveBanner = (canFetchTranscript && gcal?.linked && gcal?.has_drive_scope === false)
+    ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#856404">
+        <strong>⚠ Google Drive access not yet granted.</strong>
+        The "Fetch Transcript" feature requires Drive read access.
+        <button class="btn btn-primary btn-sm" style="margin-left:10px" onclick="connectGCal()">Reconnect Google (one click)</button>
+       </div>` : '';
+
   const tRows = (rows||[]).map(r=>{
     const dt = r.scheduled_at
       ? new Date(r.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})
@@ -1951,6 +2041,27 @@ async function screenInterviews() {
     const actions = scBtn||pfBtn
       ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${scBtn}${pfBtn}</div>`
       : '—';
+    // Transcript action
+    let txBtn = '';
+    if(canFetchTranscript && r.meet_link){
+      const ts = r.transcript_status || 'none';
+      if(ts==='done'){
+        txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--green)" onclick="openTranscriptModal('${r.id}')">📝 Summary</button>`;
+      } else if(ts==='summary_failed'){
+        txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--gold)" onclick="openTranscriptModal('${r.id}')">⚠ Transcript (no summary)</button>`;
+      } else if(ts==='fetch_failed'){
+        txBtn=`<button class="btn btn-ghost btn-sm" style="color:#c0392b" onclick="openTranscriptModal('${r.id}')">✕ Failed</button>`;
+      } else if(ts==='fetching'||ts==='summarizing'){
+        txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--muted);cursor:default" disabled>⏳ ${ts==='summarizing'?'Summarizing…':'Fetching…'}</button>`;
+      } else {
+        // none — show fetch button only if Drive is linked
+        if(gcal?.linked && gcal?.has_drive_scope!==false){
+          txBtn=`<button class="btn btn-ghost btn-sm" onclick="fetchTranscript('${r.id}',this)">📄 Fetch Transcript</button>`;
+        } else if(gcal?.linked){
+          txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--muted)" onclick="connectGCal()" title="Reconnect Google to grant Drive access">🔗 Grant Drive access</button>`;
+        }
+      }
+    }
     return `<tr>
       <td>${r.candidate_name}</td>
       <td>${r.requisition}</td>
@@ -1959,26 +2070,132 @@ async function screenInterviews() {
       <td><span class="pill ${r.status}">${r.status}</span></td>
       <td>${r.meet_link?`<a href="${r.meet_link}" target="_blank" style="color:var(--accent)">Join</a>`:'—'}</td>
       <td>${actions}</td>
+      <td>${txBtn}</td>
     </tr>`;
   }).join('');
   document.getElementById('content').innerHTML = `
     <div class="page-header"><h1>Interviews</h1></div>
-    <div class="card" style="margin-bottom:20px;max-width:400px">
-      <div class="card-title">Google Calendar</div>
+    ${driveBanner}
+    <div class="card" style="margin-bottom:20px;max-width:460px">
+      <div class="card-title">Google Calendar &amp; Drive</div>
       ${gcal?.linked
-        ?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span class="gcal-dot on"></span><span style="font-size:13px">Connected as <strong>${gcal.google_email}</strong></span></div>
-           <button class="btn btn-danger btn-sm" onclick="disconnectGCal()">Disconnect</button>`
-        :`<p style="font-size:13px;color:var(--muted);margin-bottom:10px">Not connected — scheduling blocked until linked.</p>
-          <button class="btn btn-primary btn-sm" onclick="connectGCal()">Connect Google Calendar</button>`}
+        ?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span class="gcal-dot on"></span><span style="font-size:13px">Connected as <strong>${gcal.google_email}</strong></span></div>
+           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Drive access: ${gcal.has_drive_scope?'<span style="color:var(--green)">Granted ✓</span>':'<span style="color:#c0392b">Not yet granted — reconnect to enable transcript fetching</span>'}</div>
+           <div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="connectGCal()">Reconnect (update permissions)</button><button class="btn btn-danger btn-sm" onclick="disconnectGCal()">Disconnect</button></div>`
+        :`<p style="font-size:13px;color:var(--muted);margin-bottom:10px">Not connected — scheduling and transcript fetch require Google.</p>
+          <button class="btn btn-primary btn-sm" onclick="connectGCal()">Connect Google Calendar &amp; Drive</button>`}
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       ${tRows
-        ?`<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th><th>Scorecard / Feedback</th></tr></thead><tbody>${tRows}</tbody></table>`
+        ?`<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th><th>Scorecard / Feedback</th><th>Transcript</th></tr></thead><tbody>${tRows}</tbody></table>`
         :'<p class="empty">No interviews scheduled yet.</p>'}
     </div>`;
 }
 function connectGCal(){window.location.href=`/api/google/connect?recruiter_id=${ME.sub}`;}
 async function disconnectGCal(){await api(`/api/google/disconnect?recruiter_id=${ME.sub}`,{method:'POST'});flash('Disconnected');screenInterviews();}
+
+// ── Transcript fetch + modal ───────────────────────────────────────────────────
+let _txPollTimer=null;
+let _txModalInterviewId=null;
+
+async function fetchTranscript(interviewId, btn){
+  if(btn){btn.disabled=true;btn.textContent='Starting…';}
+  const res=await api(`/api/interviews/${interviewId}/fetch-transcript`,{method:'POST'});
+  if(!res||res.detail){
+    const detail=res?.detail;
+    if(typeof detail==='object'&&detail?.drive_scope_missing){
+      flash('Drive access not granted. Click "Reconnect Google" to enable transcript fetching.',false);
+    } else {
+      flash(typeof detail==='string'?detail:'Failed to start transcript fetch.',false);
+    }
+    if(btn){btn.disabled=false;btn.textContent='📄 Fetch Transcript';}
+    return;
+  }
+  flash('Transcript fetch started. This may take a minute…');
+  // Start polling until done or failed
+  _startTxPoll(interviewId);
+}
+
+function _startTxPoll(interviewId){
+  clearInterval(_txPollTimer);
+  let attempts=0;
+  _txPollTimer=setInterval(async()=>{
+    attempts++;
+    if(attempts>60){clearInterval(_txPollTimer);return;} // 5 min max
+    const data=await api(`/api/interviews/${interviewId}/transcript`).catch(()=>null);
+    if(!data) return;
+    const done=['done','fetch_failed','summary_failed'].includes(data.fetch_status);
+    if(done){
+      clearInterval(_txPollTimer);
+      screenInterviews(); // refresh table to show new status
+      if(data.fetch_status==='done') flash('Transcript summary ready!');
+      else if(data.fetch_status==='fetch_failed') flash('Transcript not found. Check the error in the Transcript panel.',false);
+      else flash('Transcript saved — summarization failed. Raw transcript is available.',false);
+    }
+  },5000);
+}
+
+async function openTranscriptModal(interviewId){
+  _txModalInterviewId=interviewId;
+  const modal=document.getElementById('meet-transcript-modal');
+  modal.classList.add('open');
+  document.getElementById('tx-modal-body').innerHTML='<p class="empty">Loading…</p>';
+  const data=await api(`/api/interviews/${interviewId}/transcript`);
+  if(!data){document.getElementById('tx-modal-body').innerHTML='<p class="empty">Could not load transcript.</p>';return;}
+  _renderTranscriptModal(data);
+}
+function closeTranscriptModal(){document.getElementById('meet-transcript-modal').classList.remove('open');}
+
+function _renderTranscriptModal(data){
+  let html='';
+  const st=data.fetch_status;
+
+  if(st==='fetch_failed'){
+    html=`<div style="background:#fde8e4;border:1px solid #e8c5c0;border-radius:6px;padding:12px 14px;font-size:13px;color:#8b2a1a">
+      <strong>No transcript found.</strong><br>${data.fetch_error||'Unknown error.'}
+    </div>
+    <p style="margin-top:14px;font-size:12px;color:var(--muted)">
+      To retry: click "Fetch Transcript" again on the interviews list after ensuring<br>
+      Google Meet transcripts are enabled in your Workspace admin console.
+    </p>`;
+  } else if(st==='summarizing'||st==='fetching'){
+    html=`<p class="empty">⏳ ${st==='summarizing'?'Groq is summarizing the transcript…':'Searching Google Drive for the transcript…'}</p>
+    <p style="font-size:12px;color:var(--muted);text-align:center">This page will update automatically.</p>`;
+    // Keep polling while modal is open
+    setTimeout(()=>{if(_txModalInterviewId)openTranscriptModal(_txModalInterviewId);},5000);
+  } else if(st==='done'||st==='summary_failed'){
+    const s=data.summary||{};
+    const disc=(s.discussion_points||[]).map(p=>`<li>${p}</li>`).join('');
+    html=`
+      ${st==='summary_failed'?`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#856404">
+        <strong>Summarization failed:</strong> ${data.fetch_error||'Unknown Groq error.'} Raw transcript is available below.
+      </div>`:''}
+      ${s.discussion_points?.length?`<div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:6px">Discussion Points</div>
+        <ul style="margin:0;padding-left:18px;font-size:13px">${disc}</ul>
+      </div>`:''}
+      ${s.strengths&&s.strengths!=='—'?`<div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px">Strengths</div>
+        <div style="font-size:13px">${s.strengths}</div>
+      </div>`:''}
+      ${s.concerns&&s.concerns!=='—'?`<div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px">Concerns / Gaps</div>
+        <div style="font-size:13px">${s.concerns}</div>
+      </div>`:''}
+      ${s.overall_note&&s.overall_note!=='—'?`<div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px">Overall Note</div>
+        <div style="font-size:13px;font-style:italic">${s.overall_note}</div>
+      </div>`:''}
+      ${data.drive_file_name?`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Source: ${data.drive_file_name}</div>`:''}
+      ${data.transcript_text?`<details style="margin-top:8px">
+        <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)">Show full transcript ▸</summary>
+        <pre style="font-size:11px;white-space:pre-wrap;word-break:break-word;background:var(--bg-alt,#f8f8f8);padding:12px;border-radius:4px;margin-top:8px;max-height:400px;overflow-y:auto">${data.transcript_text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+      </details>`:''}`;
+  } else {
+    html=`<p class="empty">No transcript data.</p>`;
+  }
+  document.getElementById('tx-modal-body').innerHTML=html;
+}
 
 // ── Scorecard modal ───────────────────────────────────────────────────────────
 let _scInterviewId = null;
@@ -3672,15 +3889,45 @@ function _calcCTC(){
   const v=parseFloat(document.getElementById('rf-ctc-variable').value)||0;
   document.getElementById('rf-ctc-total').value=(f||v)?f+v:'';
 }
+let _approverChain=[]; // [{id, name, role}]
+function addApproverStep(){
+  const sel=document.getElementById('rf-approver-pick');
+  const uid=sel.value;
+  if(!uid) return;
+  const name=sel.options[sel.selectedIndex].text;
+  if(_approverChain.find(a=>a.id===uid)){flash('Already in chain.',false);return;}
+  _approverChain.push({id:uid,name});
+  _renderApproverChain();
+  sel.value='';
+}
+function _renderApproverChain(){
+  document.getElementById('approver-chain-list').innerHTML=_approverChain.map((a,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg-alt,#f8f8f8);border-radius:4px;border:1px solid var(--border)">
+      <span style="font-size:11px;font-weight:700;min-width:22px;color:var(--muted)">${'→'.repeat(i)} ${i+1}</span>
+      <span style="flex:1;font-size:13px">${a.name}</span>
+      ${i>0?`<button style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:15px;padding:0" onclick="_moveApprover(${i},-1)" title="Move up">↑</button>`:''}
+      ${i<_approverChain.length-1?`<button style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:15px;padding:0" onclick="_moveApprover(${i},1)" title="Move down">↓</button>`:''}
+      <button style="background:none;border:none;cursor:pointer;color:#c0392b;font-size:17px;padding:0" onclick="_removeApprover(${i})">×</button>
+    </div>`).join('');
+}
+function _moveApprover(idx,dir){
+  const b=idx+dir;if(b<0||b>=_approverChain.length)return;
+  [_approverChain[idx],_approverChain[b]]=[_approverChain[b],_approverChain[idx]];
+  _renderApproverChain();
+}
+function _removeApprover(idx){_approverChain.splice(idx,1);_renderApproverChain();}
+
 async function openReqModal(){
   _roundCount=0;
+  _approverChain=[];
   document.getElementById('rounds-list').innerHTML='';
+  document.getElementById('approver-chain-list').innerHTML='';
   ['rf-title','rf-fy','rf-skills','rf-jd','rf-loc'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rf-openings').value='1';
   ['rf-exp','rf-ctc-fixed','rf-ctc-variable','rf-ctc-total'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rf-p1').checked=false;
   document.getElementById('rf-risk').value='';
-  const [bus,bands]=await Promise.all([api('/api/business-units'),api('/api/bands')]);
+  const [bus,bands,users]=await Promise.all([api('/api/business-units'),api('/api/bands'),api('/api/users')]);
   _allBUs=bus||[];
   // Build unique group company list preserving order
   const seen=new Set();
@@ -3689,6 +3936,12 @@ async function openReqModal(){
   document.getElementById('rf-gc').innerHTML=companies.map(c=>`<option value="${c}">${c}</option>`).join('');
   _filterBU();
   document.getElementById('rf-band').innerHTML=(bands||[]).filter(b=>b.is_active).map(b=>`<option value="${b.id}">${b.code}</option>`).join('');
+  // Populate approver picker — all active staff can be approvers
+  const approverRoles=['ta_manager','recruiter','hiring_manager','bu_head','director','admin'];
+  document.getElementById('rf-approver-pick').innerHTML=
+    '<option value="">— select approver to add —</option>'+
+    (users||[]).filter(u=>approverRoles.includes(u.role))
+      .map(u=>`<option value="${u.id}">${u.full_name} (${u.role.replace(/_/g,' ')})</option>`).join('');
   addRound('AI screening interview','bot_interview',true);
   addRound('Technical panel','panel',false);
   document.getElementById('req-modal').classList.add('open');
@@ -4018,6 +4271,13 @@ async function submitReq(){
   };
   const res=await api('/api/requisitions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!res||res.detail){flash(res?.detail||'Error creating requisition',false);return;}
+  // Save the offer approval chain if any approvers were added
+  if(_approverChain.length>0){
+    await api(`/api/requisitions/${res.id}/offer-approvers`,{
+      method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({approvers:_approverChain.map(a=>a.id)})
+    });
+  }
   flash(`Requisition "${title}" created.`);closeReqModal();screenRequisitions();
 }
 
@@ -5599,6 +5859,250 @@ async function screenRaiseTicket() {
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
 })();
+
+// ── Offers & Approvals ────────────────────────────────────────────────────────
+
+async function screenOffers(){
+  setTitle('Offers & Approvals');
+  const rows=await api('/api/offers');
+  if(!rows){showErr('Could not load offers.');return;}
+
+  const canAct=['recruiter','ta_manager','admin'].includes(ME.role);
+
+  const tRows=(rows||[]).map(o=>{
+    const stepLabel=o.total_steps?`Step ${o.current_step||1} of ${o.total_steps}`:'—';
+    const pending=o.pending_approver_name?`<span style="font-size:11px;color:var(--muted)">Pending: ${o.pending_approver_name}</span>`:'';
+    const ctc=o.total_ctc?`₹${Number(o.total_ctc).toLocaleString('en-IN')}`:'—';
+    return `<tr style="cursor:pointer" onclick="openOfferDetail('${o.id}')">
+      <td><strong>${o.candidate_name}</strong></td>
+      <td style="font-size:12px;color:var(--muted)">${o.job_title}</td>
+      <td>${o.designation||'—'}</td>
+      <td>${ctc}</td>
+      <td>${o.joining_date||'—'}</td>
+      <td><div>${stepLabel}</div>${pending}</td>
+      <td><span class="pill ${o.status}">${o.status.replace(/_/g,' ')}</span></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header">
+      <h1>Offers &amp; Approvals</h1>
+      <span style="font-size:12px;color:var(--muted)">${rows.length} offer${rows.length!==1?'s':''}</span>
+    </div>
+    ${rows.length===0?`<p class="empty">No offers yet. Once a candidate is selected you can create an offer from their pipeline card.</p>`:`
+    <table class="data-table">
+      <thead><tr>
+        <th>Candidate</th><th>Role</th><th>Designation</th>
+        <th>Total CTC</th><th>Joining</th><th>Approval Progress</th><th>Status</th>
+      </tr></thead>
+      <tbody>${tRows}</tbody>
+    </table>`}`;
+}
+
+// ── Create Offer modal ───────────────────────────────────────────────────────
+let _coAppId=null;
+function _calcOfferCTC(){
+  const f=parseFloat(document.getElementById('co-fixed').value)||0;
+  const v=parseFloat(document.getElementById('co-variable').value)||0;
+  const b=parseFloat(document.getElementById('co-bonus').value)||0;
+  document.getElementById('co-total').value=(f||v||b)?f+v+b:'';
+}
+
+async function openCreateOfferModal(appId,candidateName,event){
+  if(event) event.stopPropagation();
+  _coAppId=appId;
+  document.getElementById('co-cand-name').textContent=candidateName||'Candidate';
+  ['co-designation','co-notes'].forEach(id=>document.getElementById(id).value='');
+  ['co-fixed','co-variable','co-bonus','co-total'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('co-joining').value='';
+  // Show chain preview for this candidate's requisition
+  const appInfo=await api(`/api/offers`).then(rows=>(rows||[]).find(r=>false)).catch(()=>null);
+  document.getElementById('co-chain-preview').innerHTML='<em>Approval chain will be loaded from the requisition configuration.</em>';
+  document.getElementById('co-submit-btn').disabled=false;
+  document.getElementById('co-submit-btn').textContent='Send for Approval';
+  document.getElementById('create-offer-modal').classList.add('open');
+}
+function closeCreateOfferModal(){document.getElementById('create-offer-modal').classList.remove('open');}
+
+async function submitCreateOffer(){
+  const designation=document.getElementById('co-designation').value.trim();
+  const joining=document.getElementById('co-joining').value;
+  if(!designation){flash('Designation is required.',false);return;}
+  if(!joining){flash('Joining date is required.',false);return;}
+  const btn=document.getElementById('co-submit-btn');
+  btn.disabled=true;btn.textContent='Submitting…';
+  const body={
+    application_id:_coAppId,
+    designation,
+    joining_date:joining,
+    fixed_ctc:parseFloat(document.getElementById('co-fixed').value)||null,
+    variable_ctc:parseFloat(document.getElementById('co-variable').value)||null,
+    bonus_ctc:parseFloat(document.getElementById('co-bonus').value)||null,
+    notes:document.getElementById('co-notes').value.trim()||null,
+  };
+  const res=await api('/api/offers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  btn.disabled=false;btn.textContent='Send for Approval';
+  if(!res||res.detail){flash(res?.detail||'Error creating offer',false);return;}
+  flash('Offer created and sent for approval.');
+  closeCreateOfferModal();
+  // Refresh current view
+  if(_kanbanReqId) screenKanban(_kanbanReqId);
+  else if(SCREENS[_currentScreen]) SCREENS[_currentScreen]();
+}
+
+// ── Offer detail modal ───────────────────────────────────────────────────────
+let _currentOfferId=null;
+
+async function openOfferDetail(offerId){
+  _currentOfferId=offerId;
+  document.getElementById('od-body').innerHTML='<p class="empty">Loading…</p>';
+  document.getElementById('od-action-btns').innerHTML='<button class="btn btn-ghost" onclick="closeOfferDetail()">Close</button>';
+  document.getElementById('offer-detail-modal').classList.add('open');
+
+  const o=await api(`/api/offers/${offerId}`);
+  if(!o){document.getElementById('od-body').innerHTML='<p class="empty">Could not load offer.</p>';return;}
+
+  document.getElementById('od-title').textContent=`Offer — ${o.candidate_name}`;
+
+  const ctc=o.total_ctc?`₹${Number(o.total_ctc).toLocaleString('en-IN')}`:'—';
+  const stepsHtml=(o.steps||[]).map(s=>`
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px;border-radius:4px;background:${s.status==='approved'?'#dff0eb':s.status==='rejected'?'#fde8e4':'var(--bg-alt,#f5f5f5)'}">
+      <span style="font-size:18px;min-width:22px">${s.status==='approved'?'✓':s.status==='rejected'?'✕':'⏳'}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600">Step ${s.sequence}: ${s.approver_name}</div>
+        <div style="font-size:11px;color:var(--muted)">${s.status.toUpperCase()}${s.acted_at?' · '+new Date(s.acted_at).toLocaleDateString('en-IN'):''}</div>
+        ${s.notes?`<div style="font-size:12px;margin-top:3px;color:#555">${s.notes}</div>`:''}
+      </div>
+    </div>`).join('');
+
+  const reviseNote=o.revise_note?`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 12px;margin-top:8px;font-size:12px"><strong>Rejection reason:</strong> ${o.revise_note}</div>`:'';
+
+  document.getElementById('od-body').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;margin-bottom:14px">
+      <div><span style="font-size:11px;color:var(--muted)">CANDIDATE</span><div style="font-weight:600">${o.candidate_name}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">ROLE</span><div>${o.job_title}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">DESIGNATION</span><div>${o.designation||'—'}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">JOINING DATE</span><div>${o.joining_date||'—'}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">FIXED CTC</span><div>${o.fixed_ctc?'₹'+Number(o.fixed_ctc).toLocaleString('en-IN'):'—'}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">VARIABLE CTC</span><div>${o.variable_ctc?'₹'+Number(o.variable_ctc).toLocaleString('en-IN'):'—'}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">BONUS</span><div>${o.bonus_ctc?'₹'+Number(o.bonus_ctc).toLocaleString('en-IN'):'—'}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">TOTAL CTC</span><div style="font-weight:700;color:var(--green)">${ctc}</div></div>
+      <div><span style="font-size:11px;color:var(--muted)">STATUS</span><div><span class="pill ${o.status}">${o.status.replace(/_/g,' ')}</span></div></div>
+      <div><span style="font-size:11px;color:var(--muted)">SUBMITTED BY</span><div>${o.submitted_by_name||'—'}</div></div>
+    </div>
+    ${o.notes?`<div style="font-size:12px;color:#555;margin-bottom:10px"><strong>Notes:</strong> ${o.notes}</div>`:''}
+    ${reviseNote}
+    ${o.darwin_ref?`<div style="font-size:12px;color:var(--green);margin:8px 0"><strong>Darwinbox Ref:</strong> ${o.darwin_ref}</div>`:''}
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin:12px 0 8px">Approval Chain (${o.current_step||1} of ${o.total_steps||'?'})</div>
+    <div style="display:flex;flex-direction:column;gap:6px">${stepsHtml||'<p class="empty" style="margin:0">No steps yet.</p>'}</div>`;
+
+  // Build action buttons based on role and offer status
+  const btns=['<button class="btn btn-ghost" onclick="closeOfferDetail()">Close</button>'];
+  const role=ME.role;
+  const uid=ME.sub;
+
+  if(o.status==='pending_approval'){
+    // Check if this user is the current-step approver
+    const currentStep=(o.steps||[]).find(s=>s.sequence===o.current_step&&s.status==='pending');
+    const isTurn=role==='admin'||(currentStep&&(o.chain||[]).find(c=>c.sequence===o.current_step&&c.approver_id===uid));
+    if(isTurn){
+      btns.push(`<button class="btn btn-primary" style="background:var(--green)" onclick="approveOfferStep('${offerId}')">✓ Approve</button>`);
+      btns.push(`<button class="btn btn-ghost" style="color:#c0392b;border-color:#e8c5c0" onclick="rejectOfferStep('${offerId}')">✕ Reject</button>`);
+    }
+    if(['recruiter','ta_manager','admin'].includes(role)){
+      btns.push(`<button class="btn btn-ghost" onclick="offerSetStatus('${offerId}','on_hold')">⏸ On Hold</button>`);
+      btns.push(`<button class="btn btn-ghost" style="color:#c0392b;border-color:#e8c5c0" onclick="offerSetStatus('${offerId}','cancelled')">Cancel Offer</button>`);
+    }
+  }
+  if(o.status==='revising'&&['recruiter','ta_manager','admin'].includes(role)){
+    btns.push(`<button class="btn btn-primary" onclick="openEditOfferModal('${offerId}')">Edit Offer</button>`);
+    btns.push(`<button class="btn btn-ghost" style="color:#c0392b;border-color:#e8c5c0" onclick="offerSetStatus('${offerId}','cancelled')">Cancel Offer</button>`);
+  }
+  if(o.status==='on_hold'&&['recruiter','ta_manager','admin'].includes(role)){
+    btns.push(`<button class="btn btn-primary" onclick="resubmitOffer('${offerId}')">Reactivate &amp; Resubmit</button>`);
+    btns.push(`<button class="btn btn-ghost" style="color:#c0392b;border-color:#e8c5c0" onclick="offerSetStatus('${offerId}','cancelled')">Cancel Offer</button>`);
+  }
+
+  document.getElementById('od-action-btns').innerHTML=btns.join('');
+}
+function closeOfferDetail(){document.getElementById('offer-detail-modal').classList.remove('open');}
+
+async function approveOfferStep(offerId){
+  const notes=prompt('Optional notes for this approval (or leave blank):');
+  if(notes===null) return; // user cancelled the prompt
+  const res=await api(`/api/offers/${offerId}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({notes:notes||null})});
+  if(!res||res.detail){flash(res?.detail||'Error',false);return;}
+  flash(res.status==='sent_to_darwinbox'?`Offer fully approved — sent to Darwinbox (Ref: ${res.darwin_ref})`:'Step approved. Next approver notified.');
+  closeOfferDetail();screenOffers();
+}
+
+async function rejectOfferStep(offerId){
+  const notes=prompt('Rejection reason (required):');
+  if(!notes||!notes.trim()){flash('Rejection reason is required.',false);return;}
+  const res=await api(`/api/offers/${offerId}/reject`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({notes})});
+  if(!res||res.detail){flash(res?.detail||'Error',false);return;}
+  flash('Offer sent back for revision. Recruiter notified.');
+  closeOfferDetail();screenOffers();
+}
+
+async function offerSetStatus(offerId,status){
+  const label=status==='on_hold'?'put on hold':'cancel';
+  if(!confirm(`Are you sure you want to ${label} this offer?`)) return;
+  const res=await api(`/api/offers/${offerId}/status`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
+  if(!res||res.detail){flash(res?.detail||'Error',false);return;}
+  flash(`Offer ${status.replace('_',' ')}.`);
+  closeOfferDetail();screenOffers();
+}
+
+// Edit offer (revising state)
+async function openEditOfferModal(offerId){
+  closeOfferDetail();
+  const o=await api(`/api/offers/${offerId}`);
+  if(!o){flash('Could not load offer.',false);return;}
+  _coAppId=null;
+  document.getElementById('co-cand-name').textContent=o.candidate_name||'Candidate';
+  document.getElementById('co-designation').value=o.designation||'';
+  document.getElementById('co-joining').value=o.joining_date||'';
+  document.getElementById('co-fixed').value=o.fixed_ctc||'';
+  document.getElementById('co-variable').value=o.variable_ctc||'';
+  document.getElementById('co-bonus').value=o.bonus_ctc||'';
+  document.getElementById('co-total').value=o.total_ctc||'';
+  document.getElementById('co-notes').value=o.notes||'';
+  document.getElementById('co-chain-preview').innerHTML=o.revise_note?
+    `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:6px 10px;font-size:12px"><strong>Rejection reason:</strong> ${o.revise_note}</div>`:'';
+  const btn=document.getElementById('co-submit-btn');
+  btn.disabled=false;
+  btn.textContent='Save & Resubmit';
+  btn.onclick=()=>_saveAndResubmit(offerId);
+  document.getElementById('create-offer-modal').classList.add('open');
+}
+async function _saveAndResubmit(offerId){
+  const btn=document.getElementById('co-submit-btn');
+  btn.disabled=true;btn.textContent='Saving…';
+  const editBody={
+    designation:document.getElementById('co-designation').value.trim()||null,
+    joining_date:document.getElementById('co-joining').value||null,
+    fixed_ctc:parseFloat(document.getElementById('co-fixed').value)||null,
+    variable_ctc:parseFloat(document.getElementById('co-variable').value)||null,
+    bonus_ctc:parseFloat(document.getElementById('co-bonus').value)||null,
+    notes:document.getElementById('co-notes').value.trim()||null,
+  };
+  const editRes=await api(`/api/offers/${offerId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(editBody)});
+  if(!editRes||editRes.detail){flash(editRes?.detail||'Error saving edits',false);btn.disabled=false;btn.textContent='Save & Resubmit';return;}
+  const resubRes=await api(`/api/offers/${offerId}/resubmit`,{method:'POST'});
+  btn.disabled=false;btn.textContent='Save & Resubmit';
+  if(!resubRes||resubRes.detail){flash(resubRes?.detail||'Error resubmitting offer',false);return;}
+  flash('Offer updated and resubmitted for approval.');
+  closeCreateOfferModal();screenOffers();
+}
+
+async function resubmitOffer(offerId){
+  if(!confirm('Resubmit this offer? The approval chain will restart from step 1.')) return;
+  const res=await api(`/api/offers/${offerId}/resubmit`,{method:'POST'});
+  if(!res||res.detail){flash(res?.detail||'Error',false);return;}
+  flash('Offer resubmitted. Step-1 approver notified.');
+  closeOfferDetail();screenOffers();
+}
 
 // ── Post-OAuth redirect ───────────────────────────────────────────────────────
 const _qs=new URLSearchParams(window.location.search);

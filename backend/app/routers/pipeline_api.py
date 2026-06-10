@@ -720,14 +720,21 @@ def list_interviews(user: dict = Depends(get_current_user)):
         "WHERE ip.interview_id = i.id AND ip.interviewer_id = %s) AS is_on_panel"
     )
 
+    _notes_sub = (
+        "COALESCE((SELECT inotes.fetch_status FROM interview_notes inotes "
+        "WHERE inotes.interview_id = i.id LIMIT 1), 'none') AS transcript_status"
+    )
+
     if role == "recruiter":
         return query(
             f"""
             SELECT i.id, i.scheduled_at, i.status, i.meet_link, i.mode,
+                   i.gcal_event_id,
                    c.full_name AS candidate_name, r.title AS requisition,
                    rc.name AS round_name, a.id AS application_id,
                    {_panel_sub},
-                   {_sc_status_sub}
+                   {_sc_status_sub},
+                   {_notes_sub}
             FROM interview i
             JOIN application  a  ON a.id  = i.application_id
             JOIN candidate    c  ON c.id  = a.candidate_id
@@ -745,10 +752,12 @@ def list_interviews(user: dict = Depends(get_current_user)):
         return query(
             f"""
             SELECT i.id, i.scheduled_at, i.status, i.meet_link, i.mode,
+                   i.gcal_event_id,
                    c.full_name AS candidate_name, r.title AS requisition,
                    rc.name AS round_name, a.id AS application_id,
                    TRUE AS is_on_panel,
-                   {_sc_status_sub}
+                   {_sc_status_sub},
+                   {_notes_sub}
             FROM interview i
             JOIN application  a  ON a.id  = i.application_id
             JOIN candidate    c  ON c.id  = a.candidate_id
@@ -763,10 +772,12 @@ def list_interviews(user: dict = Depends(get_current_user)):
     return query(
         f"""
         SELECT i.id, i.scheduled_at, i.status, i.meet_link, i.mode,
+               i.gcal_event_id,
                c.full_name AS candidate_name, r.title AS requisition,
                rc.name AS round_name, a.id AS application_id,
                {_panel_sub},
-               {_sc_status_sub}
+               {_sc_status_sub},
+               {_notes_sub}
         FROM interview i
         JOIN application  a  ON a.id  = i.application_id
         JOIN candidate    c  ON c.id  = a.candidate_id

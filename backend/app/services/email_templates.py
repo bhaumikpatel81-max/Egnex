@@ -74,6 +74,118 @@ DEFAULTS: dict[str, dict] = {
         ],
         "category": "candidate",
     },
+
+    # ── Meeting Notetaker email template ─────────────────────────────────────
+
+    "meeting_summary": {
+        "name":    "Interview Transcript Summary (Recruiter)",
+        "subject": "Interview summary: {{candidate_name}} — {{job_title}} ({{interview_date}})",
+        "body": (
+            "Hi {{recruiter_name}},\n\n"
+            "Here is the AI-generated summary for your interview with {{candidate_name}} "
+            "for the position of {{job_title}} on {{interview_date}}.\n\n"
+            "── DISCUSSION POINTS ──\n{{discussion_points}}\n\n"
+            "── STRENGTHS ──\n{{strengths}}\n\n"
+            "── CONCERNS / GAPS ──\n{{concerns}}\n\n"
+            "── OVERALL NOTE ──\n{{overall_note}}\n\n"
+            "The full transcript is available in Egnex (Interviews → Transcript).\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": [
+            "recruiter_name", "candidate_name", "job_title", "interview_date",
+            "discussion_points", "strengths", "concerns", "overall_note",
+        ],
+        "category": "panel",
+    },
+
+    # ── Offer & Approvals email templates ─────────────────────────────────────
+
+    "offer_awaiting_approval": {
+        "name":    "Offer Awaiting Approval (Approver)",
+        "subject": "Action required: Offer approval needed — {{candidate_name}} ({{job_title}})",
+        "body": (
+            "Hi {{approver_name}},\n\n"
+            "An offer is awaiting your approval (step {{step_num}} of {{total_steps}}).\n\n"
+            "Candidate:    {{candidate_name}}\n"
+            "Role:         {{job_title}}\n"
+            "Designation:  {{designation}}\n"
+            "Total CTC:    {{total_ctc}}\n"
+            "Joining Date: {{joining_date}}\n\n"
+            "Please log in to Egnex and navigate to Offers & Approvals to approve or reject this offer.\n\n"
+            "Regards,\nEgnex Hiring Team"
+        ),
+        "valid_placeholders": [
+            "approver_name", "candidate_name", "job_title", "designation",
+            "total_ctc", "joining_date", "step_num", "total_steps",
+        ],
+        "category": "panel",
+    },
+
+    "offer_step_approved": {
+        "name":    "Offer Step Approved — Audit (Recruiter + TA Manager)",
+        "subject": "Offer approved at step {{step_num}}/{{total_steps}} — {{candidate_name}} ({{job_title}})",
+        "body": (
+            "Offer Approval Audit\n\n"
+            "Candidate:   {{candidate_name}}\n"
+            "Role:        {{job_title}}\n"
+            "Approved by: {{approver_name}}\n"
+            "Step:        {{step_num}} of {{total_steps}}\n"
+            "At:          {{approved_at}}\n"
+            "Notes:       {{notes}}\n\n"
+            "This is an automated audit notification. No action is required at this stage.\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": [
+            "candidate_name", "job_title", "approver_name",
+            "step_num", "total_steps", "approved_at", "notes",
+        ],
+        "category": "panel",
+    },
+
+    "offer_rejected": {
+        "name":    "Offer Rejected — Action Required (Recruiter + TA Manager)",
+        "subject": "Offer REJECTED at step {{step_num}} — {{candidate_name}} ({{job_title}})",
+        "body": (
+            "Offer Rejected\n\n"
+            "Candidate:   {{candidate_name}}\n"
+            "Role:        {{job_title}}\n"
+            "Rejected by: {{approver_name}}\n"
+            "Step:        {{step_num}}\n"
+            "Reason:      {{notes}}\n"
+            "At:          {{rejected_at}}\n\n"
+            "The offer is now in 'Revising' state. The recruiter must update the offer details "
+            "and resubmit it to restart the approval chain.\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": [
+            "candidate_name", "job_title", "approver_name",
+            "step_num", "notes", "rejected_at",
+        ],
+        "category": "panel",
+    },
+
+    "offer_approved_darwinbox": {
+        "name":    "Offer Fully Approved — Sent to Darwinbox (Recruiter + TA Manager)",
+        "subject": "Offer fully approved — {{candidate_name}} sent to Darwinbox (Ref: {{darwin_ref}})",
+        "body": (
+            "Offer Fully Approved\n\n"
+            "Candidate:    {{candidate_name}}\n"
+            "Role:         {{job_title}}\n"
+            "Designation:  {{designation}}\n"
+            "Total CTC:    {{total_ctc}}\n"
+            "Joining Date: {{joining_date}}\n"
+            "Darwinbox Ref: {{darwin_ref}}\n"
+            "Approved At:  {{approved_at}}\n\n"
+            "The offer has cleared all approval steps and has been handed off to Darwinbox "
+            "for letter generation and onboarding initiation.\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": [
+            "candidate_name", "job_title", "designation", "total_ctc",
+            "joining_date", "darwin_ref", "approved_at",
+        ],
+        "category": "panel",
+    },
 }
 
 # ── Sample data for live preview ──────────────────────────────────────────────

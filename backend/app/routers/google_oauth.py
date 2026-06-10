@@ -26,9 +26,14 @@ router = APIRouter(prefix="/api/google", tags=["google-oauth"])
 
 _SCOPES = [
     "https://www.googleapis.com/auth/calendar",
+    # drive.readonly lets Egnex find Meet transcript docs saved to the organizer's Drive.
+    # Existing users who connected before this change must reconnect (one click) to grant it.
+    "https://www.googleapis.com/auth/drive.readonly",
     "https://www.googleapis.com/auth/userinfo.email",
     "openid",
 ]
+
+_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
 
 
 def _client_config() -> dict:
@@ -128,17 +133,41 @@ def callback(state: str, code: str | None = None, error: str | None = None):
 
 @router.get("/status")
 def status(recruiter_id: str):
-    """Return link state for a recruiter: {linked, google_email}."""
+    """Return link state for a recruiter: {linked, google_email, has_drive_scope}."""
     row = query_one(
-        "SELECT google_email, token_expiry FROM recruiter_google_token WHERE user_id = %s",
+        "SELECT google_email, token_expiry, scope FROM recruiter_google_token WHERE user_id = %s",
         [recruiter_id],
     )
     if not row:
-        return {"linked": False, "google_email": None}
+        return {"linked": False, "google_email": None, "has_drive_scope": False}
+    scope_str = row.get("scope") or ""
     return {
-        "linked":       True,
-        "google_email": row["google_email"],
-        "token_expiry": row["token_expiry"].isoformat() if row["token_expiry"] else None,
+        "linked":          True,
+        "google_email":    row["google_email"],
+        "token_expiry":    row["token_expiry"].isoformat() if row["token_expiry"] else None,
+        "has_drive_scope": _DRIVE_SCOPE in scope_str.split(),
+    }
+
+
+@router.get("/scope-check")
+def scope_check(recruiter_id: str):
+    """
+    Return whether the recruiter's token includes the Drive read-only scope.
+    Used by the Interviews screen to decide whether to show a 'reconnect' prompt
+    before the 'Fetch Transcript' button.
+    """
+    row = query_one(
+        "SELECT scope FROM recruiter_google_token WHERE user_id = %s",
+        [recruiter_id],
+    )
+    if not row:
+        return {"linked": False, "has_drive_scope": False}
+    scope_str = row.get("scope") or ""
+    has_drive = _DRIVE_SCOPE in scope_str.split()
+    return {
+        "linked":          True,
+        "has_drive_scope": has_drive,
+        "reconnect_url":   f"/api/google/connect?recruiter_id={recruiter_id}" if not has_drive else None,
     }
 
 

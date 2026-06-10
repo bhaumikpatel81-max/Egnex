@@ -26,7 +26,7 @@ from pydantic import BaseModel
 import psycopg2
 
 from .db import query, query_one
-from .services import pipeline, connectors, notetaker
+from .services import pipeline, connectors
 from .services.resume_parser import extract_text as _parse_resume
 from .routers.google_oauth import router as _google_oauth_router
 from .routers.auth import router as _auth_router
@@ -38,6 +38,8 @@ from .routers.proctoring_api import router as _proctoring_router
 from .routers.tickets_api import router as _tickets_router
 from .routers.scorecard_api import router as _scorecard_router
 from .routers.email_template_api import router as _email_template_router
+from .routers.offers_api import router as _offers_router
+from .routers.transcript_api import router as _transcript_router
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
@@ -51,6 +53,8 @@ app.include_router(_proctoring_router)
 app.include_router(_tickets_router)
 app.include_router(_scorecard_router)
 app.include_router(_email_template_router)
+app.include_router(_offers_router)
+app.include_router(_transcript_router)
 
 
 @app.on_event("startup")
@@ -143,6 +147,92 @@ def _auto_migrate():
         "ALTER TABLE email_template ADD COLUMN IF NOT EXISTS template_key       TEXT",
         "ALTER TABLE email_template ADD COLUMN IF NOT EXISTS valid_placeholders JSONB",
         "ALTER TABLE email_template ADD COLUMN IF NOT EXISTS updated_by         UUID REFERENCES app_user(id)",
+        # Migration 26: Offers & Approvals — per-requisition approval chains (added 2026-06)
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS bonus_ctc    NUMERIC",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS designation  TEXT",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS joining_date DATE",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS notes        TEXT",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS revise_note  TEXT",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS darwin_ref   TEXT",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS current_step INT  NOT NULL DEFAULT 1",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS submitted_by UUID REFERENCES app_user(id)",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMPTZ",
+        "ALTER TABLE offer ADD COLUMN IF NOT EXISTS updated_at   TIMESTAMPTZ",
+        # Widen offer.status — drop old CHECK and replace (name varies by Postgres)
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'offer'::regclass AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE offer DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """ALTER TABLE offer ADD CONSTRAINT offer_status_check
+           CHECK (status IN (
+               'draft','pending_approval','approved','rejected',
+               'revising','on_hold','cancelled','sent_to_darwinbox',
+               'released','accepted','declined'
+           ))""",
+        # Widen application.status to include offer hold/cancel states
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'application'::regclass AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE application DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """ALTER TABLE application ADD CONSTRAINT application_status_check
+           CHECK (status IN (
+               'applied','screening','screen_passed','screen_rejected',
+               'interviewing','selected','rejected',
+               'offer_stage','offered','offer_on_hold','offer_cancelled',
+               'joined','dropped'
+           ))""",
+        # Per-requisition offer approval chain (user-specific ordered steps)
+        """CREATE TABLE IF NOT EXISTS req_offer_approver (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            requisition_id  UUID NOT NULL REFERENCES requisition(id) ON DELETE CASCADE,
+            approver_id     UUID NOT NULL REFERENCES app_user(id),
+            sequence        INT  NOT NULL,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (requisition_id, sequence)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_req_offer_approver_req ON req_offer_approver(requisition_id)",
+        # Offer approval step log (one row per step per offer)
+        """CREATE TABLE IF NOT EXISTS offer_approval_step (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            offer_id    UUID NOT NULL REFERENCES offer(id) ON DELETE CASCADE,
+            approver_id UUID NOT NULL REFERENCES app_user(id),
+            sequence    INT  NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','approved','rejected','skipped')),
+            notes       TEXT,
+            acted_at    TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_offer_step_offer    ON offer_approval_step(offer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_offer_step_approver ON offer_approval_step(approver_id)",
+        # Migration 27: Meeting Notetaker — interview transcript notes (added 2026-06)
+        # Stores Drive file info, raw transcript, and Groq summary for each interview.
+        """CREATE TABLE IF NOT EXISTS interview_notes (
+            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            interview_id     UUID NOT NULL UNIQUE REFERENCES interview(id) ON DELETE CASCADE,
+            application_id   UUID REFERENCES application(id) ON DELETE CASCADE,
+            drive_file_id    TEXT,
+            drive_file_name  TEXT,
+            transcript_text  TEXT,
+            summary          JSONB,
+            fetch_status     TEXT NOT NULL DEFAULT 'none',
+            fetch_error      TEXT,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_interview_notes_interview ON interview_notes(interview_id)",
     ]
     for sql in migrations:
         try:
@@ -732,44 +822,6 @@ def schedule(payload: ScheduleIn):
     except Exception as _sched_email_exc:
         print(f"[schedule] Email send failed: {_sched_email_exc}")
     return meeting
-
-
-# ---------------- notetaker ----------------
-class ConsentIn(BaseModel):
-    interview_id: str
-    candidate_id: str
-    consent_text: str = ("This interview will be recorded and processed by Egnex "
-                         "to generate notes shared with the hiring panel. "
-                         "Do you consent?")
-    region: str = "IN"
-
-
-@app.post("/api/consent/request")
-def consent_request(payload: ConsentIn):
-    return notetaker.request_consent(payload.interview_id, payload.candidate_id,
-                                     payload.consent_text, payload.region)
-
-
-class ConsentResponseIn(BaseModel):
-    interview_id: str
-    granted: bool
-
-
-@app.post("/api/consent/respond")
-def consent_respond(payload: ConsentResponseIn):
-    return notetaker.record_consent_response(payload.interview_id, payload.granted)
-
-
-class NotesIn(BaseModel):
-    interview_id: str
-    job_description: str = ""
-    share_with: list[str] = []
-
-
-@app.post("/api/interviews/notes")
-def interview_notes(payload: NotesIn):
-    return notetaker.process_interview(payload.interview_id, payload.job_description,
-                                      payload.share_with)
 
 
 # ---------------- reports ----------------

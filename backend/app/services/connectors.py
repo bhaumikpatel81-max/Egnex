@@ -328,5 +328,77 @@ def run_bot_interview(candidate_id: str, job_description: str) -> dict:
 # ------------------------------------------------------------------ #
 
 def push_offer_to_darwin(offer: dict) -> dict:
-    """STUB: replace body with Darwinbox API call."""
-    return {"darwin_pushed": True, "darwin_ref": f"DRW-{uuid.uuid4().hex[:8]}"}
+    """
+    STUB — Darwinbox offer handoff.  Replace the body of this function with the
+    real Darwinbox REST API call when the integration is ready.
+
+    ── What the dev team needs to wire this up ──────────────────────────────────
+
+    1. API base URL
+       Darwinbox provides a tenant-specific base URL, typically:
+         https://<your-tenant>.darwinbox.in/apiv2/
+       Obtain this from your Darwinbox implementation partner or admin portal.
+
+    2. Authentication
+       Darwinbox uses OAuth 2.0 client credentials for API access:
+         POST /oauth/token
+           grant_type    = client_credentials
+           client_id     = <from Darwinbox admin panel>
+           client_secret = <from Darwinbox admin panel>
+       Store client_id and client_secret in system_settings or .env.prod,
+       NOT hard-coded here.  Bearer token expires — implement token caching.
+
+    3. Payload format (candidate offer)
+       The exact field names depend on your Darwinbox module configuration.
+       Typical fields for an offer record:
+         {
+           "employee_code":    "<auto-assigned or passed>",
+           "first_name":       "<from candidate>",
+           "last_name":        "<from candidate>",
+           "email":            "<candidate email>",
+           "designation":      offer["designation"],
+           "date_of_joining":  offer["joining_date"],  // "YYYY-MM-DD"
+           "cost_to_company":  offer["total_ctc"],      // annual, numeric
+           "department":       "<from requisition BU>",
+           "location":         "<from requisition>",
+           "employment_type":  "full_time" | "contract",
+         }
+       Confirm exact keys with Darwinbox during integration testing.
+
+    4. Endpoint
+       POST /apiv2/employee/create  (or /apiv2/offer/create — verify with Darwinbox)
+       Headers:
+         Authorization: Bearer <access_token>
+         Content-Type:  application/json
+
+    5. Response
+       On success Darwinbox returns an employee/offer ID — store that in
+       offer.darwin_ref so you can look up the record later.
+
+    6. Error handling
+       - 401: token expired, refresh and retry once
+       - 422: payload validation error — log the full response body
+       - 5xx: transient — use exponential back-off (max 3 retries)
+
+    7. Security note
+       All Darwinbox credentials MUST live in system_settings or .env.prod.
+       Never commit credentials to source control.
+
+    ─────────────────────────────────────────────────────────────────────────────
+    Until the integration is wired up, this function logs the payload and returns
+    a synthetic reference so the rest of the approval workflow completes normally.
+    The darwin_ref stored in the offer table will start with "STUB-" — the dev
+    team can query `SELECT * FROM offer WHERE darwin_ref LIKE 'STUB-%'` to find
+    all offers that still need real Darwinbox pushes after go-live.
+    """
+    stub_ref = f"STUB-DRW-{uuid.uuid4().hex[:8].upper()}"
+    print(
+        f"[darwinbox STUB] push_offer_to_darwin called — offer_id={offer.get('id')} "
+        f"candidate='{offer.get('candidate')}' designation='{offer.get('designation')}' "
+        f"total_ctc={offer.get('total_ctc')} joining_date={offer.get('joining_date')} "
+        f"darwin_ref_assigned={stub_ref}"
+    )
+    return {
+        "darwin_pushed": True,
+        "darwin_ref":    stub_ref,
+    }
