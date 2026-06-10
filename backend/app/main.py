@@ -112,6 +112,34 @@ def _auto_migrate():
            )""",
         # Migration 16: conversational interview turn history (added 2026-06)
         "ALTER TABLE nexai_session ADD COLUMN IF NOT EXISTS conversation JSONB",
+        # Migration 17: deduplicate candidate emails + enforce unique index (added 2026-06)
+        # Steps 1-3 are no-ops when no duplicates exist; step 4 is IF NOT EXISTS safe.
+        """UPDATE application a
+           SET candidate_id = canon.id
+           FROM (
+               SELECT DISTINCT ON (LOWER(email)) id, LOWER(email) AS norm_email
+               FROM candidate ORDER BY LOWER(email), created_at ASC
+           ) canon
+           JOIN candidate dup ON LOWER(dup.email) = canon.norm_email AND dup.id <> canon.id
+           WHERE a.candidate_id = dup.id
+             AND NOT EXISTS (
+                 SELECT 1 FROM application x
+                 WHERE x.candidate_id = canon.id AND x.requisition_id = a.requisition_id
+             )""",
+        """DELETE FROM application a
+           WHERE EXISTS (
+               SELECT 1 FROM candidate c WHERE c.id = a.candidate_id
+               AND EXISTS (
+                   SELECT 1 FROM candidate older
+                   WHERE LOWER(older.email) = LOWER(c.email) AND older.created_at < c.created_at
+               )
+           )""",
+        """DELETE FROM candidate c
+           WHERE EXISTS (
+               SELECT 1 FROM candidate older
+               WHERE LOWER(older.email) = LOWER(c.email) AND older.created_at < c.created_at
+           )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uidx_candidate_email ON candidate (LOWER(email))",
         # Migration 18: proctoring completion flag (added 2026-06)
         "ALTER TABLE proctoring_session ADD COLUMN IF NOT EXISTS proctoring_complete BOOLEAN NOT NULL DEFAULT FALSE",
         # Migration 19: email-sent guard to prevent duplicate completion emails (added 2026-06)
