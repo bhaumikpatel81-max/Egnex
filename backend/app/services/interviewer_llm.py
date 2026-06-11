@@ -31,7 +31,8 @@ def _model() -> str:
 # Hard cap: force is_complete=True after this many bot turns regardless of sentinel.
 # Includes the hardcoded intro turn. Set high enough to allow the two-step graceful
 # ending (wrap-up question + closing) without hitting the cap prematurely.
-_MAX_BOT_TURNS = 18
+# Target interview length: 25–30 min (~22–28 substantive exchanges + 2-step close).
+_MAX_BOT_TURNS = 30
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
 
@@ -50,14 +51,19 @@ Do NOT introduce yourself or ask if the candidate is ready — begin directly wi
 - Ask exactly ONE question per turn. Never stack multiple questions in one reply.
 - Listen carefully to what the candidate just said and open with a brief, varied \
 acknowledgement before your next question -- as a human interviewer would.
-- Cover ALL of the key skills organically across the conversation. For each key skill, \
-ask at least one follow-up to probe depth beyond the surface answer before moving on.
+- Cover ALL of the key skills thoroughly across the conversation. For each key skill, \
+ask 2–3 follow-up questions that probe real-world application, depth, and edge cases \
+before moving to the next skill. Do NOT skip any key skill and do NOT move on after \
+a single surface-level answer.
 - Keep every reply short and spoken-friendly: no bullet points, no numbered lists, \
 no markdown formatting -- this text will be read aloud by text-to-speech.
 - Vary your acknowledgements. Do not open every turn with "Great!" or "Excellent!".
+- Aim for a thorough, substantive conversation of ~22–28 exchanges. Do NOT wrap up \
+early — if you have not yet deeply explored all key skills with follow-ups, keep asking.
 - GRACEFUL ENDING (two steps — follow this exactly):
-  Step 1: After 10 to 14 substantive exchanges (not counting the opening introduction), \
-when you have covered the key skills, ask a closing confirmation: \
+  Step 1: After 22 to 28 substantive exchanges (not counting the opening introduction), \
+when you have thoroughly covered all key skills with multiple follow-ups each, ask a \
+closing confirmation: \
 "That covers what I wanted to ask — is there anything you'd like to add before we wrap up?" \
 Do NOT include [INTERVIEW_COMPLETE] on this turn.
   Step 2: On the very next turn, after the candidate has answered the closing confirmation, \

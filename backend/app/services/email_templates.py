@@ -27,7 +27,7 @@ DEFAULTS: dict[str, dict] = {
             "Hi {{candidate_name}},\n\n"
             "Congratulations! You have been shortlisted for an AI Screening Interview "
             "for the position of {{job_title}} at {{company_name}}.\n\n"
-            "Please use the link below to attend your interview at your convenience:\n\n"
+            "Please use the link below to attend your interview at your convenience:\n"
             "  {{interview_link}}\n\n"
             "The interview takes approximately 25–30 minutes. "
             "You will need a microphone and a quiet environment.\n\n"
@@ -35,7 +35,8 @@ DEFAULTS: dict[str, dict] = {
             "- Once you start, you have 48 hours to complete the interview\n"
             "- You can close and re-open the link within that window if needed\n"
             "- NexAI never auto-rejects — all scores are reviewed by a human recruiter\n\n"
-            "Best regards,\nEgnex Hiring Team | {{company_name}}"
+            "Best regards,\n"
+            "Egnex Hiring Team | {{company_name}}"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "company_name", "interview_link",
@@ -188,6 +189,14 @@ DEFAULTS: dict[str, dict] = {
     },
 }
 
+# Placeholders guaranteed to be fillable for ANY application (used by custom templates)
+CUSTOM_PLACEHOLDERS: list[str] = [
+    "candidate_name", "job_title", "company_name", "recruiter_name",
+]
+
+# Keys of all built-in templates (used to guard against deletion)
+BUILTIN_KEYS: frozenset[str] = frozenset(DEFAULTS)
+
 # ── Sample data for live preview ──────────────────────────────────────────────
 SAMPLE_VALUES: dict[str, str] = {
     "candidate_name":     "Rimjhim Rai",
@@ -234,8 +243,8 @@ def ensure_defaults() -> None:
             try:
                 query(
                     """INSERT INTO email_template
-                       (name, subject, body, category, template_key, valid_placeholders)
-                       VALUES (%s, %s, %s, %s, %s, %s::jsonb)""",
+                       (name, subject, body, category, template_key, valid_placeholders, is_builtin)
+                       VALUES (%s, %s, %s, %s, %s, %s::jsonb, TRUE)""",
                     [
                         tmpl["name"], tmpl["subject"], tmpl["body"],
                         tmpl.get("category", ""),
@@ -246,6 +255,16 @@ def ensure_defaults() -> None:
                 )
             except Exception as exc:
                 print(f"[email_templates] Could not seed default '{key}': {exc}")
+        else:
+            # Ensure is_builtin is stamped on rows that pre-date this migration
+            try:
+                query(
+                    "UPDATE email_template SET is_builtin = TRUE WHERE template_key = %s AND is_builtin IS DISTINCT FROM TRUE",
+                    [key],
+                    fetch=False,
+                )
+            except Exception:
+                pass
 
 
 def get_template(key: str) -> dict:
@@ -331,8 +350,47 @@ def validate_placeholders(key: str, subject: str, body: str) -> list[str]:
     not in the valid_placeholders list for this template type.
     Empty list means everything is fine.
     """
-    default = DEFAULTS.get(key, {})
-    valid   = set(default.get("valid_placeholders", []))
+    if key in DEFAULTS:
+        valid = set(DEFAULTS[key].get("valid_placeholders", []))
+    else:
+        # Custom template: derive valid set from DB row
+        row = query_one(
+            "SELECT valid_placeholders FROM email_template WHERE template_key = %s LIMIT 1",
+            [key],
+        )
+        vp = row["valid_placeholders"] if row else []
+        if isinstance(vp, str):
+            try:
+                vp = json.loads(vp)
+            except Exception:
+                vp = []
+        valid = set(vp or CUSTOM_PLACEHOLDERS)
     used    = _find_placeholders(subject) | _find_placeholders(body)
     unknown = used - valid
     return [f"Unknown placeholder: {{{{{p}}}}}" for p in sorted(unknown)]
+
+
+def get_custom_templates() -> list[dict]:
+    """Return all active custom (non-builtin) templates from the DB."""
+    rows = query(
+        """SELECT template_key, name, category, valid_placeholders
+           FROM email_template
+           WHERE is_builtin = FALSE AND is_active = TRUE
+           ORDER BY name""",
+    )
+    result = []
+    for r in (rows or []):
+        vp = r["valid_placeholders"]
+        if isinstance(vp, str):
+            try:
+                vp = json.loads(vp)
+            except Exception:
+                vp = []
+        result.append({
+            "template_key":       r["template_key"],
+            "name":               r["name"],
+            "category":           r.get("category", "custom"),
+            "valid_placeholders": vp or CUSTOM_PLACEHOLDERS,
+            "is_builtin":         False,
+        })
+    return result

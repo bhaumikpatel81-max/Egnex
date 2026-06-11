@@ -805,6 +805,30 @@ select{background-image:none}
   </div>
 </div>
 
+<!-- ── Send Email modal ── -->
+<div class="modal-bg" id="send-email-modal" onclick="if(event.target===this)closeSendEmailModal()">
+  <div class="modal" style="max-width:560px">
+    <h3 style="margin-bottom:4px">Send Email</h3>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:16px">To: <strong id="sem-candidate-name"></strong></div>
+    <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Template</label>
+    <select id="sem-template-select" class="form-input" style="margin:6px 0 14px" onchange="semOnTemplateChange()">
+      <option value="">— pick a custom template —</option>
+    </select>
+    <div id="sem-preview-area" style="display:none">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Preview — actual candidate data</div>
+      <div id="sem-preview-subject" style="font-size:12px;color:var(--muted);margin-bottom:6px"></div>
+      <pre id="sem-preview-body"
+           style="background:#faf9f6;border:1px solid var(--border);border-radius:6px;padding:12px 14px;
+                  font-size:12px;line-height:1.65;white-space:pre-wrap;word-break:break-word;margin:0;max-height:240px;overflow-y:auto"></pre>
+    </div>
+    <div id="sem-status" style="font-size:13px;min-height:16px;margin-top:10px"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeSendEmailModal()">Cancel</button>
+      <button class="btn btn-primary" id="sem-send-btn" onclick="confirmSendEmail()" disabled>Send Email</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
 const _tok = localStorage.getItem('egnex_token');
@@ -1964,19 +1988,27 @@ async function screenCandidates() {
 
   const canAct=['recruiter','ta_manager','admin'].includes(ME.role);
   const tRows = rows.map(r=>{
+    const safeName=(r.full_name||'').replace(/'/g,"\\'");
+    const safeEmail=(r.email||'').replace(/'/g,"\\'");
+    const sendBtn=canAct&&r.email
+      ?`<button class="btn btn-ghost btn-sm" title="Send email from template" style="padding:2px 8px"
+           onclick="openSendEmailModal('${r.app_id}','${safeName}',event)">✉</button>` :'';
     let actions='';
     if(canAct){
       if(r.status==='screening'){
-        actions=`<div style="display:flex;gap:4px">
+        actions=`<div style="display:flex;gap:4px;align-items:center">
           <button class="btn btn-green btn-sm" onclick="passScreening('${r.app_id}')">Pass</button>
           <button class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#e8c5c0" onclick="rejectScreening('${r.app_id}')">Reject</button>
+          ${sendBtn}
         </div>`;
       } else if(r.status==='screen_passed'){
-        actions=`<button class="btn btn-primary btn-sm" onclick="sendNexAIInvite('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}','${(r.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`;
+        actions=`<div style="display:flex;gap:4px;align-items:center"><button class="btn btn-primary btn-sm" onclick="sendNexAIInvite('${r.app_id}','${safeName}','${safeEmail}',event)">📧 Send AI Invite</button>${sendBtn}</div>`;
       } else if(r.status==='selected'){
-        actions=`<button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openCreateOfferModal('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}',event,'${r.req_id||''}')">📄 Create Offer</button>`;
+        actions=`<div style="display:flex;gap:4px;align-items:center"><button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openCreateOfferModal('${r.app_id}','${safeName}',event,'${r.req_id||''}')">📄 Create Offer</button>${sendBtn}</div>`;
       } else if(r.req_id){
-        actions=`<button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>`;
+        actions=`<div style="display:flex;gap:4px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>${sendBtn}</div>`;
+      } else {
+        actions=sendBtn?`<div style="display:flex;gap:4px">${sendBtn}</div>`:'';
       }
     }
     return `<tr>
@@ -2000,6 +2032,80 @@ async function screenCandidates() {
         ? `<table><thead><tr><th>Name</th><th>Email</th><th>Gender</th><th>Requisition</th><th>Recruiter</th><th>Match</th><th>Combined</th><th>Stage</th><th>Actions</th></tr></thead><tbody>${tRows}</tbody></table>`
         : `<p class="empty">${filterLabel ? 'No candidates match this filter.' : 'No candidates yet.'}</p>`}
     </div>`;
+}
+
+// ── Send Email modal ──────────────────────────────────────────────────────────
+let _semAppId = null;
+
+async function openSendEmailModal(appId, candidateName, evt) {
+  if (evt) evt.stopPropagation();
+  _semAppId = appId;
+  document.getElementById('sem-candidate-name').textContent = candidateName;
+  document.getElementById('sem-preview-area').style.display = 'none';
+  document.getElementById('sem-status').textContent = '';
+  document.getElementById('sem-send-btn').disabled = true;
+  const modal = document.getElementById('send-email-modal');
+  modal.classList.add('open');
+
+  // Load custom templates for the picker
+  const sel = document.getElementById('sem-template-select');
+  sel.innerHTML = '<option value="">— loading… —</option>';
+  const templates = await api('/api/email-templates/sendable');
+  if (!templates || templates.detail) {
+    sel.innerHTML = '<option value="">— no custom templates found —</option>';
+    return;
+  }
+  if (!templates.length) {
+    sel.innerHTML = '<option value="">— no custom templates yet (create one first) —</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">— pick a template —</option>' +
+    templates.map(t => `<option value="${t.template_key}">${t.name}</option>`).join('');
+}
+
+function closeSendEmailModal() {
+  document.getElementById('send-email-modal').classList.remove('open');
+  _semAppId = null;
+}
+
+function semOnTemplateChange() {
+  const key = document.getElementById('sem-template-select').value;
+  const previewArea = document.getElementById('sem-preview-area');
+  const sendBtn     = document.getElementById('sem-send-btn');
+  document.getElementById('sem-status').textContent = '';
+  if (!key) {
+    previewArea.style.display = 'none';
+    sendBtn.disabled = true;
+    return;
+  }
+  // Show a placeholder preview note — actual data is server-side only
+  previewArea.style.display = 'block';
+  document.getElementById('sem-preview-subject').innerHTML =
+    '<span style="color:var(--muted);font-size:11px">Preview uses actual candidate data (filled server-side when sent)</span>';
+  document.getElementById('sem-preview-body').textContent = '';
+  sendBtn.disabled = false;
+}
+
+async function confirmSendEmail() {
+  const key = document.getElementById('sem-template-select').value;
+  if (!key || !_semAppId) return;
+  const sendBtn = document.getElementById('sem-send-btn');
+  const status  = document.getElementById('sem-status');
+  sendBtn.disabled = true;
+  status.textContent = 'Sending…';
+  const res = await api(`/api/applications/${_semAppId}/send-email`, {
+    method: 'POST',
+    body:   { template_key: key },
+  });
+  if (!res || res.detail) {
+    status.innerHTML = `<span style="color:#c00">${res?.detail || 'Send failed.'}</span>`;
+    sendBtn.disabled = false;
+  } else {
+    status.innerHTML = `<span style="color:#1d6e56">Sent to <strong>${res.sent_to}</strong>.</span>`;
+    document.getElementById('sem-preview-subject').innerHTML =
+      `<span style="color:var(--muted);font-size:11px">Subject: </span>${_escText(res.subject||'')}`;
+    setTimeout(() => closeSendEmailModal(), 1800);
+  }
 }
 
 // ── SCREEN: Interviews ────────────────────────────────────────────────────────
@@ -3576,7 +3682,10 @@ async function screenEmailTemplates() {
   document.getElementById('content').innerHTML = `
     <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start">
       <div>
-        <div class="card-title" style="margin-bottom:10px">Templates</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="card-title">Templates</div>
+          <button class="btn btn-primary btn-sm" onclick="etNewTemplate()">+ New</button>
+        </div>
         <div id="et-list" style="display:flex;flex-direction:column;gap:8px">
           <div style="color:var(--muted);font-size:13px">Loading…</div>
         </div>
@@ -3595,17 +3704,35 @@ async function screenEmailTemplates() {
 function _etRenderList() {
   const el = document.getElementById('et-list');
   if (!el) return;
-  el.innerHTML = _etTemplates.map(t => `
+  const builtins = _etTemplates.filter(t => t.is_builtin !== false);
+  const custom   = _etTemplates.filter(t => t.is_builtin === false);
+  let html = builtins.map(t => `
     <div class="card" id="et-card-${t.template_key}"
-         style="cursor:pointer;padding:12px 14px;transition:border-color .12s;border:1.5px solid ${_etCurrent===t.template_key?'var(--accent)':'var(--border)'}"
+         style="cursor:pointer;padding:10px 12px;transition:border-color .12s;border:1.5px solid ${_etCurrent===t.template_key?'var(--accent)':'var(--border)'}"
          onclick="etOpenTemplate('${t.template_key}')">
-      <div style="font-size:13px;font-weight:600;margin-bottom:3px">${t.name}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:2px">${t.name}</div>
       <div style="font-size:11px;color:var(--muted)">${t.category||''}
         ${t.is_customised
           ? `<span style="margin-left:6px;background:#dff0eb;color:#1d6e56;border-radius:8px;padding:1px 7px;font-size:11px">customised</span>`
           : `<span style="margin-left:6px;background:#f3f2ef;color:#9b9893;border-radius:8px;padding:1px 7px;font-size:11px">default</span>`}
       </div>
     </div>`).join('');
+  if (custom.length) {
+    html += `<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:10px 2px 4px">Custom</div>`;
+    html += custom.map(t => `
+      <div class="card" id="et-card-${t.template_key}"
+           style="cursor:pointer;padding:10px 12px;transition:border-color .12s;border:1.5px solid ${_etCurrent===t.template_key?'var(--accent)':'var(--border)'}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:2px;cursor:pointer" onclick="etOpenTemplate('${t.template_key}')">${t.name}</div>
+          <button class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#e8c5c0;padding:1px 7px;font-size:11px;flex-shrink:0"
+                  onclick="etDeleteCustom('${t.template_key}','${(t.name||'').replace(/'/g,"\\'")}')">Delete</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);cursor:pointer" onclick="etOpenTemplate('${t.template_key}')">
+          <span style="background:#ede9fe;color:#5b21b6;border-radius:8px;padding:1px 7px;font-size:11px">custom</span>
+        </div>
+      </div>`).join('');
+  }
+  el.innerHTML = html;
 }
 
 async function etOpenTemplate(key) {
@@ -3629,7 +3756,7 @@ async function etOpenTemplate(key) {
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="etReset('${key}')">Reset to default</button>
+          ${t.is_builtin!==false ? `<button class="btn btn-ghost btn-sm" onclick="etReset('${key}')">Reset to default</button>` : ''}
           <button class="btn btn-ghost btn-sm" onclick="etTestSend('${key}')">Send test</button>
           <button class="btn btn-primary btn-sm" onclick="etSave('${key}')">Save</button>
         </div>
@@ -3652,10 +3779,10 @@ async function etOpenTemplate(key) {
       <div id="et-status" style="font-size:13px;min-height:18px;margin-bottom:14px"></div>
 
       <div style="border-top:1px solid var(--border);padding-top:16px">
-        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
-          Live preview
-          <span style="font-size:11px;color:#d97706;font-weight:400;text-transform:none;letter-spacing:0;margin-left:8px">sample values shown in amber</span>
+        <div style="font-size:11px;font-weight:600;color:#d97706;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
+          LIVE PREVIEW — SAMPLE DATA ONLY (not a real candidate)
         </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Real emails use each candidate's actual details.</div>
         <div id="et-preview-subject" style="font-size:13px;color:var(--muted);margin-bottom:6px"></div>
         <pre id="et-preview-body"
              style="background:#faf9f6;border:1px solid var(--border);border-radius:6px;padding:14px 16px;
@@ -3739,6 +3866,135 @@ async function etTestSend(key) {
   } else {
     status.innerHTML = `<span style="color:#1d6e56">Test email sent to <strong>${res.sent_to}</strong>.</span>`;
   }
+}
+
+async function etDeleteCustom(key, name) {
+  if (!confirm(`Delete custom template "${name}"? This cannot be undone.`)) return;
+  const res = await api(`/api/email-templates/${key}`, {method:'DELETE'});
+  if (!res || res.detail) { alert(res?.detail || 'Delete failed.'); return; }
+  if (_etCurrent === key) {
+    _etCurrent = null;
+    document.getElementById('et-editor').innerHTML = `<div class="card" style="text-align:center;padding:60px 20px;color:var(--muted);font-size:13px">Select a template to edit</div>`;
+  }
+  const templates = await api('/api/email-templates');
+  _etTemplates = templates;
+  _etRenderList();
+}
+
+// ── New custom template form ──────────────────────────────────────────────────
+
+const _CUSTOM_PH = ['candidate_name','job_title','company_name','recruiter_name'];
+
+function etNewTemplate() {
+  _etCurrent = null;
+  _etRenderList();
+  const phBtns = _CUSTOM_PH.map(p =>
+    `<button class="btn btn-ghost btn-sm" onclick="etInsertPlaceholderNew('${p}')"
+       style="font-family:monospace;font-size:11px">{{${p}}}</button>`
+  ).join('');
+  document.getElementById('et-editor').innerHTML = `
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px">
+        <div style="font-size:15px;font-weight:700">New Custom Template</div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="etCancelNew()">Cancel</button>
+          <button class="btn btn-primary btn-sm" onclick="etCreateTemplate()">Create</button>
+        </div>
+      </div>
+
+      <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Template Name</label>
+      <input id="et-new-name" type="text" class="form-input" style="margin:6px 0 10px"
+             placeholder="e.g. Interview Thank You" oninput="etNewKeyFromName()">
+
+      <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Key (auto-generated, editable)</label>
+      <input id="et-new-key" type="text" class="form-input" style="margin:6px 0 14px;font-family:monospace;font-size:12px"
+             placeholder="custom_…">
+
+      <div style="margin-bottom:14px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Available placeholders</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${phBtns}</div>
+      </div>
+
+      <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Subject</label>
+      <input id="et-subject" type="text" class="form-input"
+             style="margin:6px 0 14px" placeholder="Email subject…" oninput="etUpdatePreview()">
+
+      <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Body (plain text)</label>
+      <textarea id="et-body" class="form-input" rows="10"
+                style="margin:6px 0 14px;font-family:monospace;font-size:13px;line-height:1.55;resize:vertical"
+                oninput="etUpdatePreview()" placeholder="Email body…"></textarea>
+
+      <div id="et-status" style="font-size:13px;min-height:18px;margin-bottom:14px"></div>
+
+      <div style="border-top:1px solid var(--border);padding-top:16px">
+        <div style="font-size:11px;font-weight:600;color:#d97706;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">
+          LIVE PREVIEW — SAMPLE DATA ONLY (not a real candidate)
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Real emails use each candidate's actual details.</div>
+        <div id="et-preview-subject" style="font-size:13px;color:var(--muted);margin-bottom:6px"></div>
+        <pre id="et-preview-body"
+             style="background:#faf9f6;border:1px solid var(--border);border-radius:6px;padding:14px 16px;
+                    font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+      </div>
+    </div>`;
+
+  // Seed sample values for custom placeholders
+  window._etSampleValues = {
+    candidate_name: 'Rimjhim Rai',
+    job_title:      'Account Manager – Sales',
+    company_name:   'Amnex Infotechnologies Pvt Ltd',
+    recruiter_name: 'Priya Sharma',
+  };
+  etUpdatePreview();
+}
+
+function etNewKeyFromName() {
+  const name = (document.getElementById('et-new-name')?.value || '').trim();
+  const key  = 'custom_' + name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+  const keyEl = document.getElementById('et-new-key');
+  if (keyEl) keyEl.value = key;
+}
+
+function etInsertPlaceholderNew(ph) {
+  const active = document.activeElement;
+  const target = (active && (active.id==='et-body'||active.id==='et-subject')) ? active
+                 : document.getElementById('et-body');
+  if (!target) return;
+  const s = target.selectionStart, e = target.selectionEnd;
+  const tok = `{{${ph}}}`;
+  target.value = target.value.slice(0,s) + tok + target.value.slice(e);
+  target.selectionStart = target.selectionEnd = s + tok.length;
+  target.focus();
+  etUpdatePreview();
+}
+
+function etCancelNew() {
+  _etCurrent = null;
+  _etRenderList();
+  document.getElementById('et-editor').innerHTML = `<div class="card" style="text-align:center;padding:60px 20px;color:var(--muted);font-size:13px">Select a template to edit</div>`;
+}
+
+async function etCreateTemplate() {
+  const name    = (document.getElementById('et-new-name')?.value||'').trim();
+  const key     = (document.getElementById('et-new-key')?.value||'').trim();
+  const subject = (document.getElementById('et-subject')?.value||'').trim();
+  const body    = (document.getElementById('et-body')?.value||'').trim();
+  const status  = document.getElementById('et-status');
+  if (!name)    { status.innerHTML = '<span style="color:#c00">Template name is required.</span>'; return; }
+  if (!key)     { status.innerHTML = '<span style="color:#c00">Key is required.</span>'; return; }
+  if (!subject) { status.innerHTML = '<span style="color:#c00">Subject is required.</span>'; return; }
+  if (!body)    { status.innerHTML = '<span style="color:#c00">Body is required.</span>'; return; }
+  status.textContent = 'Creating…';
+  const res = await api('/api/email-templates', {method:'POST', body:{name, key, subject, body}});
+  if (!res || res.detail) { status.innerHTML = `<span style="color:#c00">${res?.detail||'Create failed.'}</span>`; return; }
+  const warns = res.warnings || [];
+  status.innerHTML = warns.length
+    ? `<span style="color:#d97706">Created. Warnings: ${warns.join('; ')}</span>`
+    : `<span style="color:#1d6e56">Template created.</span>`;
+  const templates = await api('/api/email-templates');
+  _etTemplates = templates;
+  _etRenderList();
+  setTimeout(() => etOpenTemplate(res.template_key), 400);
 }
 
 // ── SCREEN: TA Manager Reports ────────────────────────────────────────────────
