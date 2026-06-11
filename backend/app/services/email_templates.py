@@ -275,11 +275,14 @@ def get_template(key: str) -> dict:
       1. DB row with matching template_key (most-recently edited by admin)
       2. Built-in default (guarantees email can always be sent)
     """
-    row = query_one(
-        "SELECT name, subject, body, valid_placeholders, category "
-        "FROM email_template WHERE template_key = %s AND is_active = TRUE LIMIT 1",
-        [key],
-    )
+    try:
+        row = query_one(
+            "SELECT name, subject, body, valid_placeholders, category "
+            "FROM email_template WHERE template_key = %s AND is_active = TRUE LIMIT 1",
+            [key],
+        )
+    except Exception:
+        row = None  # DB schema not yet migrated — fall through to built-in default
     if row:
         vp = row["valid_placeholders"]
         if isinstance(vp, str):
@@ -371,13 +374,17 @@ def validate_placeholders(key: str, subject: str, body: str) -> list[str]:
 
 
 def get_custom_templates() -> list[dict]:
-    """Return all active custom (non-builtin) templates from the DB."""
-    rows = query(
-        """SELECT template_key, name, category, valid_placeholders
-           FROM email_template
-           WHERE is_builtin = FALSE AND is_active = TRUE
-           ORDER BY name""",
-    )
+    """Return all active custom (non-builtin) templates from the DB.
+    Returns [] gracefully if migration 26 hasn't been applied yet."""
+    try:
+        rows = query(
+            """SELECT template_key, name, category, valid_placeholders
+               FROM email_template
+               WHERE is_builtin = FALSE AND is_active = TRUE
+               ORDER BY name""",
+        )
+    except Exception:
+        return []
     result = []
     for r in (rows or []):
         vp = r["valid_placeholders"]

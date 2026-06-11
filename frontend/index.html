@@ -10,10 +10,10 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="egnex-version" content="3.3">
+<meta name="egnex-version" content="3.4">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=33 to bypass stale cache -->
-<script>if(!location.search.includes('v=33')){var u=location.href.split('?')[0];location.replace(u+'?v=33');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=34 to bypass stale cache -->
+<script>if(!location.search.includes('v=34')){var u=location.href.split('?')[0];location.replace(u+'?v=34');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -167,6 +167,11 @@ tr:hover td{background:#faf8f5}
 .inline-btns{display:flex;gap:6px;flex-wrap:wrap}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
 .badge-green{background:#dff0eb;color:var(--green)}.badge-orange{background:#fdeedd;color:var(--gold)}.badge-red{background:#fde8e4;color:#8b2a1a}
+/* ── RAG / SLA ── */
+.rag-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;vertical-align:middle;cursor:default}
+.rag-dot.green{background:#1d6e56}.rag-dot.amber{background:#b08423}.rag-dot.red{background:#c0392b}
+.rag-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;cursor:default;white-space:nowrap}
+.rag-badge.green{background:#dff0eb;color:#1d6e56}.rag-badge.amber{background:#fdeedd;color:#b08423}.rag-badge.red{background:#fde8e4;color:#c0392b}
 @media(max-width:768px){.form-row,.two-col,.chart-grid,.stat-row{grid-template-columns:1fr}}
 
 /* ── Cross-browser base ──────────────────────────────────────────────────────*/
@@ -882,6 +887,7 @@ const NAV_DEF = {
     {id:'database',   icon:'📁', label:'CV Database'},
     {id:'sys_logs',   icon:'📋', label:'System Logs'},
     {id:'settings',        icon:'⚙️', label:'Settings'},
+    {id:'sla_settings',    icon:'⏱', label:'SLA Settings'},
     {id:'email_templates', icon:'✉️',  label:'Email Templates'},
   ],
   ta_manager: [
@@ -894,6 +900,8 @@ const NAV_DEF = {
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'appeals',            icon:'⚖️', label:'Appeals'},
     {id:'offers',             icon:'📄', label:'Offers & Approvals'},
+    {id:'sla_dashboard',      icon:'🚦', label:'SLA / Breaches'},
+    {id:'sla_settings',       icon:'⏱', label:'SLA Settings'},
     {id:'email_templates',    icon:'✉️',  label:'Email Templates'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
@@ -908,6 +916,7 @@ const NAV_DEF = {
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring Review'},
     {id:'appeals',            icon:'⚖️', label:'Appeals'},
     {id:'offers',             icon:'📄', label:'Offers & Approvals'},
+    {id:'sla_dashboard',      icon:'🚦', label:'SLA / Breaches'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
   hiring_manager: [
@@ -978,6 +987,9 @@ const SCREENS = {
   nexai_sessions: screenNexAISessions,
   // settings (admin + ta_manager)
   settings:        screenSettings,
+  // SLA / RAG tracking (ta_manager + admin + recruiter)
+  sla_settings:  screenSLASettings,
+  sla_dashboard: screenSLADashboard,
   // email templates (admin + ta_manager)
   email_templates: screenEmailTemplates,
   // nexai tracker (ta_manager + recruiter)
@@ -1810,6 +1822,16 @@ async function screenRequisitions() {
 
   const canCreate = ['recruiter','ta_manager','admin'].includes(ME.role);
 
+  // Fetch req-level RAG for open reqs (non-blocking — badge shown after render)
+  let _reqRag = {};
+  const openIds = allRows.filter(r=>r.status==='open').map(r=>r.id);
+  if(openIds.length){
+    try{
+      const rd=await api('/api/sla/req-rag-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({req_ids:openIds})});
+      if(rd) _reqRag=rd;
+    }catch(e){}
+  }
+
   // Status pill counts always from the full set
   const sc = {open:0,on_hold:0,closed:0,draft:0};
   allRows.forEach(r => { if(sc[r.status]!==undefined) sc[r.status]++; });
@@ -1825,14 +1847,19 @@ async function screenRequisitions() {
       <button class="btn btn-ghost btn-sm" onclick="screenRequisitions()">✕ Clear filter</button>
     </div>` : '';
 
-  const tRows = rows.map(r=>`
-    <tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
-      <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong></td>
+  const tRows = rows.map(r=>{
+    const rag=_reqRag[r.id];
+    const ragHtml=rag&&rag.status!=='green'
+      ?` <span class="rag-badge ${rag.status}" title="${rag.elapsed_days}d open / SLA ${rag.target_days}d">${rag.status==='red'?'🔴':'🟡'} ${rag.elapsed_days}d</span>`
+      :'';
+    return `<tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
+      <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong>${ragHtml}</td>
       <td>${r.business_unit}</td><td>${r.band}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
       <td>${r.hiring_manager_name||'—'}</td>
       <td>${r.in_pipeline}</td><td>${r.levels} level${r.levels!==1?'s':''}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   document.getElementById('content').innerHTML = `
     <div class="page-header">
@@ -1859,6 +1886,16 @@ async function screenKanban(reqId) {
     api(`/api/requisitions/${reqId}/kanban`),
   ]);
   if (!kb) { showErr('Could not load kanban.'); return; }
+
+  // Fetch stage-level RAG for all visible candidates
+  let _kbRag = {};
+  const _kbIds = (kb.candidates||[]).map(c=>c.app_id).filter(Boolean);
+  if(_kbIds.length){
+    try{
+      const rd=await api('/api/sla/app-rag-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({app_ids:_kbIds})});
+      if(rd) _kbRag=rd;
+    }catch(e){}
+  }
   setTitle(det?.title || 'Kanban');
 
   const fixL = [
@@ -1888,10 +1925,15 @@ async function screenKanban(reqId) {
 
   const colsHtml = cols.map((col,i)=>{
     const cards = cardsFor(col);
-    const cardHtml = cards.map(c=>`
+    const cardHtml = cards.map(c=>{
+    const _cr=_kbRag[c.app_id];
+    const _rdot=_cr&&_cr.status!=='green'
+      ?`<span class="rag-dot ${_cr.status}" title="${_cr.elapsed_days}d in stage / SLA ${_cr.target_days}d" style="margin-left:5px"></span>`
+      :'';
+    return `
       <div class="kb-card" draggable="true" data-app-id="${c.app_id}"
         ondragstart="kbDS(event)" ondragend="kbDE(event)">
-        <div class="cname">${c.full_name}</div>
+        <div class="cname" style="display:flex;align-items:center;gap:4px">${c.full_name}${_rdot}</div>
         <div class="cscore">Score: ${c.score!=null?Math.round(c.score):'—'} · ${c.gender||'—'}</div>
         ${canApply&&col.status==='screening'?`
           <div style="display:flex;gap:4px;margin-top:6px">
@@ -1900,7 +1942,8 @@ async function screenKanban(reqId) {
           </div>`:''}
         ${canNexAI&&col.status==='screen_passed'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%" onclick="sendNexAIInvite('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}','${(c.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`:''}
         ${canApply&&col.status==='selected'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%;background:var(--green)" onclick="openCreateOfferModal('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}',event,'${reqId}')">📄 Create Offer</button>`:''}
-      </div>`).join('');
+      </div>`;
+  }).join('');
     return `
       <div class="kb-col">
         <div class="kb-col-head"><span>${col.label}</span><span class="cnt">${cards.length}</span></div>
@@ -3697,6 +3740,11 @@ async function screenEmailTemplates() {
       </div>
     </div>`;
   const templates = await api('/api/email-templates');
+  if (!templates || !Array.isArray(templates)) {
+    document.getElementById('et-list').innerHTML =
+      `<div style="color:#c00;font-size:13px">Could not load templates. Check the server log.</div>`;
+    return;
+  }
   _etTemplates = templates;
   _etRenderList();
 }
@@ -3704,6 +3752,7 @@ async function screenEmailTemplates() {
 function _etRenderList() {
   const el = document.getElementById('et-list');
   if (!el) return;
+  if (!_etTemplates || !Array.isArray(_etTemplates)) { el.innerHTML = ''; return; }
   const builtins = _etTemplates.filter(t => t.is_builtin !== false);
   const custom   = _etTemplates.filter(t => t.is_builtin === false);
   let html = builtins.map(t => `
@@ -6128,17 +6177,33 @@ async function screenOffers(){
 
   const canAct=['recruiter','ta_manager','admin'].includes(ME.role);
 
+  // Fetch approval-step RAG via the breach dashboard (lightweight)
+  // We only need approval type items so we can map offer_id → rag
+  let _apprRag={};
+  try{
+    const dashData=await api('/api/sla/dashboard');
+    if(dashData&&dashData.items){
+      dashData.items.filter(it=>it.type==='approval').forEach(it=>{
+        if(it.offer_id) _apprRag[it.offer_id]={status:it.rag,elapsed_days:it.elapsed_days,target_days:it.target_days};
+      });
+    }
+  }catch(e){}
+
   const tRows=(rows||[]).map(o=>{
     const stepLabel=o.total_steps?`Step ${o.current_step||1} of ${o.total_steps}`:'—';
     const pending=o.pending_approver_name?`<span style="font-size:11px;color:var(--muted)">Pending: ${o.pending_approver_name}</span>`:'';
     const ctc=o.total_ctc?`₹${Number(o.total_ctc).toLocaleString('en-IN')}`:'—';
+    const apr=_apprRag[o.id];
+    const aprBadge=apr&&apr.status!=='green'
+      ?` <span class="rag-badge ${apr.status}" title="${apr.elapsed_days}d pending / SLA ${apr.target_days}d">${apr.status==='red'?'🔴':'🟡'}</span>`
+      :'';
     return `<tr style="cursor:pointer" onclick="openOfferDetail('${o.id}')">
       <td><strong>${o.candidate_name}</strong></td>
       <td style="font-size:12px;color:var(--muted)">${o.job_title}</td>
       <td>${o.designation||'—'}</td>
       <td>${ctc}</td>
       <td>${o.joining_date||'—'}</td>
-      <td><div>${stepLabel}</div>${pending}</td>
+      <td><div style="display:flex;align-items:center;gap:6px">${stepLabel}${aprBadge}</div>${pending}</td>
       <td><span class="pill ${o.status}">${o.status.replace(/_/g,' ')}</span></td>
     </tr>`;
   }).join('');
@@ -6237,15 +6302,32 @@ async function openOfferDetail(offerId){
   document.getElementById('od-title').textContent=`Offer — ${o.candidate_name}`;
 
   const ctc=o.total_ctc?`₹${Number(o.total_ctc).toLocaleString('en-IN')}`:'—';
-  const stepsHtml=(o.steps||[]).map(s=>`
-    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px;border-radius:4px;background:${s.status==='approved'?'#dff0eb':s.status==='rejected'?'#fde8e4':'var(--bg-alt,#f5f5f5)'}">
+  // Fetch approval RAG for the current pending step
+  let _oStepRag=null;
+  if(o.status==='pending_approval'){
+    try{
+      const dashData=await api('/api/sla/dashboard');
+      if(dashData&&dashData.items){
+        const hit=dashData.items.find(it=>it.type==='approval'&&it.offer_id===offerId);
+        if(hit) _oStepRag={status:hit.rag,elapsed_days:hit.elapsed_days,target_days:hit.target_days};
+      }
+    }catch(e){}
+  }
+
+  const stepsHtml=(o.steps||[]).map(s=>{
+    const isCurrentPending=s.status==='pending'&&s.sequence===o.current_step;
+    const ragBit=isCurrentPending&&_oStepRag&&_oStepRag.status!=='green'
+      ?` <span class="rag-badge ${_oStepRag.status}" style="font-size:10px" title="${_oStepRag.elapsed_days}d / SLA ${_oStepRag.target_days}d">${_oStepRag.status==='red'?'🔴':'🟡'} ${_oStepRag.elapsed_days}d</span>`
+      :'';
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px;border-radius:4px;background:${s.status==='approved'?'#dff0eb':s.status==='rejected'?'#fde8e4':'var(--bg-alt,#f5f5f5)'}">
       <span style="font-size:18px;min-width:22px">${s.status==='approved'?'✓':s.status==='rejected'?'✕':'⏳'}</span>
-      <div>
-        <div style="font-size:13px;font-weight:600">Step ${s.sequence}: ${s.approver_name}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">Step ${s.sequence}: ${s.approver_name}${ragBit}</div>
         <div style="font-size:11px;color:var(--muted)">${s.status.toUpperCase()}${s.acted_at?' · '+new Date(s.acted_at).toLocaleDateString('en-IN'):''}</div>
         ${s.notes?`<div style="font-size:12px;margin-top:3px;color:#555">${s.notes}</div>`:''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   const reviseNote=o.revise_note?`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 12px;margin-top:8px;font-size:12px"><strong>Rejection reason:</strong> ${o.revise_note}</div>`:'';
 
@@ -6374,6 +6456,160 @@ async function resubmitOffer(offerId){
   if(!res||res.detail){flash(res?.detail||'Error',false);return;}
   flash('Offer resubmitted. Step-1 approver notified.');
   closeOfferDetail();screenOffers();
+}
+
+// ── SCREEN: SLA Settings ─────────────────────────────────────────────────────
+async function screenSLASettings(){
+  setTitle('SLA Settings');
+  if(!['admin','ta_manager'].includes(ME.role)){
+    document.getElementById('content').innerHTML=`
+      <div class="card" style="text-align:center;padding:60px 40px;max-width:480px;margin:40px auto">
+        <p style="font-size:32px;margin-bottom:12px">🔒</p>
+        <p style="font-weight:600;font-size:16px;margin-bottom:8px">Access restricted</p>
+        <p style="color:var(--muted);font-size:13px">SLA Settings is for TA Managers and Admins only.</p>
+      </div>`;
+    return;
+  }
+  const cfg=await api('/api/sla/config');
+  if(!cfg){showErr('Could not load SLA config.');return;}
+  const fld=(key,label,hint)=>`
+    <div class="form-group">
+      <label>${label}</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="number" id="sla-${key}" value="${cfg[key]||''}" min="1" style="width:90px">
+        <span style="font-size:12px;color:var(--muted)">days &nbsp;·&nbsp; ${hint}</span>
+      </div>
+    </div>`;
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>SLA / Timelines</h1></div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+
+      <!-- Stage SLA card -->
+      <div class="card" style="max-width:480px;flex:1;min-width:280px">
+        <div class="card-title">Per-Stage SLA — max days a candidate may sit in each stage</div>
+        ${fld('stage_screening','Screening','default 3')}
+        ${fld('stage_screen_passed','Screening Cleared','default 3')}
+        ${fld('stage_interviewing','Panel Interview','default 7')}
+        ${fld('stage_selected','Selected (pre-offer)','default 3')}
+        ${fld('stage_offer_stage','Offer Stage / Offered','default 5')}
+        ${fld('stage_applied','Applied (awaiting screening)','default 5')}
+        ${fld('stage_default','Default (all other stages)','default 5')}
+      </div>
+
+      <!-- Req + Approval SLA card -->
+      <div style="display:flex;flex-direction:column;gap:20px;flex:1;min-width:280px">
+        <div class="card">
+          <div class="card-title">Requisition SLA — time-to-fill</div>
+          ${fld('req_time_to_fill','Target days open → filled','default 45')}
+          <p style="font-size:12px;color:var(--muted);margin-top:4px">Clock starts at requisition <em>opened_at</em> date and stops when status changes to closed/cancelled.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Approval Step SLA — per approver turnaround</div>
+          ${fld('approval_step','Target days per approver','default 2')}
+          <p style="font-size:12px;color:var(--muted);margin-top:4px">Clock starts when a step becomes active (either on offer submission for step 1, or when the previous approver acts).</p>
+        </div>
+        <div class="card" style="background:#f0faf5;border-color:#b7e4cd">
+          <div style="font-size:12px;font-weight:700;color:#1d6e56;margin-bottom:8px">RAG thresholds (fixed)</div>
+          <div style="font-size:13px;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:8px"><span class="rag-dot green"></span> <strong>Green</strong> — under 80% of SLA elapsed</div>
+            <div style="display:flex;align-items:center;gap:8px"><span class="rag-dot amber"></span> <strong>Amber</strong> — 80–100% elapsed (approaching breach)</div>
+            <div style="display:flex;align-items:center;gap:8px"><span class="rag-dot red"></span>   <strong>Red</strong>   — over 100% (breached)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;display:flex;align-items:center;gap:12px">
+      <button class="btn btn-primary" onclick="saveSLAConfig()">Save SLA targets</button>
+      <span id="sla-save-msg" style="font-size:13px"></span>
+    </div>`;
+}
+
+async function saveSLAConfig(){
+  const keys=['stage_screening','stage_screen_passed','stage_interviewing',
+              'stage_selected','stage_offer_stage','stage_applied','stage_default',
+              'req_time_to_fill','approval_step'];
+  const body={};
+  for(const k of keys){
+    const v=parseInt(document.getElementById('sla-'+k).value,10);
+    if(!isNaN(v)&&v>=1) body[k]=v;
+  }
+  const btn=document.querySelector('[onclick="saveSLAConfig()"]');
+  btn.disabled=true;btn.textContent='Saving…';
+  const res=await api('/api/sla/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  btn.disabled=false;btn.textContent='Save SLA targets';
+  const msg=document.getElementById('sla-save-msg');
+  if(res&&res.ok){msg.style.color='var(--green)';msg.textContent='Saved. New targets take effect immediately.';}
+  else{msg.style.color='var(--accent)';msg.textContent=res?.detail||'Error saving SLA config.';}
+}
+
+// ── SCREEN: SLA Breach Dashboard ──────────────────────────────────────────────
+async function screenSLADashboard(){
+  setTitle('SLA / Breaches');
+  document.getElementById('content').innerHTML='<p class="empty">Loading SLA dashboard…</p>';
+  const data=await api('/api/sla/dashboard');
+  if(!data){showErr('Could not load SLA dashboard.');return;}
+
+  const {red,amber,total,items}=data;
+
+  const ragBadge=(s,el,tar)=>{
+    const icon=s==='red'?'🔴':s==='amber'?'🟡':'🟢';
+    return `<span class="rag-badge ${s}" title="${el}d elapsed / SLA ${tar}d">${icon} ${el}d</span>`;
+  };
+
+  const typeLabel={stage:'Stage',requisition:'Requisition',approval:'Approval'};
+  const typeIcon ={stage:'👤',requisition:'📋',approval:'📄'};
+
+  const tRows=(items||[]).map(it=>`
+    <tr>
+      <td><strong>${it.item}</strong><div style="font-size:11px;color:var(--muted)">${it.context}</div></td>
+      <td>${typeIcon[it.type]||''} ${typeLabel[it.type]||it.type}</td>
+      <td>${it.responsible||'—'}</td>
+      <td style="font-variant-numeric:tabular-nums">${it.elapsed_days}</td>
+      <td style="font-variant-numeric:tabular-nums">${it.target_days}</td>
+      <td>${ragBadge(it.rag,it.elapsed_days,it.target_days)}</td>
+    </tr>`).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header"><h1>SLA / Breaches</h1></div>
+
+    <!-- Summary counts -->
+    <div class="stat-row" style="max-width:600px;margin-bottom:24px">
+      <div class="stat-box">
+        <div class="sv" style="color:#c0392b">${red}</div>
+        <div class="sl">Red — Breached</div>
+      </div>
+      <div class="stat-box">
+        <div class="sv" style="color:#b08423">${amber}</div>
+        <div class="sl">Amber — Approaching</div>
+      </div>
+      <div class="stat-box">
+        <div class="sv" style="color:var(--muted)">${total}</div>
+        <div class="sl">Total alerts</div>
+      </div>
+    </div>
+
+    ${total===0
+      ? `<div class="card" style="text-align:center;padding:48px 32px;color:var(--green)">
+           <p style="font-size:36px;margin-bottom:10px">🟢</p>
+           <p style="font-weight:600;font-size:15px">All clear — no SLA breaches or warnings</p>
+         </div>`
+      : `<div class="card" style="padding:0;overflow:hidden">
+           <table>
+             <thead>
+               <tr>
+                 <th>Item</th>
+                 <th>Type</th>
+                 <th>Responsible</th>
+                 <th>Days Elapsed</th>
+                 <th>SLA Target</th>
+                 <th>Status</th>
+               </tr>
+             </thead>
+             <tbody>${tRows}</tbody>
+           </table>
+         </div>
+         <p style="font-size:12px;color:var(--muted);margin-top:10px">Sorted by severity (red first), then by days elapsed. Adjust targets in <a href="#sla_settings" onclick="navigate('sla_settings');return false" style="color:var(--accent)">SLA Settings</a>.</p>`}`;
 }
 
 // ── Post-OAuth redirect ───────────────────────────────────────────────────────

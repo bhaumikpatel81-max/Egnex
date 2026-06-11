@@ -40,6 +40,7 @@ from .routers.scorecard_api import router as _scorecard_router
 from .routers.email_template_api import router as _email_template_router
 from .routers.offers_api import router as _offers_router
 from .routers.transcript_api import router as _transcript_router
+from .routers.sla_api import router as _sla_router
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
@@ -55,6 +56,7 @@ app.include_router(_scorecard_router)
 app.include_router(_email_template_router)
 app.include_router(_offers_router)
 app.include_router(_transcript_router)
+app.include_router(_sla_router)
 
 
 @app.on_event("startup")
@@ -266,6 +268,16 @@ END $$""",
             updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
         )""",
         "CREATE INDEX IF NOT EXISTS idx_interview_notes_interview ON interview_notes(interview_id)",
+        # Migration 28: SLA / RAG deadline tracking (added 2026-06)
+        # Stores per-key SLA target in days; missing keys fall back to service-layer defaults.
+        """CREATE TABLE IF NOT EXISTS sla_config (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            config_key  TEXT NOT NULL UNIQUE,
+            days        INTEGER NOT NULL DEFAULT 5 CHECK (days >= 1),
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by  UUID REFERENCES app_user(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_sla_config_key ON sla_config (config_key)",
     ]
     for sql in migrations:
         try:

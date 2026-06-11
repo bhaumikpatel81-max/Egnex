@@ -241,13 +241,15 @@ def save_template(key: str, payload: TemplateSavePayload, user=Depends(_require_
                 fetch=False,
             )
     else:
-        # Custom template
+        # Custom template — query without is_builtin to stay resilient if migration hasn't run
         existing = query_one(
-            "SELECT id FROM email_template WHERE template_key = %s AND is_builtin = FALSE LIMIT 1",
+            "SELECT id, is_builtin FROM email_template WHERE template_key = %s LIMIT 1",
             [key],
         )
         if not existing:
             raise HTTPException(404, f"Custom template '{key}' not found.")
+        if existing.get("is_builtin"):
+            raise HTTPException(403, "Cannot edit a built-in template via this path.")
         warnings = validate_placeholders(key, subject, body)
         query(
             """UPDATE email_template
@@ -268,13 +270,15 @@ def delete_template(key: str, user=Depends(_require_template_access)):
     if key in BUILTIN_KEYS:
         raise HTTPException(403, "Built-in templates cannot be deleted. You can reset or edit them.")
     existing = query_one(
-        "SELECT id FROM email_template WHERE template_key = %s AND is_builtin = FALSE LIMIT 1",
+        "SELECT id, is_builtin FROM email_template WHERE template_key = %s LIMIT 1",
         [key],
     )
     if not existing:
         raise HTTPException(404, f"Custom template '{key}' not found.")
+    if existing.get("is_builtin"):
+        raise HTTPException(403, "Built-in templates cannot be deleted.")
     query(
-        "DELETE FROM email_template WHERE template_key = %s AND is_builtin = FALSE",
+        "DELETE FROM email_template WHERE template_key = %s",
         [key],
         fetch=False,
     )
