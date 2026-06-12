@@ -489,6 +489,38 @@ def validate_placeholders(key: str, subject: str, body: str) -> list[str]:
     return [f"Unknown placeholder: {{{{{p}}}}}" for p in sorted(unknown)]
 
 
+def fix_legacy_templates() -> None:
+    """
+    Old seed data (pre-migration-26) has template_key = NULL.
+    Assign a stable key so these templates become editable via the API.
+    Idempotent — skips rows that already have a key.
+    """
+    try:
+        legacy = query(
+            "SELECT id, name FROM email_template WHERE template_key IS NULL AND is_builtin = FALSE"
+        )
+        for row in (legacy or []):
+            slug = re.sub(r'[^a-z0-9]+', '_', (row['name'] or '').lower()).strip('_')
+            key  = f"custom_{slug}"
+            # Avoid key collisions
+            taken = query_one(
+                "SELECT id FROM email_template WHERE template_key = %s LIMIT 1", [key]
+            )
+            if taken:
+                key = f"{key}_{row['id']}"
+            try:
+                query(
+                    "UPDATE email_template SET template_key = %s WHERE id = %s",
+                    [key, row['id']],
+                    fetch=False,
+                )
+                print(f"[email_templates] assigned key '{key}' to legacy template '{row['name']}'")
+            except Exception as upd_exc:
+                print(f"[email_templates] could not fix legacy template {row['id']}: {upd_exc}")
+    except Exception as exc:
+        print(f"[email_templates] fix_legacy_templates: {exc}")
+
+
 def get_custom_templates() -> list[dict]:
     """Return all active custom (non-builtin) templates from the DB.
     Returns [] gracefully if migration 26 hasn't been applied yet."""
@@ -496,7 +528,7 @@ def get_custom_templates() -> list[dict]:
         rows = query(
             """SELECT template_key, name, category, valid_placeholders
                FROM email_template
-               WHERE is_builtin = FALSE AND is_active = TRUE
+               WHERE is_builtin = FALSE AND is_active = TRUE AND template_key IS NOT NULL
                ORDER BY name""",
         )
     except Exception:
