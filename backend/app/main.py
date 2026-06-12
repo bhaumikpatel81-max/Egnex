@@ -620,8 +620,9 @@ END $$""",
 
     # Seed built-in email template defaults (idempotent — skips existing rows)
     try:
-        from .services.email_templates import ensure_defaults as _ensure_email_defaults
+        from .services.email_templates import ensure_defaults as _ensure_email_defaults, fix_legacy_templates as _fix_legacy_templates
         _ensure_email_defaults()
+        _fix_legacy_templates()
     except Exception as _edt_exc:
         print(f"[auto-migrate] email template seed failed: {_edt_exc}")
 

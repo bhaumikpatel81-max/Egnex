@@ -949,6 +949,10 @@ if (!ME) { localStorage.removeItem('egnex_token'); window.location.replace('/log
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function api(path, opts = {}) {
+  if (opts.body && typeof opts.body === 'object') {
+    opts.body = JSON.stringify(opts.body);
+    opts.headers = { ...opts.headers, 'Content-Type': 'application/json' };
+  }
   opts.headers = { ...opts.headers, Authorization: `Bearer ${_tok}` };
   let r;
   try { r = await fetch(path, opts); }
@@ -4404,9 +4408,17 @@ function _etRenderList() {
 }
 
 async function etOpenTemplate(key) {
+  if (!key || key === 'null') return;
   _etCurrent = key;
   _etRenderList();
   const t = await api(`/api/email-templates/${key}`);
+  if (!t) {
+    document.getElementById('et-editor').innerHTML =
+      `<div class="card" style="text-align:center;padding:60px 20px;color:#c00;font-size:13px">
+         Failed to load template. Check server logs.
+       </div>`;
+    return;
+  }
   const phBtns = (t.valid_placeholders||[]).map(p =>
     `<button class="btn btn-ghost btn-sm" onclick="etInsertPlaceholder('${p}')"
        style="font-family:monospace;font-size:11px">{{${p}}}</button>`
