@@ -67,7 +67,7 @@ def intake_and_screen(requisition_id, candidate_id, resume_text, candidate_years
               ai_fit_score, ai_screen_detail,
               avg_tenure_months, stability_score, stability_status,
               status)
-           VALUES (%s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s, 'screening')
+           VALUES (%s, %s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s, 'screen')
            ON CONFLICT (requisition_id, candidate_id) DO UPDATE
              SET match_score        = EXCLUDED.match_score,
                  score_breakdown    = EXCLUDED.score_breakdown,
@@ -84,7 +84,7 @@ def intake_and_screen(requisition_id, candidate_id, resume_text, candidate_years
             avg_tenure_months, stability_score, stability_status,
         ],
     )
-    log_event(app["id"], "applied", "screening", note=f"auto-scored {score}")
+    log_event(app["id"], "applied", "screen", note=f"auto-scored {score}")
     return app
 
 
@@ -107,7 +107,7 @@ def run_bot_round(application_id):
            WHERE id = %s""",
         [bot, combined, application_id], fetch=False,
     )
-    log_event(application_id, "screening", "screen_passed",
+    log_event(application_id, "screen", "screen_passed",
               note=f"bot {bot}, combined {combined}")
     return {"bot_score": bot, "combined_score": combined}
 

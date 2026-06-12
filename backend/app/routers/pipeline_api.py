@@ -545,7 +545,7 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
             try:
                 from ..services.email_templates import render_template as _rt
                 from ..services.connectors import send_email as _se, resolve_global_placeholders
-                req_id_for_globals = str(new_req["id"]) if new_req else None
+                req_id_for_globals = str(req["id"]) if req else None
                 globals_ = resolve_global_placeholders(req_id=req_id_for_globals, actor=user)
                 reply_to = globals_.get("recruiter_email") or None
                 subj, bdy = _rt("hm_req_approval_request", {
