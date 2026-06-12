@@ -57,7 +57,7 @@ def dashboard(user: dict = Depends(get_current_user)):
         return int(row["n"]) if row else 0
 
     open_reqs = query_one(
-        f"SELECT COUNT(*) AS n FROM requisition r WHERE {req_filter} AND r.status='open'",
+        f"SELECT COUNT(*) AS n FROM requisition r WHERE {req_filter} AND r.status='open' AND COALESCE(r.approval_status,'approved')='approved'",
         p,
     )
 
@@ -422,6 +422,7 @@ def list_requisitions_full(user: dict = Depends(get_current_user)):
             JOIN band b          ON b.id = r.band_id
             JOIN business_unit bu ON bu.id = r.bu_id
             LEFT JOIN app_user hm ON hm.id = r.hiring_manager_id
+            WHERE COALESCE(r.approval_status,'approved')='approved'
             ORDER BY r.created_at DESC
             """,
             [uid],
@@ -439,6 +440,7 @@ def list_requisitions_full(user: dict = Depends(get_current_user)):
         JOIN band b          ON b.id = r.band_id
         JOIN business_unit bu ON bu.id = r.bu_id
         LEFT JOIN app_user hm ON hm.id = r.hiring_manager_id
+        WHERE COALESCE(r.approval_status,'approved')='approved'
         ORDER BY r.created_at DESC
         """,
         [],

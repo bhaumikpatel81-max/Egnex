@@ -200,10 +200,9 @@ def extract_text(file_bytes: bytes, filename: str) -> tuple:
             return "", f"Word document parsing error: {exc}"
 
     if suffix in (".jpg", ".jpeg", ".png"):
-        # File is saved for future OCR processing; screening runs with empty text.
-        return "", (
-            "Image resumes are not yet OCR-processed. "
-            "Application submitted — resume text will be empty until OCR is implemented."
+        raise NotImplementedError(
+            "Image OCR is not yet implemented. "
+            "Upload a PDF or Word document instead."
         )
 
     return "", f"Unsupported file type '{suffix}'."

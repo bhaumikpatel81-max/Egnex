@@ -358,20 +358,10 @@ def ensure_defaults() -> None:
             except Exception as exc:
                 print(f"[email_templates] Could not seed default '{key}': {exc}")
         else:
-            # Sync body, subject, valid_placeholders, and is_builtin for existing built-in rows
             try:
                 query(
-                    """UPDATE email_template
-                       SET is_builtin          = TRUE,
-                           subject             = %s,
-                           body                = %s,
-                           valid_placeholders  = %s::jsonb
-                       WHERE template_key = %s AND is_builtin IS NOT FALSE""",
-                    [
-                        tmpl["subject"], tmpl["body"],
-                        json.dumps(tmpl["valid_placeholders"]),
-                        key,
-                    ],
+                    "UPDATE email_template SET is_builtin = TRUE WHERE template_key = %s",
+                    [key],
                     fetch=False,
                 )
             except Exception:

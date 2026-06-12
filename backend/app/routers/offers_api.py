@@ -730,6 +730,11 @@ def approve_offer_step(offer_id: str, body: ApproveIn, user: dict = Depends(get_
             [str(offer["application_id"]), uid],
             fetch=False,
         )
+        try:
+            from .hiring_plan_api import sync_plan_on_advance as _sync_plan
+            _sync_plan(str(offer["application_id"]), "offered", "documentation", req_id)
+        except Exception as _sp_exc:
+            print(f"[offers] sync_plan_on_advance failed for offer {offer_id}: {_sp_exc}")
 
         _send_offer_email("offer_approved_darwinbox", {
             "candidate_name": offer["candidate_name"],

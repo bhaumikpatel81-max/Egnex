@@ -1102,7 +1102,10 @@ async def parse_resume_contact(file: UploadFile = File(...)):
     if suffix not in _ALLOWED_RESUME_TYPES:
         raise HTTPException(400, f"Unsupported file type '{suffix}'.")
     file_bytes = await file.read()
-    text, _ = _parse_resume(file_bytes, file.filename or "")
+    try:
+        text, _ = _parse_resume(file_bytes, file.filename or "")
+    except NotImplementedError:
+        raise HTTPException(422, "Image files are not supported as resumes; upload PDF or Word.")
     from .services.resume_parser import extract_contact_info
     return extract_contact_info(text)
 
@@ -1143,7 +1146,10 @@ async def apply_upload(
         )
 
     file_bytes = await file.read()
-    resume_text, warning = _parse_resume(file_bytes, file.filename or "")
+    try:
+        resume_text, warning = _parse_resume(file_bytes, file.filename or "")
+    except NotImplementedError:
+        raise HTTPException(422, "Image files are not supported as resumes; upload PDF or Word.")
 
     # No save to _UPLOADS_DIR — cv_store is the single canonical location.
     # Candidate is created first (needed for ingest), resume_url updated after.
