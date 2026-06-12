@@ -37,6 +37,9 @@ services:
       AVATAR_PROVIDER: "orb"
       # NexAI interview mode: scripted | conversational
       NEXAI_MODE: "conversational"
+      # CV Repository storage paths (inside container)
+      CV_INBOX_DIR: /app/cv_inbox
+      CV_STORE_DIR: /app/cv_store
     env_file:
       - .env.prod          # loads GROQ_API_KEY, GROQ_BASE_URL, LLM_MODEL (and other secrets)
     ports:
@@ -48,9 +51,12 @@ services:
     volumes:
       - ./backend/app:/app/app
       - ./frontend:/app/frontend
+      - ./cv_inbox:/app/cv_inbox   # drop CV files here for bulk ingestion
+      - cv_store:/app/cv_store     # persistent CV file storage
     # run as root in dev so --reload file watcher has no permission issues
     user: root
     command: ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"]
 
 volumes:
   pgdata_dev:
+  cv_store:

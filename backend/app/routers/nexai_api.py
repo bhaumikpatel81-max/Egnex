@@ -834,6 +834,15 @@ def create_nexai_invite(
         email_error = str(exc)
         print(f"[nexai-invite] Email delivery failed: {exc}")
 
+    # Advance application to nexai_bot stage if still in an earlier active stage
+    _cur = query_one("SELECT status FROM application WHERE id=%s", [app_id])
+    if _cur and _cur["status"] in ("applied", "screen", "ai_screening", "screening", "screen_passed"):
+        query(
+            "INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note) VALUES (%s,%s,'nexai_bot',%s,'NexAI invite sent')",
+            [app_id, _cur["status"], user["sub"]], fetch=False,
+        )
+        query("UPDATE application SET status='nexai_bot' WHERE id=%s", [app_id], fetch=False)
+
     return {
         "invite_url":     invite_url,
         "sent_to":        app_row["email"],
@@ -1306,7 +1315,7 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
         match    = float((app_row or {}).get("match_score") or 0)
         combined = round(0.4 * match + 0.6 * raw_score, 1)
         query(
-            "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
+            "UPDATE application SET bot_score = %s, combined_score = %s, status = 'shortlisted' WHERE id = %s",
             [raw_score, combined, sess["application_id"]],
             fetch=False,
         )
@@ -1609,7 +1618,7 @@ async def submit_invited_session(session_id: str, body: SubmitSessionIn, backgro
         match    = float((app_meta or {}).get("match_score") or 0)
         combined = round(0.4 * match + 0.6 * raw_score, 1)
         query(
-            "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
+            "UPDATE application SET bot_score = %s, combined_score = %s, status = 'shortlisted' WHERE id = %s",
             [raw_score, combined, sess["application_id"]], fetch=False,
         )
         background_tasks.add_task(_fire_completion_email, session_id)
@@ -1636,7 +1645,7 @@ async def submit_invited_session(session_id: str, body: SubmitSessionIn, backgro
     match    = float(app_row["match_score"] or 0) if app_row else 0
     combined = round(0.4 * match + 0.6 * raw_score, 1)
     query(
-        "UPDATE application SET bot_score = %s, combined_score = %s, status = 'screen_passed' WHERE id = %s",
+        "UPDATE application SET bot_score = %s, combined_score = %s, status = 'shortlisted' WHERE id = %s",
         [raw_score, combined, sess["application_id"]], fetch=False,
     )
     background_tasks.add_task(_fire_completion_email, session_id)

@@ -53,11 +53,12 @@ def _require_sla_read(user: dict = Depends(get_current_user)) -> dict:
 
 class SLAConfigIn(BaseModel):
     stage_applied:       Optional[int] = None
-    stage_screening:     Optional[int] = None
-    stage_screen_passed: Optional[int] = None
-    stage_interviewing:  Optional[int] = None
-    stage_selected:      Optional[int] = None
-    stage_offer_stage:   Optional[int] = None
+    stage_screen:        Optional[int] = None
+    stage_nexai_bot:     Optional[int] = None
+    stage_shortlisted:   Optional[int] = None
+    stage_interview:     Optional[int] = None
+    stage_documentation: Optional[int] = None
+    stage_offered:       Optional[int] = None
     stage_default:       Optional[int] = None
     req_time_to_fill:    Optional[int] = None
     approval_step:       Optional[int] = None
@@ -187,11 +188,13 @@ def sla_dashboard(user: dict = Depends(_require_sla_read)):
                 "rag":          rag["status"],
             })
 
-    # ── 3. Approval step breaches ────────────────────────────────────────────
-    appr_target = cfg.get("approval_step", SLA_DEFAULTS["approval_step"])
-    appr_rows   = _query_approval_breaches(role, uid)
+    # ── 3. Approval step breaches — per-step sla_days takes precedence ─────────
+    appr_default = cfg.get("approval_step", SLA_DEFAULTS["approval_step"])
+    appr_rows    = _query_approval_breaches(role, uid)
     for r in (appr_rows or []):
-        rag = compute_rag(r["elapsed_days"], appr_target)
+        # Use the step's own sla_days; fall back to global default
+        step_target = int(r.get("sla_days") or appr_default)
+        rag = compute_rag(r["elapsed_days"], step_target)
         if rag["status"] in ("amber", "red"):
             breaches.append({
                 "type":         "approval",
@@ -275,7 +278,8 @@ def _query_stage_breaches(role: str, uid: str) -> list:
         JOIN requisition r ON r.id = a.requisition_id
         {extra_join}
         WHERE a.status NOT IN (
-            'joined','rejected','screen_rejected','dropped','offer_cancelled'
+            'hired','rejected','on_hold',
+            'joined','screen_rejected','dropped','offer_cancelled'
         )
         ORDER BY elapsed_days DESC
     """
@@ -344,6 +348,7 @@ def _query_approval_breaches(role: str, uid: str) -> list:
             u.id AS approver_id,
             o.current_step,
             oas.sequence,
+            COALESCE(oas.sla_days, 2) AS sla_days,
             EXTRACT(EPOCH FROM (
                 now() - COALESCE(
                     (SELECT prev.acted_at

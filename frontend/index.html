@@ -10,10 +10,10 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="egnex-version" content="3.4">
+<meta name="egnex-version" content="3.8">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=34 to bypass stale cache -->
-<script>if(!location.search.includes('v=34')){var u=location.href.split('?')[0];location.replace(u+'?v=34');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=37 to bypass stale cache -->
+<script>if(!location.search.includes('v=38')){var u=location.href.split('?')[0];location.replace(u+'?v=38');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -67,9 +67,12 @@ tr:hover td{background:#faf8f5}
 .pill.applied,.pill.screening{background:#ede9e2;color:#888}
 .pill.screen_passed{background:#dff0eb;color:var(--green)}
 .pill.interviewing{background:#fdeedd;color:var(--gold)}
-.pill.selected,.pill.joined{background:#dff0eb;color:var(--green);font-weight:700}
-.pill.offer_stage,.pill.offered{background:#e6f0fb;color:#2563eb}
-.pill.rejected,.pill.screen_rejected,.pill.dropped{background:#fde8e4;color:#8b2a1a}
+.pill.selected,.pill.joined,.pill.hired,.pill.hm_screening,.pill.shortlisted{background:#dff0eb;color:var(--green);font-weight:700}
+.pill.offer_stage,.pill.offered,.pill.offer_approval{background:#e6f0fb;color:#2563eb}
+.pill.rejected,.pill.screen_rejected,.pill.dropped,.pill.on_hold{background:#fde8e4;color:#8b2a1a}
+.pill.ai_screening,.pill.nexai_bot,.pill.screen{background:#f3e9d0;color:#7a5c00}
+.pill.panel_interview,.pill.hr_round,.pill.interview{background:#ede9fb;color:#4c3c9a}
+.pill.documentation{background:#e6f0fb;color:#1d4ed8}
 .pill.p1{background:#fff3cd;color:#856404;border:1px solid #ffc107}
 .pill.pending_approval{background:#e6f0fb;color:#2563eb}
 .pill.revising{background:#fff3cd;color:#856404}
@@ -456,6 +459,33 @@ select{background-image:none}
     </div>
     <div class="form-row">
       <div class="form-group"><label>Hiring location</label><input id="rf-loc" placeholder="Ahmedabad"></div>
+      <div class="form-group"><label>Project</label><input id="rf-project" placeholder="Project Alpha"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Grade / Level</label><input id="rf-grade" placeholder="L4 / Band 5"></div>
+      <div class="form-group"><label>Min exp (yrs)</label><input id="rf-min-exp" type="number" min="0" step="0.5" placeholder="2"></div>
+      <div class="form-group"><label>Max exp (yrs)</label><input id="rf-max-exp" type="number" min="0" step="0.5" placeholder="8"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="rf-priority">
+          <option value="">— select —</option>
+          <option value="critical">🔴 Critical</option>
+          <option value="high">🟠 High</option>
+          <option value="medium">🟡 Medium</option>
+          <option value="low">🟢 Low</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Source channels</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="rf-channels">
+          ${['linkedin','naukri','referral','campus','direct','other'].map(ch=>`
+            <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer">
+              <input type="checkbox" id="rf-ch-${ch}" value="${ch}" style="width:auto"> ${ch}
+            </label>`).join('')}
+        </div>
+      </div>
     </div>
     <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:4px">
       <input id="rf-p1" type="checkbox" style="width:auto">
@@ -471,6 +501,12 @@ select{background-image:none}
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:6px">Offer Approval Chain</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Add approvers IN SEQUENCE. Each offer on this requisition will go through these approvers in order before being sent to Darwinbox.</div>
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+        <select id="rf-template-pick" style="flex:1;padding:6px 9px;border:1px solid var(--border);border-radius:4px;font-size:12px;color:var(--muted)">
+          <option value="">— or pick a template —</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="_applyChainTemplate()">Use</button>
+      </div>
       <div id="approver-chain-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
       <div style="display:flex;gap:6px;align-items:center">
         <select id="rf-approver-pick" style="flex:1;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px">
@@ -834,6 +870,72 @@ select{background-image:none}
   </div>
 </div>
 
+<!-- ── CV Ingest Job Progress Modal ── -->
+<div class="modal-bg" id="cv-job-modal" onclick="if(event.target===this)closeCVJobModal()">
+  <div class="modal" style="max-width:520px">
+    <h2>Ingest Folder — Processing</h2>
+    <div id="cv-job-progress-bar-wrap" style="background:#e5e3df;border-radius:6px;height:10px;margin:12px 0">
+      <div id="cv-job-progress-bar" style="background:var(--accent);height:10px;border-radius:6px;width:0%;transition:width .4s"></div>
+    </div>
+    <div id="cv-job-stats" style="font-size:13px;color:var(--muted);margin-bottom:12px"></div>
+    <div id="cv-job-errors" style="display:none">
+      <div style="font-weight:600;font-size:12px;color:#ef4444;margin-bottom:6px">Errors</div>
+      <div id="cv-job-error-list" style="font-size:12px;max-height:180px;overflow-y:auto;background:#fef2f2;padding:8px;border-radius:6px"></div>
+    </div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeCVJobModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Hiring Plan Row Modal ── -->
+<div class="modal-bg" id="hp-modal" onclick="if(event.target===this)closeHPModal()">
+  <div class="modal" style="max-width:780px;max-height:90vh;overflow-y:auto">
+    <h2 id="hp-modal-title">Add Hiring Plan Row</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>Company Entity</label><input id="hp-entity" placeholder="Amnex"></div>
+      <div class="form-group"><label>Fiscal Year</label><input id="hp-fy" placeholder="FY26-27"></div>
+      <div class="form-group"><label>Quarter</label><select id="hp-quarter"><option value="">— select —</option><option>Q1</option><option>Q2</option><option>Q3</option><option>Q4</option></select></div>
+      <div class="form-group"><label>Planned Onboarding Date</label><input id="hp-pod" type="date"></div>
+      <div class="form-group"><label>Role Name</label><input id="hp-role" placeholder="Software Engineer"></div>
+      <div class="form-group"><label>BU / Unit</label><input id="hp-bu" placeholder="Business Unit"></div>
+      <div class="form-group"><label>Function</label><input id="hp-function" placeholder="Engineering"></div>
+      <div class="form-group"><label>Sub BU</label><input id="hp-sub-bu" placeholder=""></div>
+      <div class="form-group"><label>Project Name</label><input id="hp-project" placeholder=""></div>
+      <div class="form-group"><label>Employment Type</label><select id="hp-emp-type"><option value="">— select —</option><option>On-Roll</option><option>Off-Roll</option><option>Contract</option><option>Internship</option></select></div>
+      <div class="form-group"><label>Billable</label><select id="hp-billable"><option value="">— select —</option><option>Billable</option><option>Non-Billable</option></select></div>
+      <div class="form-group"><label>On/Off Roll</label><input id="hp-on-off" placeholder="On-Roll"></div>
+      <div class="form-group"><label>Headcount</label><input id="hp-hc" type="number" min="1" value="1"></div>
+      <div class="form-group"><label>Priority</label><select id="hp-priority"><option value="">— select —</option><option>Critical</option><option>High</option><option>Medium</option><option>Low</option></select></div>
+      <div class="form-group"><label>Band</label><input id="hp-band" placeholder="Band 4"></div>
+      <div class="form-group"><label>Experience</label><input id="hp-exp" placeholder="3-5 years"></div>
+      <div class="form-group"><label>Location</label><input id="hp-loc" placeholder="Mumbai"></div>
+      <div class="form-group"><label>Budgeted Fixed (₹)</label><input id="hp-bf" type="number" min="0" placeholder="0"></div>
+      <div class="form-group"><label>Budgeted Variable (₹)</label><input id="hp-bv" type="number" min="0" placeholder="0"></div>
+      <div class="form-group"><label>Salary Budgeted Till</label><input id="hp-sbt" type="date"></div>
+      <div class="form-group"><label>Hiring Status</label><select id="hp-status"><option>Open Position</option><option>Offered</option><option>Joined</option><option>Hold</option><option>Internal Employee</option></select></div>
+      <div class="form-group"><label>TA Owner</label><input id="hp-ta" placeholder="Recruiter name"></div>
+      <div class="form-group"><label>Source of Hire</label><input id="hp-source" placeholder="LinkedIn, Referral…"></div>
+      <div class="form-group"><label>Offered Fixed (₹)</label><input id="hp-of" type="number" min="0" placeholder="0"></div>
+      <div class="form-group"><label>Offered Variable (₹)</label><input id="hp-ov" type="number" min="0" placeholder="0"></div>
+      <div class="form-group"><label>Offer Date</label><input id="hp-odate" type="date"></div>
+      <div class="form-group"><label>Tentative DOJ</label><input id="hp-doj" type="date"></div>
+      <div class="form-group"><label>Employee Name</label><input id="hp-emp" placeholder=""></div>
+      <div class="form-group"><label>Candidate Email</label><input id="hp-cemail" type="email" placeholder=""></div>
+      <div class="form-group" style="grid-column:1/-1"><label>Remarks</label><textarea id="hp-remarks" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px;resize:vertical"></textarea></div>
+    </div>
+    <!-- live computed preview -->
+    <div id="hp-compute-preview" style="background:#f5f4f1;border-radius:8px;padding:12px 16px;margin-top:12px;font-size:13px;display:none">
+      <strong>Computed preview</strong>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px" id="hp-compute-grid"></div>
+    </div>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeHPModal()">Cancel</button>
+      <button class="btn btn-primary" id="hp-save-btn" onclick="saveHPRow()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
 const _tok = localStorage.getItem('egnex_token');
@@ -884,14 +986,20 @@ const NAV_DEF = {
     {id:'tickets',    icon:'🎫', label:'Support Tickets'},
     {id:'users',      icon:'👥', label:'Users & Access'},
     {id:'bot_health', icon:'🤖', label:'Bot Health'},
-    {id:'database',   icon:'📁', label:'CV Database'},
-    {id:'sys_logs',   icon:'📋', label:'System Logs'},
+    {id:'database',      icon:'📁', label:'CV Database'},
+    {id:'cv_repository', icon:'📂', label:'CV Repository'},
+    {id:'sys_logs',      icon:'📋', label:'System Logs'},
+    {id:'hiring_plan',   icon:'📑', label:'Hiring Plan'},
     {id:'settings',        icon:'⚙️', label:'Settings'},
     {id:'sla_settings',    icon:'⏱', label:'SLA Settings'},
+    {id:'chain_templates', icon:'⛓', label:'Chain Templates'},
     {id:'email_templates', icon:'✉️',  label:'Email Templates'},
   ],
   ta_manager: [
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
+    {id:'kpi_dashboard',      icon:'📈', label:'KPI Dashboard'},
+    {id:'hiring_plan',        icon:'📑', label:'Hiring Plan'},
+    {id:'cv_repository',      icon:'📂', label:'CV Repository'},
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
     {id:'team',               icon:'👥', label:'Team'},
     {id:'nexai_tracker',      icon:'🤖', label:'NexAI Tracker'},
@@ -901,12 +1009,17 @@ const NAV_DEF = {
     {id:'appeals',            icon:'⚖️', label:'Appeals'},
     {id:'offers',             icon:'📄', label:'Offers & Approvals'},
     {id:'sla_dashboard',      icon:'🚦', label:'SLA / Breaches'},
+    {id:'ta_req_approvals',   icon:'📝', label:'Req Approvals'},
     {id:'sla_settings',       icon:'⏱', label:'SLA Settings'},
+    {id:'chain_templates',    icon:'⛓', label:'Chain Templates'},
     {id:'email_templates',    icon:'✉️',  label:'Email Templates'},
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
   recruiter: [
     {id:'dashboard',          icon:'⬛', label:'Dashboard'},
+    {id:'kpi_dashboard',      icon:'📈', label:'KPI Dashboard'},
+    {id:'hiring_plan',        icon:'📑', label:'Hiring Plan'},
+    {id:'cv_repository',      icon:'📂', label:'CV Repository'},
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
     {id:'candidates',         icon:'👤', label:'Candidates'},
     {id:'nexai_tracker',      icon:'🤖', label:'NexAI Tracker'},
@@ -920,7 +1033,9 @@ const NAV_DEF = {
     {id:'raise_ticket',       icon:'🎫', label:'Raise a Ticket'},
   ],
   hiring_manager: [
-    {id:'dashboard',    icon:'⬛', label:'Dashboard'},
+    {id:'hm_dashboard', icon:'🏠', label:'My Dashboard'},
+    {id:'hm_my_reqs',   icon:'📋', label:'My Requisitions'},
+    {id:'kpi_dashboard',icon:'📈', label:'KPI Dashboard'},
     {id:'profiles',     icon:'✅', label:'Profiles to Review'},
     {id:'interviews',   icon:'📅', label:'Interviews'},
     {id:'offers',       icon:'📄', label:'Offers & Approvals'},
@@ -969,8 +1084,9 @@ const SCREENS = {
   database:   screenDatabase,
   sys_logs:   screenSysLogs,
   // ta_manager + shared
-  dashboard:    screenDashboard,
-  requisitions: screenRequisitions,
+  dashboard:     screenDashboard,
+  kpi_dashboard: screenKPIDashboard,
+  requisitions:  screenRequisitions,
   team:         screenTeam,
   reports:      screenTAReports,
   analytics:    screenTAReports,
@@ -978,7 +1094,11 @@ const SCREENS = {
   candidates: screenCandidates,
   interviews: screenInterviews,
   // hm
-  profiles: screenProfiles,
+  hm_dashboard:    screenHMDashboard,
+  hm_my_reqs:      screenHMMyReqs,
+  profiles:        screenProfiles,
+  // ta manager req approvals
+  ta_req_approvals: screenTAReqApprovals,
   // proctoring (recruiter + ta_manager)
   proctoring_review: screenProctoringReview,
   // tickets (all non-admin)
@@ -988,8 +1108,10 @@ const SCREENS = {
   // settings (admin + ta_manager)
   settings:        screenSettings,
   // SLA / RAG tracking (ta_manager + admin + recruiter)
-  sla_settings:  screenSLASettings,
-  sla_dashboard: screenSLADashboard,
+  sla_settings:    screenSLASettings,
+  sla_dashboard:   screenSLADashboard,
+  // Named approval chain templates (ta_manager + admin)
+  chain_templates: screenChainTemplates,
   // email templates (admin + ta_manager)
   email_templates: screenEmailTemplates,
   // nexai tracker (ta_manager + recruiter)
@@ -997,6 +1119,10 @@ const SCREENS = {
   appeals:       screenAppeals,
   // offers & approvals (ta_manager + recruiter + hiring_manager)
   offers: screenOffers,
+  // hiring plan (ta_manager + recruiter + admin)
+  hiring_plan: screenHiringPlan,
+  // CV repository (ta_manager + recruiter + admin)
+  cv_repository: screenCVRepository,
 };
 
 function navigate(id, param) {
@@ -1045,7 +1171,8 @@ function runRoute(id, param) {
   _currentScreen=id;
   setActive(id);
   document.getElementById('content').innerHTML = '<p class="empty">Loading…</p>';
-  if (id === 'kanban' && param) { setTitle('Kanban'); screenKanban(param); return; }
+  if (id === 'kanban'    && param) { setTitle('Kanban');    screenKanban(param);    return; }
+  if (id === 'pipeline'  && param) { setTitle('Pipeline');  screenPipeline(param);  return; }
   if (id === 'my_reports') {
     ME.role === 'hiring_manager' ? screenHMReports() : screenMyReports();
     return;
@@ -1101,7 +1228,7 @@ async function screenDashboard() {
 // ── Shared pipeline chart helpers ──────────────────────────────────────────
 function _pipeData(d) {
   const keys   = ['apps_received','under_screening','screening_cleared','ai_interview','panel_interview','selected','offer_stage','joined'];
-  const labels = ['Applications','Under Screening','Screening Cleared','AI Interview','Panel Interview','Selected','Offer Stage','Joined'];
+  const labels = ['Applications','Screening','Shortlisted','NexAI Interview','Interview','Documentation','Offered','Hired'];
   const vals   = keys.map(k=>parseInt(d[k]||0));
   const base   = vals[0]||1;
   const rates  = vals.map(v=>Math.round(v/base*100));
@@ -1109,8 +1236,8 @@ function _pipeData(d) {
   return {keys,labels,vals,rates,colors};
 }
 // Stage status mapping for funnel click (index → status)
-const _FUNNEL_STATUS = ['all','screening','screen_passed','ai_interview','interviewing','selected','offer_stage','joined'];
-const _FUNNEL_LABEL  = ['Applications','Under Screening','Screening Cleared','AI Interview','Panel Interview','Selected','Offer Stage','Joined'];
+const _FUNNEL_STATUS = ['all','screen','shortlisted','nexai_bot','interview','documentation','offered','hired'];
+const _FUNNEL_LABEL  = ['Applications','Screening','Shortlisted','NexAI Interview','Interview','Documentation','Offered','Hired'];
 
 function _funnelClickFn(event, elements) {
   if (!elements.length) return;
@@ -1163,14 +1290,14 @@ function _divHtml(fn,mn,un,fp,mp,up) {
 // stage-key → [screenId, status, label]
 const _STAGE_NAV = {
   open_reqs:         ['requisitions','open',         'Open Requisitions'],
-  apps_received:     ['candidates',  'all',          'All Applications'],
-  under_screening:   ['candidates',  'screening',    'Under Screening'],
-  screening_cleared: ['candidates',  'screen_passed','Screening Cleared'],
-  ai_interview:      ['candidates',  'ai_interview', 'AI Interview'],
-  panel_interview:   ['candidates',  'interviewing', 'Panel Interview'],
-  selected:          ['candidates',  'selected',     'Selected'],
-  offer_stage:       ['candidates',  'offer_stage',  'Offer Stage'],
-  joined:            ['candidates',  'joined',       'Joined'],
+  apps_received:     ['candidates',  'all',             'All Applications'],
+  under_screening:   ['candidates',  'screen',         'Screening'],
+  screening_cleared: ['candidates',  'shortlisted',    'Shortlisted'],
+  ai_interview:      ['candidates',  'nexai_bot',      'NexAI Interview'],
+  panel_interview:   ['candidates',  'interview',      'Interview'],
+  selected:          ['candidates',  'documentation',  'Documentation'],
+  offer_stage:       ['candidates',  'offered',        'Offered'],
+  joined:            ['candidates',  'hired',           'Hired'],
 };
 
 function _nexaiInviteSummaryHtml(tracker) {
@@ -1233,9 +1360,9 @@ function _stageGrid(d, prefix) {
   const stages=[
     {k:'open_reqs',label:prefix+' Open Reqs'},{k:'apps_received',label:'Applications'},
     {k:'under_screening',label:'Under Screening'},{k:'screening_cleared',label:'Screening Cleared'},
-    {k:'ai_interview',label:'AI Interview'},{k:'panel_interview',label:'Panel Interview'},
-    {k:'selected',label:'Selected'},{k:'offer_stage',label:'Offer Stage'},
-    {k:'joined',label:'Joined',cls:'joined'},
+    {k:'ai_interview',label:'NexAI Interview'},{k:'panel_interview',label:'Panel Interview'},
+    {k:'selected',label:'HM Screening'},{k:'offer_stage',label:'Offer Approval'},
+    {k:'joined',label:'Hired',cls:'hired'},
   ];
   return stages.map(s=>{
     const nav=_STAGE_NAV[s.k];
@@ -1612,9 +1739,9 @@ async function _dashHiringManager() {
   const stHtml =
     `<div class="stage-card dash-link" onclick="goFiltered('requisitions','open','Open Positions')" title="My open positions"><div class="n">${d.open_reqs??0}</div><div class="lbl">My Positions</div></div>`+
     `<div class="stage-card dash-link" onclick="goFiltered('candidates','all','All Applicants')" title="All applicants"><div class="n">${d.apps_received??0}</div><div class="lbl">Total Applicants</div></div>`+
-    `<div class="stage-card dash-link" onclick="goFiltered('candidates','screening','Under Screening')" title="Under AI/manual screening"><div class="n">${d.under_screening??0}</div><div class="lbl">Under Screening</div></div>`+
-    `<div class="stage-card dash-link" onclick="goFiltered('candidates','screen_passed','AI Screened')" title="Cleared AI screening"><div class="n">${nx.completed??0}</div><div class="lbl">AI Screened</div></div>`+
-    `<div class="stage-card dash-link" onclick="goFiltered('candidates','interviewing','In Panel Interview')" title="In panel interview"><div class="n">${d.panel_interview??0}</div><div class="lbl">In Panel Interview</div></div>`+
+    `<div class="stage-card dash-link" onclick="goFiltered('candidates','screen','Screening')" title="Under screening"><div class="n">${d.under_screening??0}</div><div class="lbl">Screening</div></div>`+
+    `<div class="stage-card dash-link" onclick="goFiltered('candidates','shortlisted','Shortlisted')" title="Shortlisted after NexAI"><div class="n">${nx.completed??0}</div><div class="lbl">Shortlisted</div></div>`+
+    `<div class="stage-card dash-link" onclick="goFiltered('candidates','interview','Interview')" title="In interview"><div class="n">${d.panel_interview??0}</div><div class="lbl">Interview</div></div>`+
     `<div class="stage-card dash-link" onclick="navigate('interviews')" title="Interviews conducted"><div class="n">${conducted}</div><div class="lbl">Interviews Conducted</div></div>`+
     `<div class="stage-card" title="Avg time per interview">`+
       `<div class="n" style="font-size:20px">${avgMin!=null?avgMin+'<span style="font-size:12px;color:var(--muted)">m</span>':'—'}</div>`+
@@ -1632,7 +1759,7 @@ async function _dashHiringManager() {
   const nxPending    = parseInt(nx.pending||0);
 
   // ── HM-specific funnel: Applied → Screening → AI Interview → Panel only ───
-  const hmFunnelLabels = ['Applications','Under Screening','AI Screened','Panel Interview'];
+  const hmFunnelLabels = ['Applications','Screening','NexAI Completed','Interview'];
   const hmFunnelVals   = [
     parseInt(d.apps_received||0),
     parseInt(d.under_screening||0),
@@ -1820,7 +1947,7 @@ async function screenRequisitions() {
     rows = allRows.filter(r => r.status === filter.status);
   }
 
-  const canCreate = ['recruiter','ta_manager','admin'].includes(ME.role);
+  const canCreate = ['recruiter','ta_manager','admin','hiring_manager'].includes(ME.role);
 
   // Fetch req-level RAG for open reqs (non-blocking — badge shown after render)
   let _reqRag = {};
@@ -1852,12 +1979,21 @@ async function screenRequisitions() {
     const ragHtml=rag&&rag.status!=='green'
       ?` <span class="rag-badge ${rag.status}" title="${rag.elapsed_days}d open / SLA ${rag.target_days}d">${rag.status==='red'?'🔴':'🟡'} ${rag.elapsed_days}d</span>`
       :'';
-    return `<tr class="clickable-row" onclick="navigate('kanban','${r.id}')">
-      <td>${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong>${ragHtml}</td>
+    const priBadge=r.priority?`<span class="rag-badge ${r.priority==='critical'?'red':r.priority==='high'?'amber':'green'}" style="font-size:10px;margin-left:4px">${r.priority}</span>`:' ';
+    return `<tr>
+      <td>
+        ${r.req_code?`<span style="font-size:10px;color:var(--muted);font-weight:600">${r.req_code}</span> `:''}
+        ${r.is_p1?'<span class="pill p1">P1</span> ':''}<strong>${r.title}</strong>${priBadge}${ragHtml}
+        ${r.project?`<div style="font-size:11px;color:var(--muted)">${r.project}</div>`:''}
+      </td>
       <td>${r.business_unit}</td><td>${r.band}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
       <td>${r.hiring_manager_name||'—'}</td>
-      <td>${r.in_pipeline}</td><td>${r.levels} level${r.levels!==1?'s':''}</td>
+      <td>${r.in_pipeline}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();navigate('pipeline','${r.id}')">Pipeline</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();navigate('kanban','${r.id}')">Kanban</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -1870,9 +2006,341 @@ async function screenRequisitions() {
     <div style="display:flex;gap:8px;margin-bottom:16px">${pills}</div>
     <div class="card" style="padding:0;overflow:hidden">
       ${tRows
-        ? `<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Hiring Manager</th><th>Pipeline</th><th>Levels</th></tr></thead><tbody>${tRows}</tbody></table>`
+        ? `<table><thead><tr><th>Role</th><th>BU</th><th>Band</th><th>Status</th><th>Hiring Manager</th><th>Count</th><th>Actions</th></tr></thead><tbody>${tRows}</tbody></table>`
         : `<p class="empty">${filterLabel ? 'No requisitions match this filter.' : 'No requisitions yet.'}</p>`}
     </div>`;
+}
+
+// ── SCREEN: Pipeline (per-stage bifurcated view) ─────────────────────────────
+const _STAGE_ORDER = ['applied','screen','nexai_bot','shortlisted','interview','documentation','offered'];
+const _STAGE_LABELS = {applied:'Applied',screen:'Screening',nexai_bot:'NexAI Interview',shortlisted:'Shortlisted',interview:'Interview',documentation:'Documentation',offered:'Offered'};
+let _pipelineReqId = null;
+
+// Holds pipeline data for the current view (used by doc/negotiation modals)
+let _pipelineData = null;
+
+async function screenPipeline(reqId){
+  _pipelineReqId = reqId;
+  setActive('requisitions');
+  setTitle('Pipeline');
+  const data = await api(`/api/requisitions/${reqId}/pipeline`);
+  if(!data){showErr('Could not load pipeline.');return;}
+  _pipelineData = data;
+
+  const total = data.stages.reduce((s,g)=>s+g.count,0);
+  const termTotal = Object.values(data.terminal||{}).reduce((s,g)=>s+g.count,0);
+
+  // Stage summary strip
+  const summaryHtml = data.stages.map(g=>`
+    <div style="text-align:center;flex:1;min-width:80px;cursor:pointer;padding:8px 4px;border-radius:6px;border:1px solid var(--border);background:${g.count?'var(--bg-alt,#f5f5f5)':'white'}"
+         onclick="document.getElementById('ps-${g.stage}')?.scrollIntoView({behavior:'smooth',block:'nearest'})">
+      <div style="font-size:18px;font-weight:700;color:${g.count?'var(--green)':'#ccc'}">${g.count}</div>
+      <div style="font-size:10px;color:var(--muted);white-space:nowrap">${_STAGE_LABELS[g.stage]||g.stage}</div>
+    </div>`).join('');
+
+  function _candidateRow(c, stage, reqId){
+    const rag = c.rag||{};
+    const ragDot = rag.status && rag.status!=='green'
+      ? `<span class="rag-dot ${rag.status}" title="${rag.elapsed_days}d / SLA ${rag.target_days}d"></span>` : '';
+    const aiScore = c.ai_fit_score!=null?`<span title="AI fit">${c.ai_fit_score}%</span>`:'—';
+    const botScore = c.bot_score!=null?`<span title="NexAI score">${c.bot_score}</span>`:'—';
+    const nextAction = _nextStageAction(stage, c.app_id, reqId, {
+      currentLevel: c.current_round||1,
+      maxLevels: data.max_interview_rounds||1,
+      roundConfig: data.round_config||[],
+    });
+    // Extra actions for specific stages
+    const extraBtn = stage==='screen'
+      ? `<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="openScreenDecision('${c.app_id}','${reqId}')" title="Record screening decision">📋</button> `
+      : stage==='documentation'
+      ? `<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px" onclick="openDocPanel('${c.app_id}')" title="Documents &amp; negotiation">📂</button> `
+      : '';
+    const decisionBadge = c.screening_decision
+      ? `<span style="font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;background:${c.screening_decision==='pass'?'#d1fae5':c.screening_decision==='hold'?'#fef3c7':'#fee2e2'};color:${c.screening_decision==='pass'?'#065f46':c.screening_decision==='hold'?'#92400e':'#991b1b'}">${c.screening_decision}</span>`
+      : '';
+    return `<tr>
+      <td>${ragDot} <strong>${c.full_name}</strong><div style="font-size:11px;color:var(--muted)">${c.email}</div></td>
+      <td>${c.elapsed_days}d</td>
+      <td>${aiScore}${decisionBadge}</td>
+      <td>${botScore}</td>
+      <td style="white-space:nowrap">${extraBtn}${nextAction}</td>
+    </tr>`;
+  }
+
+  const _tbl = (rowsHtml) => `<div class="card" style="padding:0;overflow:hidden">
+    <table><thead><tr><th>Candidate</th><th>Days</th><th>AI Fit</th><th>NexAI</th><th>Action</th></tr></thead>
+    <tbody>${rowsHtml}</tbody></table></div>`;
+
+  const _empty = () => `<div style="padding:12px 16px;color:var(--muted);font-size:13px;border:1px dashed var(--border);border-radius:6px">No candidates at this stage</div>`;
+
+  // Build stage sections
+  const stagesHtml = data.stages.map(g=>{
+    let bodyHtml;
+
+    if(g.stage==='interview' && g.levels && g.levels.length > 0){
+      // Dynamic sub-level rendering
+      bodyHtml = g.levels.map(lvl=>{
+        const rowsHtml = lvl.candidates.map(c=>_candidateRow(c,'interview',reqId)).join('');
+        return `<div style="margin-bottom:8px;padding-left:12px;border-left:3px solid var(--accent)">
+          <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:4px">Level ${lvl.level}: ${lvl.round_name} <span style="font-weight:400;color:var(--muted)">(${lvl.count})</span></div>
+          ${lvl.count ? _tbl(rowsHtml) : _empty()}
+        </div>`;
+      }).join('') || _empty();
+    } else {
+      const rowsHtml = g.candidates.map(c=>_candidateRow(c,g.stage,reqId)).join('');
+      bodyHtml = g.count ? _tbl(rowsHtml) : _empty();
+    }
+
+    return `
+      <div id="ps-${g.stage}" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-size:13px;font-weight:700">${_STAGE_LABELS[g.stage]||g.stage}
+            <span style="font-size:12px;font-weight:400;color:var(--muted);margin-left:6px">${g.count} candidate${g.count!==1?'s':''}</span>
+          </div>
+          ${g.count?`<button class="btn btn-ghost btn-sm" onclick="_exportStageCSV('${reqId}','${g.stage}')">⬇ Export</button>`:''}
+        </div>
+        ${bodyHtml}
+      </div>`;
+  }).join('');
+
+  // Terminal section
+  const termHtml = ['hired','rejected','on_hold'].map(t=>{
+    const g = data.terminal[t]||{count:0,candidates:[]};
+    if(!g.count) return '';
+    const rows = g.candidates.map(c=>`<tr><td><strong>${c.full_name}</strong></td><td>${c.email}</td><td>${c.elapsed_days}d</td><td>${c.ai_fit_score??'—'}</td><td>${c.bot_score??'—'}</td></tr>`).join('');
+    return `<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px">${t.toUpperCase()} (${g.count})</div>
+      <div class="card" style="padding:0;overflow:hidden"><table><thead><tr><th>Name</th><th>Email</th><th>Days</th><th>AI Fit</th><th>NexAI</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }).filter(Boolean).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header">
+      <div>
+        <h1>${data.req_code?`<span style="font-size:14px;color:var(--muted);font-weight:500">${data.req_code} · </span>`:''}${data.title}</h1>
+        <div style="font-size:13px;color:var(--muted)">${total} active · ${termTotal} closed</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${reqId}')">Kanban view</button>
+        <button class="btn btn-ghost btn-sm" onclick="screenRequisitions()">← Back</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;padding:12px;background:#f8f8f8;border-radius:8px;border:1px solid var(--border)">${summaryHtml}</div>
+    ${stagesHtml}
+    ${termHtml?`<div style="margin-top:20px"><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px">Closed / Terminal</div>${termHtml}</div>`:''}
+    <div id="pipe-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2000;align-items:center;justify-content:center"></div>`;
+}
+
+function _nextStageAction(stage, appId, reqId, opts={}){
+  let advLabel = null;
+
+  if(stage === 'interview'){
+    const {currentLevel=1, maxLevels=1, roundConfig=[]} = opts;
+    if(currentLevel < maxLevels){
+      const nextRound = roundConfig.find(r=>r.sequence===currentLevel+1);
+      advLabel = `→ Level ${currentLevel+1}${nextRound?' ('+nextRound.name+')':''}`;
+    } else {
+      advLabel = '→ Documentation';
+    }
+  } else {
+    const idx = _STAGE_ORDER.indexOf(stage);
+    const nextStage = (idx >= 0 && idx < _STAGE_ORDER.length-1) ? _STAGE_ORDER[idx+1] : null;
+    if(nextStage) advLabel = `→ ${_STAGE_LABELS[nextStage]||nextStage}`;
+  }
+
+  let btns = '';
+  if(advLabel){
+    btns += `<button class="btn btn-primary btn-sm" style="font-size:11px;padding:3px 8px" onclick="advanceCandidate('${appId}','${reqId}')">${advLabel}</button> `;
+  }
+  btns += `<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;color:#c0392b" onclick="rejectCandidate('${appId}','${reqId}')">✕</button>`;
+  return btns;
+}
+
+async function advanceCandidate(appId, reqId){
+  const r = await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  if(!r||r.detail){flash(r?.detail||'Error advancing candidate',false);return;}
+  let msg;
+  if(r.new_stage==='interview' && r.level){
+    msg = `Interview Level ${r.level}: ${r.level_name||''}`;
+  } else {
+    msg = `Moved to ${(r.new_stage||'').replace(/_/g,' ')}`;
+  }
+  flash(msg);
+  if(r.needs_nexai_invite){
+    if(confirm('Candidate moved to NexAI Interview stage. Send NexAI invite now?')){
+      const inv=await api(`/api/nexai/invite/send/${appId}`,{method:'POST'}).catch(()=>null);
+      flash(inv?.email_sent?'NexAI invite sent!':'NexAI invite created (email failed — check SMTP).', !!inv?.email_sent);
+    }
+  } else if(r.needs_offer){
+    flash('Candidate in Documentation. Collect documents, then create an offer from the Offers screen.');
+  }
+  screenPipeline(reqId);
+}
+
+// ── Screening decision modal ──────────────────────────────────────────────────
+async function openScreenDecision(appId, reqId){
+  const overlay = document.getElementById('pipe-overlay');
+  if(!overlay) return;
+  overlay.style.display='flex';
+  overlay.innerHTML=`
+    <div class="card" style="width:380px;padding:20px">
+      <h3 style="margin:0 0 14px">Record Screening Decision</h3>
+      <div style="margin-bottom:12px">
+        <label style="display:block;margin-bottom:4px;font-size:13px">Decision</label>
+        <select id="sd-decision" style="width:100%">
+          <option value="">— select —</option>
+          <option value="pass">✓ Pass — proceed to NexAI</option>
+          <option value="hold">⏸ Hold — review later</option>
+          <option value="reject">✕ Reject — remove from pipeline</option>
+        </select>
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="display:block;margin-bottom:4px;font-size:13px">Notes (optional)</label>
+        <textarea id="sd-notes" rows="3" style="width:100%;box-sizing:border-box" placeholder="Reason or comments…"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="document.getElementById('pipe-overlay').style.display='none'">Cancel</button>
+        <button class="btn btn-primary" onclick="_saveScreenDecision('${appId}','${reqId}')">Save</button>
+      </div>
+    </div>`;
+}
+
+async function _saveScreenDecision(appId, reqId){
+  const decision = document.getElementById('sd-decision').value;
+  const notes    = document.getElementById('sd-notes').value.trim();
+  if(!decision){flash('Select a decision first.',false);return;}
+  const r = await api(`/api/applications/${appId}/screen-decision`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,notes:notes||null})});
+  if(!r||r.detail){flash(r?.detail||'Error saving decision',false);return;}
+  document.getElementById('pipe-overlay').style.display='none';
+  flash(decision==='reject'?'Candidate rejected at screening.':`Screening decision '${decision}' recorded.`);
+  screenPipeline(reqId);
+}
+
+// ── Documentation stage modal (docs + negotiation) ────────────────────────────
+async function openDocPanel(appId){
+  const overlay = document.getElementById('pipe-overlay');
+  if(!overlay) return;
+  overlay.style.display='flex';
+  overlay.innerHTML=`<div class="card" style="width:540px;max-height:80vh;overflow-y:auto;padding:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3 style="margin:0">Documentation &amp; Negotiation</h3>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('pipe-overlay').style.display='none'">✕</button>
+    </div>
+    <div id="doc-tab-bar" style="display:flex;gap:4px;margin-bottom:14px">
+      <button class="btn btn-primary btn-sm" id="doc-tab-docs" onclick="_docTab('docs','${appId}')">📄 Documents</button>
+      <button class="btn btn-ghost btn-sm" id="doc-tab-neg" onclick="_docTab('neg','${appId}')">💬 Negotiation</button>
+    </div>
+    <div id="doc-tab-content">Loading…</div>
+  </div>`;
+  _docTab('docs', appId);
+}
+
+async function _docTab(tab, appId){
+  document.getElementById('doc-tab-docs')?.classList.toggle('btn-primary', tab==='docs');
+  document.getElementById('doc-tab-docs')?.classList.toggle('btn-ghost', tab!=='docs');
+  document.getElementById('doc-tab-neg')?.classList.toggle('btn-primary', tab==='neg');
+  document.getElementById('doc-tab-neg')?.classList.toggle('btn-ghost', tab!=='neg');
+  const el = document.getElementById('doc-tab-content');
+  if(!el) return;
+  if(tab==='docs'){
+    const docs = await api(`/api/applications/${appId}/documents`)||[];
+    const rows = docs.map(d=>`<tr>
+      <td>${d.file_name}</td>
+      <td style="font-size:11px;color:var(--muted)">${d.doc_type}</td>
+      <td style="font-size:11px;color:var(--muted)">${(d.uploaded_by_name||'').split(' ')[0]} · ${d.uploaded_at?d.uploaded_at.substring(0,10):''}</td>
+      <td><button class="btn btn-ghost btn-sm" style="font-size:11px;color:#c0392b" onclick="_deleteDoc('${appId}','${d.id}')">✕</button></td>
+    </tr>`).join('');
+    el.innerHTML=`
+      <div style="margin-bottom:12px">
+        ${docs.length?`<table style="width:100%"><thead><tr><th>File</th><th>Type</th><th>Uploaded</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p style="color:var(--muted);font-size:13px">No documents yet.</p>'}
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">Upload document</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="file" id="doc-file" style="flex:1">
+          <select id="doc-type" style="width:140px">
+            <option value="general">General</option>
+            <option value="id_proof">ID Proof</option>
+            <option value="degree">Degree</option>
+            <option value="experience">Experience Letter</option>
+            <option value="offer_letter">Offer Letter</option>
+            <option value="payslip">Payslip</option>
+          </select>
+          <button class="btn btn-primary btn-sm" onclick="_uploadDoc('${appId}')">Upload</button>
+        </div>
+      </div>`;
+  } else {
+    const entries = await api(`/api/applications/${appId}/negotiation`)||[];
+    const rows = entries.map(e=>`<div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:4px">${(e.logged_by_name||'HR')} · ${e.logged_at?e.logged_at.replace('T',' ').substring(0,16):''}</div>
+      <div style="font-size:13px">${e.note}</div>
+      ${e.stage_detail?`<div style="font-size:12px;color:var(--muted);margin-top:4px;font-style:italic">${e.stage_detail}</div>`:''}
+    </div>`).join('');
+    el.innerHTML=`
+      <div style="margin-bottom:12px;max-height:300px;overflow-y:auto">
+        ${entries.length?rows:'<p style="color:var(--muted);font-size:13px">No negotiation entries yet.</p>'}
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">Add entry</div>
+        <textarea id="neg-note" rows="2" style="width:100%;box-sizing:border-box;margin-bottom:6px" placeholder="Negotiation update…"></textarea>
+        <input id="neg-detail" type="text" style="width:100%;box-sizing:border-box;margin-bottom:8px" placeholder="e.g. Offered 24 LPA · Candidate asked for 28 LPA (optional)">
+        <button class="btn btn-primary btn-sm" onclick="_addNegEntry('${appId}')">Add</button>
+      </div>`;
+  }
+}
+
+async function _uploadDoc(appId){
+  const fileEl = document.getElementById('doc-file');
+  const docType = document.getElementById('doc-type').value;
+  if(!fileEl||!fileEl.files[0]){flash('Choose a file first.',false);return;}
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  fd.append('doc_type', docType);
+  const r = await fetch(`/api/applications/${appId}/documents`,{method:'POST',headers:{Authorization:`Bearer ${localStorage.getItem('token')}`},body:fd});
+  const j = await r.json().catch(()=>({}));
+  if(j.ok){flash('Document uploaded.');_docTab('docs',appId);}
+  else flash(j.detail||'Upload failed.',false);
+}
+
+async function _deleteDoc(appId, docId){
+  if(!confirm('Delete this document?')) return;
+  const r = await api(`/api/applications/${appId}/documents/${docId}`,{method:'DELETE'});
+  if(r?.ok){flash('Document deleted.');_docTab('docs',appId);}
+  else flash('Delete failed.',false);
+}
+
+async function _addNegEntry(appId){
+  const note = (document.getElementById('neg-note').value||'').trim();
+  const detail = (document.getElementById('neg-detail').value||'').trim();
+  if(!note){flash('Note is required.',false);return;}
+  const r = await api(`/api/applications/${appId}/negotiation`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note,stage_detail:detail||null})});
+  if(r?.ok){flash('Entry added.');_docTab('neg',appId);}
+  else flash(r?.detail||'Failed to add entry.',false);
+}
+
+async function rejectCandidate(appId, reqId){
+  if(!confirm('Mark this candidate as rejected?')) return;
+  const r = await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:'rejected'})});
+  if(!r||r.detail){flash(r?.detail||'Error',false);return;}
+  flash('Candidate rejected.');
+  screenPipeline(reqId);
+}
+
+async function _exportStageCSV(reqId, stage){
+  const data = await api(`/api/requisitions/${reqId}/stage/${stage}/report`);
+  if(!data||!data.rows){flash('Could not load report.',false);return;}
+  const hdrs=['Name','Email','Gender','Status','AI Fit','NexAI Score','Combined','Company','Designation','Notice (days)','Current CTC','Expected CTC','Applied At','Days in Stage'];
+  const escCsv=v=>v==null?'':String(v).replace(/"/g,'""');
+  const rows=[hdrs.join(','),...data.rows.map(r=>[
+    r.full_name,r.email,r.gender,r.status,r.ai_fit_score,r.bot_score,r.combined_score,
+    r.current_company,r.current_designation,r.notice_period_days,
+    r.current_ctc_total,r.expected_ctc_total,
+    r.applied_at?new Date(r.applied_at).toLocaleDateString('en-IN'):'',
+    r.days_in_stage?Math.round(r.days_in_stage):''
+  ].map(escCsv).map(v=>`"${v}"`).join(','))].join('\n');
+  const blob=new Blob([rows],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`${data.stage_label||stage}_${data.requisition?.req_code||reqId}.csv`;
+  a.click();
 }
 
 // ── SCREEN: Kanban ────────────────────────────────────────────────────────────
@@ -1899,23 +2367,23 @@ async function screenKanban(reqId) {
   setTitle(det?.title || 'Kanban');
 
   const fixL = [
-    {status:'applied',     label:'Applications'},
-    {status:'screening',   label:'Screening'},
-    {status:'screen_passed',label:'Screening Cleared'},
+    {status:'applied',       label:'Applications'},
+    {status:'screen',        label:'Screening'},
+    {status:'nexai_bot',     label:'NexAI Interview'},
+    {status:'shortlisted',   label:'Shortlisted'},
   ];
-  const panelCols = (kb.rounds||[]).filter(r=>!r.is_auto).map(r=>({status:'interviewing',label:r.name,round_seq:r.sequence}));
+  const interviewCols = (kb.rounds||[]).filter(r=>!r.is_auto).map(r=>({status:'interview',label:r.name,round_seq:r.sequence}));
   const fixR = [
-    {status:'selected',   label:'Selected'},
-    {status:'offer_stage',label:'Offer Stage'},
-    {status:'joined',     label:'Joined'},
+    {status:'documentation', label:'Documentation'},
+    {status:'offered',       label:'Offered'},
   ];
-  const cols = [...fixL,...panelCols,...fixR];
+  const cols = [...fixL,...interviewCols,...fixR];
 
   function cardsFor(col) {
     return (kb.candidates||[]).filter(c=>{
       if(c.status!==col.status) return false;
       if(col.round_seq!==undefined && c.current_round!==col.round_seq) return false;
-      if(col.status==='interviewing' && col.round_seq===undefined) return false;
+      if(col.status==='interview' && col.round_seq===undefined) return false;
       return true;
     });
   }
@@ -1935,13 +2403,13 @@ async function screenKanban(reqId) {
         ondragstart="kbDS(event)" ondragend="kbDE(event)">
         <div class="cname" style="display:flex;align-items:center;gap:4px">${c.full_name}${_rdot}</div>
         <div class="cscore">Score: ${c.score!=null?Math.round(c.score):'—'} · ${c.gender||'—'}</div>
-        ${canApply&&col.status==='screening'?`
+        ${canApply&&col.status==='screen'?`
           <div style="display:flex;gap:4px;margin-top:6px">
             <button class="btn btn-green btn-sm" style="flex:1;font-size:11px" onclick="passScreening('${c.app_id}');event.stopPropagation()">Pass ✓</button>
             <button class="btn btn-ghost btn-sm" style="font-size:11px;color:#c0392b;border-color:#e8c5c0" onclick="rejectScreening('${c.app_id}');event.stopPropagation()">✕</button>
           </div>`:''}
-        ${canNexAI&&col.status==='screen_passed'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%" onclick="sendNexAIInvite('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}','${(c.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`:''}
-        ${canApply&&col.status==='selected'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%;background:var(--green)" onclick="openCreateOfferModal('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}',event,'${reqId}')">📄 Create Offer</button>`:''}
+        ${canNexAI&&col.status==='nexai_bot'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%" onclick="sendNexAIInvite('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}','${(c.email||'').replace(/'/g,"\\'")}',event)">📧 Send AI Invite</button>`:''}
+        ${canApply&&col.status==='documentation'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%;background:var(--green)" onclick="openCreateOfferModal('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}',event,'${reqId}')">📄 Create Offer</button>`:''}
       </div>`;
   }).join('');
     return `
@@ -1980,13 +2448,16 @@ async function kbDrop(e,col,toStatus,roundSeq){
   e.preventDefault();col.classList.remove('drag-over');
   if(!_dragAppId) return;
   const id=_dragAppId;_dragAppId=null;
-  const res=await api(`/api/applications/${id}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_status:toStatus,actor_id:ME.sub})});
-  if(res){flash(`Moved to ${toStatus}`);screenKanban(_kanbanReqId);}
+  const terminal=['rejected','on_hold','hired'].includes(toStatus);
+  const payload=terminal?{target:toStatus}:{};
+  const res=await api(`/api/applications/${id}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(res&&!res.detail){flash(`Moved to ${res.new_stage||toStatus}`);screenKanban(_kanbanReqId);}
+  else if(res?.detail){flash(res.detail,false);}
 }
 
 // ── Candidate stage actions ───────────────────────────────────────────────────
 async function passScreening(appId){
-  const res=await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_status:'screen_passed',actor_id:ME.sub})});
+  const res=await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
   if(res){flash('Moved to Screening Cleared.');
     // Refresh whichever screen is currently showing
     if(_kanbanReqId) screenKanban(_kanbanReqId); else screenCandidates();
@@ -1994,7 +2465,7 @@ async function passScreening(appId){
 }
 async function rejectScreening(appId){
   if(!confirm('Reject this candidate at screening stage?')) return;
-  const res=await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to_status:'screen_rejected',actor_id:ME.sub})});
+  const res=await api(`/api/applications/${appId}/advance`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target:'rejected'})});
   if(res){flash('Candidate rejected at screening.');
     if(_kanbanReqId) screenKanban(_kanbanReqId); else screenCandidates();
   }
@@ -2842,13 +3313,15 @@ async function screenDatabase() {
           style="padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px">
           <option value="">All statuses</option>
           <option value="applied">Applied</option>
-          <option value="screening">Screening</option>
-          <option value="screen_passed">Screening Cleared</option>
-          <option value="interviewing">Interviewing</option>
-          <option value="selected">Selected</option>
-          <option value="offer_stage">Offer Stage</option>
-          <option value="joined">Joined</option>
+          <option value="screen">Screening</option>
+          <option value="nexai_bot">NexAI Interview</option>
+          <option value="shortlisted">Shortlisted</option>
+          <option value="interview">Interview</option>
+          <option value="documentation">Documentation</option>
+          <option value="offered">Offered</option>
+          <option value="hired">Hired</option>
           <option value="rejected">Rejected</option>
+          <option value="on_hold">On Hold</option>
         </select>
         <button class="btn btn-ghost" onclick="downloadCVCsv()" title="Download filtered list as CSV">⬇ CSV</button>
         <button class="btn btn-green" onclick="downloadCVExcel()" title="Download filtered list as Excel">⬇ Excel</button>
@@ -4184,6 +4657,256 @@ async function screenHMReports(){
   }
 }
 
+// ── SCREEN: KPI Dashboard ─────────────────────────────────────────────────────
+async function screenKPIDashboard(){
+  _currentScreen='kpi_dashboard';
+  setTitle('KPI Dashboard');
+  const yr=_year;
+  const periodBar=`<div class="period-bar">${['weekly','monthly','quarterly','half_yearly','yearly'].map(p=>`<button class="period-btn${p===_period?' active':''}" onclick="setPeriodKPI('${p}')">${p.split('_').join(' ')}</button>`).join('')}</div>`;
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header">
+      <h1>KPI Dashboard &mdash; ${yr}</h1>
+      <button class="btn btn-green" onclick="downloadAuth('/api/kpi/excel?period=${_period}&year=${yr}','egnex_kpi_${yr}_${_period}.xlsx')">&#8595; Excel</button>
+    </div>
+    ${periodBar}
+    <p class="empty" id="kpi-loading">Loading KPI data&hellip;</p>`;
+
+  const d=await api(`/api/kpi/dashboard?period=${_period}&year=${yr}`);
+  if(!d){showErr('Could not load KPI data.');return;}
+
+  const cards=d.kpi_cards||{};
+  const funnel=d.funnel||[];
+  const sources=d.source_effectiveness||[];
+  const recLoad=d.recruiter_load||[];
+  const offers=d.offer_stats||{};
+
+  // ── KPI cards row ──────────────────────────────────────────────────────────
+  const ttf=cards.avg_time_to_fill_days!=null?`${cards.avg_time_to_fill_days}d`:'—';
+  const cardHtml=`
+    <div class="stat-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+      <div class="stat-box">
+        <div class="sv">${cards.open_reqs||0}</div>
+        <div class="sl">Open Requisitions</div>
+      </div>
+      <div class="stat-box">
+        <div class="sv">${cards.positions_to_fill||0}</div>
+        <div class="sl">Positions to Fill</div>
+      </div>
+      <div class="stat-box">
+        <div class="sv">${cards.candidates_in_pipeline||0}</div>
+        <div class="sl">Candidates in Pipeline</div>
+      </div>
+    </div>
+    <div class="stat-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:24px">
+      <div class="stat-box">
+        <div class="sv">${ttf}</div>
+        <div class="sl">Avg Time-to-Fill</div>
+      </div>
+      <div class="stat-box" style="cursor:pointer" onclick="navigate('sla_dashboard')">
+        <div class="sv" style="color:#c0392b">${cards.sla_breaches_red||0}</div>
+        <div class="sl">SLA Breaches (Red)</div>
+      </div>
+      <div class="stat-box" style="cursor:pointer" onclick="navigate('sla_dashboard')">
+        <div class="sv" style="color:#b08423">${cards.sla_breaches_amber||0}</div>
+        <div class="sl">SLA Warnings (Amber)</div>
+      </div>
+    </div>`;
+
+  // ── Funnel table ──────────────────────────────────────────────────────────
+  const funnelRows=funnel.map(f=>`
+    <tr>
+      <td style="font-weight:500">${f.label}</td>
+      <td style="text-align:right;font-size:17px;font-weight:700;color:var(--text)">${f.count}</td>
+      <td style="text-align:right;color:var(--muted);font-size:12px">${f.conv_pct!=null?'&#8595; '+f.conv_pct+'%':'—'}</td>
+    </tr>`).join('');
+
+  // ── Source table ───────────────────────────────────────────────────────────
+  const srcRows=sources.length
+    ? sources.map(s=>`
+        <tr>
+          <td style="text-transform:capitalize">${s.source||'Unknown'}</td>
+          <td style="text-align:right">${s.total}</td>
+          <td style="text-align:right;color:var(--green);font-weight:600">${s.hires}</td>
+          <td style="text-align:right;color:var(--muted)">${s.total>0?Math.round(s.hires/s.total*100)+'%':'—'}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="4" style="color:var(--muted);padding:12px 10px">No data for this period</td></tr>';
+
+  // ── Recruiter load table ───────────────────────────────────────────────────
+  const recRows=recLoad.length
+    ? recLoad.map(r=>`
+        <tr>
+          <td>${r.recruiter}</td>
+          <td style="text-align:right">${r.open_reqs}</td>
+          <td style="text-align:right">${r.active_candidates}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="3" style="color:var(--muted);padding:12px 10px">No data</td></tr>';
+
+  // ── Render full page ───────────────────────────────────────────────────────
+  document.getElementById('content').innerHTML=`
+    <div class="page-header">
+      <h1>KPI Dashboard &mdash; ${yr}</h1>
+      <button class="btn btn-green" onclick="downloadAuth('/api/kpi/excel?period=${_period}&year=${yr}','egnex_kpi_${yr}_${_period}.xlsx')">&#8595; Excel</button>
+    </div>
+    ${periodBar}
+
+    ${cardHtml}
+
+    <!-- Row 1: Funnel + Offer stats -->
+    <div class="chart-grid" style="margin-bottom:20px">
+
+      <div class="card">
+        <div class="card-title">Pipeline Funnel &mdash; Candidates by Stage</div>
+        <div class="chart-wrap" style="height:260px"><canvas id="kpi-funnel"></canvas></div>
+        <table style="margin-top:12px">
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th style="text-align:right">Candidates</th>
+              <th style="text-align:right">Conv %</th>
+            </tr>
+          </thead>
+          <tbody>${funnelRows}</tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Offer Status</div>
+        <div class="chart-wrap" style="height:200px"><canvas id="kpi-offers"></canvas></div>
+        <div class="stat-row" style="grid-template-columns:repeat(3,1fr);margin-top:14px">
+          <div class="stat-box" style="padding:10px">
+            <div class="sv" style="font-size:22px;color:#b08423">${offers.pending||0}</div>
+            <div class="sl">Pending</div>
+          </div>
+          <div class="stat-box" style="padding:10px">
+            <div class="sv" style="font-size:22px;color:var(--green)">${offers.approved||0}</div>
+            <div class="sl">Approved</div>
+          </div>
+          <div class="stat-box" style="padding:10px">
+            <div class="sv" style="font-size:22px;color:#c0392b">${offers.rejected||0}</div>
+            <div class="sl">Rejected</div>
+          </div>
+        </div>
+        ${offers.avg_approval_days!=null?`<p style="font-size:12px;color:var(--muted);margin-top:10px;text-align:center">Avg approval time: <strong>${offers.avg_approval_days} days</strong></p>`:''}
+      </div>
+
+    </div>
+
+    <!-- Row 2: Source effectiveness + Recruiter load -->
+    <div class="chart-grid">
+
+      <div class="card">
+        <div class="card-title">Source Effectiveness</div>
+        <div class="chart-wrap" style="height:220px"><canvas id="kpi-source"></canvas></div>
+        <table style="margin-top:12px">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th style="text-align:right">Candidates</th>
+              <th style="text-align:right">Hires</th>
+              <th style="text-align:right">Hit Rate</th>
+            </tr>
+          </thead>
+          <tbody>${srcRows}</tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recruiter Load</div>
+        <div class="chart-wrap" style="height:220px"><canvas id="kpi-recload"></canvas></div>
+        <table style="margin-top:12px">
+          <thead>
+            <tr>
+              <th>Recruiter</th>
+              <th style="text-align:right">Open Reqs</th>
+              <th style="text-align:right">Active Candidates</th>
+            </tr>
+          </thead>
+          <tbody>${recRows}</tbody>
+        </table>
+      </div>
+
+    </div>`;
+
+  // ── Charts ─────────────────────────────────────────────────────────────────
+
+  // Funnel — horizontal bar, gradient shade from accent to darker
+  if(funnel.length){
+    const fColors=['#f15a22','#e0531f','#cc4b1c','#b84219','#a33a16','#8f3213','#7a2b10'];
+    mkChart('kpi-funnel',{
+      type:'bar',
+      data:{
+        labels:funnel.map(f=>f.label),
+        datasets:[{
+          label:'Candidates',
+          data:funnel.map(f=>f.count),
+          backgroundColor:funnel.map((_,i)=>fColors[i]||'#7a2b10'),
+        }]
+      },
+      options:{
+        indexAxis:'y',
+        responsive:true,
+        maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>{
+          const f=funnel[ctx.dataIndex];
+          return f.conv_pct!=null?` ${ctx.raw} candidates (${f.conv_pct}% from prev stage)`:` ${ctx.raw} candidates`;
+        }}}},
+        scales:{x:{beginAtZero:true,grid:{display:false}},y:{grid:{display:false}}}
+      }
+    });
+  }
+
+  // Offer status — donut
+  const offerTotal=(offers.pending||0)+(offers.approved||0)+(offers.rejected||0);
+  if(offerTotal>0){
+    mkChart('kpi-offers',{
+      type:'doughnut',
+      data:{
+        labels:['Pending','Approved','Rejected'],
+        datasets:[{data:[offers.pending||0,offers.approved||0,offers.rejected||0],backgroundColor:['#b08423','#1d6e56','#c0392b']}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}
+    });
+  }else{
+    const el=document.getElementById('kpi-offers');
+    if(el)el.closest('.chart-wrap').insertAdjacentHTML('afterend','<p style="text-align:center;color:var(--muted);font-size:13px;margin-top:8px">No offers in this period</p>');
+  }
+
+  // Source effectiveness — grouped bar
+  if(sources.length){
+    mkChart('kpi-source',{
+      type:'bar',
+      data:{
+        labels:sources.map(s=>s.source||'Unknown'),
+        datasets:[
+          {label:'Candidates',data:sources.map(s=>s.total),backgroundColor:'#e5e3df'},
+          {label:'Hires',     data:sources.map(s=>s.hires),backgroundColor:'#1d6e56'}
+        ]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{grid:{display:false}},y:{beginAtZero:true}}}
+    });
+  }else{
+    const el=document.getElementById('kpi-source');
+    if(el)el.closest('.chart-wrap').insertAdjacentHTML('afterend','<p style="text-align:center;color:var(--muted);font-size:13px;margin-top:8px">No source data in this period</p>');
+  }
+
+  // Recruiter load — grouped bar
+  if(recLoad.length){
+    mkChart('kpi-recload',{
+      type:'bar',
+      data:{
+        labels:recLoad.map(r=>r.recruiter),
+        datasets:[
+          {label:'Open Reqs',          data:recLoad.map(r=>r.open_reqs),         backgroundColor:'#f15a22'},
+          {label:'Active Candidates',  data:recLoad.map(r=>r.active_candidates), backgroundColor:'#2563eb'}
+        ]
+      },
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{grid:{display:false}},y:{beginAtZero:true}}}
+    });
+  }
+}
+function setPeriodKPI(p){_period=p;screenKPIDashboard();}
+
 // ── New Requisition helpers ───────────────────────────────────────────────────
 let _roundCount=0;
 let _allBUs=[];
@@ -4197,26 +4920,32 @@ function _calcCTC(){
   const v=parseFloat(document.getElementById('rf-ctc-variable').value)||0;
   document.getElementById('rf-ctc-total').value=(f||v)?f+v:'';
 }
-let _approverChain=[]; // [{id, name, role}]
+let _approverChain=[]; // [{id, name, sla_days}]
 function addApproverStep(){
   const sel=document.getElementById('rf-approver-pick');
   const uid=sel.value;
   if(!uid) return;
   const name=sel.options[sel.selectedIndex].text;
   if(_approverChain.find(a=>a.id===uid)){flash('Already in chain.',false);return;}
-  _approverChain.push({id:uid,name});
+  _approverChain.push({id:uid,name,sla_days:2});
   _renderApproverChain();
   sel.value='';
 }
 function _renderApproverChain(){
-  document.getElementById('approver-chain-list').innerHTML=_approverChain.map((a,i)=>`
+  document.getElementById('approver-chain-list').innerHTML=_approverChain.length
+    ? _approverChain.map((a,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg-alt,#f8f8f8);border-radius:4px;border:1px solid var(--border)">
       <span style="font-size:11px;font-weight:700;min-width:22px;color:var(--muted)">${'→'.repeat(i)} ${i+1}</span>
       <span style="flex:1;font-size:13px">${a.name}</span>
+      <label style="font-size:11px;color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:4px">
+        SLA <input type="number" min="1" value="${a.sla_days||2}" style="width:46px;font-size:12px;padding:2px 4px;border:1px solid var(--border);border-radius:3px"
+          oninput="_approverChain[${i}].sla_days=Math.max(1,parseInt(this.value)||1)"> d
+      </label>
       ${i>0?`<button style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:15px;padding:0" onclick="_moveApprover(${i},-1)" title="Move up">↑</button>`:''}
       ${i<_approverChain.length-1?`<button style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:15px;padding:0" onclick="_moveApprover(${i},1)" title="Move down">↓</button>`:''}
       <button style="background:none;border:none;cursor:pointer;color:#c0392b;font-size:17px;padding:0" onclick="_removeApprover(${i})">×</button>
-    </div>`).join('');
+    </div>`).join('')
+    : '';
 }
 function _moveApprover(idx,dir){
   const b=idx+dir;if(b<0||b>=_approverChain.length)return;
@@ -4230,11 +4959,13 @@ async function openReqModal(){
   _approverChain=[];
   document.getElementById('rounds-list').innerHTML='';
   document.getElementById('approver-chain-list').innerHTML='';
-  ['rf-title','rf-fy','rf-skills','rf-jd','rf-loc'].forEach(id=>document.getElementById(id).value='');
+  ['rf-title','rf-fy','rf-skills','rf-jd','rf-loc','rf-project','rf-grade','rf-min-exp','rf-max-exp'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rf-openings').value='1';
-  ['rf-exp','rf-ctc-fixed','rf-ctc-variable','rf-ctc-total'].forEach(id=>document.getElementById(id).value='');
+  ['rf-exp','rf-ctc-fixed','rf-ctc-variable','rf-ctc-total'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   document.getElementById('rf-p1').checked=false;
   document.getElementById('rf-risk').value='';
+  document.getElementById('rf-priority').value='';
+  ['linkedin','naukri','referral','campus','direct','other'].forEach(ch=>{const el=document.getElementById('rf-ch-'+ch);if(el)el.checked=false;});
   const [bus,bands,users]=await Promise.all([api('/api/business-units'),api('/api/bands'),api('/api/users')]);
   _allBUs=bus||[];
   // Build unique group company list preserving order
@@ -4250,9 +4981,33 @@ async function openReqModal(){
     '<option value="">— select approver to add —</option>'+
     (users||[]).filter(u=>approverRoles.includes(u.role))
       .map(u=>`<option value="${u.id}">${u.full_name} (${u.role.replace(/_/g,' ')})</option>`).join('');
+  // Load chain templates into the "use template" picker
+  const templates=await _loadTemplates(false).catch(()=>[]);
+  const tpick=document.getElementById('rf-template-pick');
+  if(tpick){
+    tpick.innerHTML='<option value="">— or pick a template —</option>'+
+      (templates||[]).map(t=>`<option value="${t.id}">${t.name}${t.description?' — '+t.description:''}</option>`).join('');
+  }
   addRound('AI screening interview','bot_interview',true);
   addRound('Technical panel','panel',false);
   document.getElementById('req-modal').classList.add('open');
+}
+
+async function _applyChainTemplate(){
+  const sel=document.getElementById('rf-template-pick');
+  const tid=sel.value; if(!tid) return;
+  const templates=await _loadTemplates(false).catch(()=>[]);
+  const t=templates.find(x=>x.id===tid);
+  if(!t||!t.steps||!t.steps.length){flash('Template not found.',false);return;}
+  // Resolve approver names from the rf-approver-pick options (already loaded)
+  const picker=document.getElementById('rf-approver-pick');
+  _approverChain=t.steps.map(s=>{
+    const opt=Array.from(picker.options).find(o=>o.value===String(s.approver_id));
+    return {id:String(s.approver_id),name:opt?opt.text:(s.full_name||s.approver_id),sla_days:s.sla_days||2};
+  });
+  _renderApproverChain();
+  sel.value=''; // reset picker
+  flash(`Template "${t.name}" applied — ${_approverChain.length} step${_approverChain.length!==1?'s':''}.`);
 }
 function closeReqModal(){document.getElementById('req-modal').classList.remove('open');}
 
@@ -4568,13 +5323,18 @@ async function submitReq(){
     title,bu_id:document.getElementById('rf-bu').value,band_id:document.getElementById('rf-band').value,
     roll_type:document.getElementById('rf-roll').value,openings:parseInt(document.getElementById('rf-openings').value)||1,
     fiscal_year:document.getElementById('rf-fy').value.trim()||null,
-    min_experience:parseFloat(document.getElementById('rf-exp').value)||null,
+    min_experience:parseFloat(document.getElementById('rf-min-exp').value||document.getElementById('rf-exp').value)||null,
     budgeted_fixed:fixed,budgeted_variable:variable,
     budgeted_ctc:(fixed||variable)?((fixed||0)+(variable||0)):null,
     key_skills:skills,job_description:document.getElementById('rf-jd').value.trim()||null,
     is_p1:document.getElementById('rf-p1').checked,
     risk:document.getElementById('rf-risk').value||null,
     hiring_location:document.getElementById('rf-loc').value.trim()||null,
+    project:document.getElementById('rf-project').value.trim()||null,
+    grade_level:document.getElementById('rf-grade').value.trim()||null,
+    max_experience:parseFloat(document.getElementById('rf-max-exp').value)||null,
+    priority:document.getElementById('rf-priority').value||null,
+    source_channels:['linkedin','naukri','referral','campus','direct','other'].filter(ch=>document.getElementById('rf-ch-'+ch)?.checked),
     rounds,
   };
   const res=await api('/api/requisitions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -4583,10 +5343,17 @@ async function submitReq(){
   if(_approverChain.length>0){
     await api(`/api/requisitions/${res.id}/offer-approvers`,{
       method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({approvers:_approverChain.map(a=>a.id)})
+      body:JSON.stringify({steps:_approverChain.map(a=>({approver_id:a.id,sla_days:a.sla_days||2}))})
     });
   }
-  flash(`Requisition "${title}" created.`);closeReqModal();screenRequisitions();
+  if(res.approval_status==='pending_ta_approval'){
+    flash('Requisition submitted — sent to TA for approval.');
+    closeReqModal();
+    // Refresh TA badge and stay on current screen
+    _updateReqApprovalBadge();
+  } else {
+    flash(`Requisition "${title}" created.`);closeReqModal();screenRequisitions();
+  }
 }
 
 // ── Apply helpers ─────────────────────────────────────────────────────────────
@@ -6319,10 +7086,12 @@ async function openOfferDetail(offerId){
     const ragBit=isCurrentPending&&_oStepRag&&_oStepRag.status!=='green'
       ?` <span class="rag-badge ${_oStepRag.status}" style="font-size:10px" title="${_oStepRag.elapsed_days}d / SLA ${_oStepRag.target_days}d">${_oStepRag.status==='red'?'🔴':'🟡'} ${_oStepRag.elapsed_days}d</span>`
       :'';
+    const slaDays=s.sla_days||2;
+    const slaLabel=`<span style="font-size:10px;color:var(--muted);margin-left:4px;border:1px solid var(--border);border-radius:3px;padding:1px 5px">SLA ${slaDays}d</span>`;
     return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px;border-radius:4px;background:${s.status==='approved'?'#dff0eb':s.status==='rejected'?'#fde8e4':'var(--bg-alt,#f5f5f5)'}">
       <span style="font-size:18px;min-width:22px">${s.status==='approved'?'✓':s.status==='rejected'?'✕':'⏳'}</span>
       <div style="flex:1">
-        <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">Step ${s.sequence}: ${s.approver_name}${ragBit}</div>
+        <div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Step ${s.sequence}: ${s.approver_name}${slaLabel}${ragBit}</div>
         <div style="font-size:11px;color:var(--muted)">${s.status.toUpperCase()}${s.acted_at?' · '+new Date(s.acted_at).toLocaleDateString('en-IN'):''}</div>
         ${s.notes?`<div style="font-size:12px;margin-top:3px;color:#555">${s.notes}</div>`:''}
       </div>
@@ -6458,6 +7227,176 @@ async function resubmitOffer(offerId){
   closeOfferDetail();screenOffers();
 }
 
+// ── SCREEN: Approval Chain Templates ─────────────────────────────────────────
+let _ctAllUsers = [];    // loaded once per session for the template editor
+let _ctSteps    = [];    // working copy of steps in the create/edit modal
+let _ctEditId   = null;  // null = create, UUID = edit
+let _cachedTemplates = null; // shared across modal pickers
+
+async function _loadAllUsers(){
+  if(_ctAllUsers.length) return _ctAllUsers;
+  const rows=await api('/api/users');
+  _ctAllUsers=(rows||[]).filter(u=>['ta_manager','recruiter','hiring_manager','bu_head','director','admin'].includes(u.role));
+  return _ctAllUsers;
+}
+async function _loadTemplates(forceRefresh){
+  if(!forceRefresh&&_cachedTemplates) return _cachedTemplates;
+  const t=await api('/api/offer-chain-templates').catch(()=>null);
+  _cachedTemplates=t||[];
+  return _cachedTemplates;
+}
+
+async function screenChainTemplates(){
+  setTitle('Chain Templates');
+  if(!['admin','ta_manager'].includes(ME.role)){
+    document.getElementById('content').innerHTML=`
+      <div class="card" style="text-align:center;padding:60px 40px;max-width:480px;margin:40px auto">
+        <p style="font-size:32px;margin-bottom:12px">🔒</p>
+        <p style="font-weight:600;font-size:16px;margin-bottom:8px">Access restricted</p>
+        <p style="color:var(--muted);font-size:13px">Chain Templates management requires TA Manager or Admin access.</p>
+      </div>`;
+    return;
+  }
+  const templates=await _loadTemplates(true);
+
+  function stepsPreview(steps){
+    if(!steps||!steps.length) return '<em style="color:var(--muted)">No steps</em>';
+    return steps.map(s=>`<span title="SLA: ${s.sla_days}d"><strong>${s.sequence}.</strong> ${s.full_name} <span class="rag-badge amber" style="font-size:10px;padding:1px 5px">${s.sla_days}d</span></span>`).join(' → ');
+  }
+
+  const tRows=(templates||[]).map(t=>`
+    <tr>
+      <td><strong>${t.name}</strong>${t.description?`<div style="font-size:11px;color:var(--muted)">${t.description}</div>`:''}</td>
+      <td><div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">${stepsPreview(t.steps)}</div></td>
+      <td><div class="inline-btns">
+        <button class="btn btn-ghost btn-sm" onclick="openCTModal('${t.id}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:#c0392b" onclick="_deleteCT('${t.id}','${t.name.replace(/'/g,"\\'")}')">Delete</button>
+      </div></td>
+    </tr>`).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header">
+      <h1>Approval Chain Templates</h1>
+      <button class="btn btn-primary" onclick="openCTModal(null)">+ New template</button>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:20px">Define named, reusable approval chains. When creating a requisition, pick a template to pre-fill the approval chain in one click. Each step carries its own SLA (days).</p>
+    ${!templates||!templates.length
+      ? `<div class="card" style="text-align:center;padding:40px;color:var(--muted)">No templates yet. Create one to speed up requisition setup.</div>`
+      : `<div class="card" style="padding:0;overflow:hidden">
+           <table>
+             <thead><tr><th>Template</th><th>Steps</th><th>Actions</th></tr></thead>
+             <tbody>${tRows}</tbody>
+           </table>
+         </div>`}
+
+    <!-- Create / Edit Modal -->
+    <div class="modal-bg" id="ct-modal" onclick="if(event.target===this)closeCTModal()">
+      <div class="modal" style="max-width:560px">
+        <h2 id="ct-modal-title">New approval chain template</h2>
+        <div class="form-group"><label>Template name</label><input id="ct-name" placeholder="Standard Offer"></div>
+        <div class="form-group"><label>Description (optional)</label><input id="ct-desc" placeholder="Used for on-roll Band 5 and above"></div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px">Approver steps</div>
+        <div id="ct-steps-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:16px">
+          <select id="ct-approver-pick" style="flex:1;padding:7px;border:1px solid var(--border);border-radius:4px;font-size:13px">
+            <option value="">— add approver —</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="_ctAddStep()">+ Add</button>
+        </div>
+        <div class="modal-btns">
+          <button class="btn btn-ghost" onclick="closeCTModal()">Cancel</button>
+          <button class="btn btn-primary" id="ct-save-btn" onclick="_ctSave()">Save template</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function _ctRenderSteps(){
+  document.getElementById('ct-steps-list').innerHTML=_ctSteps.length
+    ? _ctSteps.map((s,i)=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f8f8f8;border:1px solid var(--border);border-radius:4px">
+          <span style="font-size:11px;font-weight:700;color:var(--muted);min-width:22px">${'→'.repeat(i)} ${i+1}</span>
+          <span style="flex:1;font-size:13px">${s.full_name}</span>
+          <label style="font-size:11px;color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:4px">
+            SLA <input type="number" min="1" value="${s.sla_days||2}" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:3px"
+              oninput="_ctSteps[${i}].sla_days=Math.max(1,parseInt(this.value)||1)"> days
+          </label>
+          ${i>0?`<button style="background:none;border:none;cursor:pointer;font-size:15px;color:var(--muted)" onclick="_ctMove(${i},-1)" title="Up">↑</button>`:''}
+          ${i<_ctSteps.length-1?`<button style="background:none;border:none;cursor:pointer;font-size:15px;color:var(--muted)" onclick="_ctMove(${i},1)" title="Down">↓</button>`:''}
+          <button style="background:none;border:none;cursor:pointer;color:#c0392b;font-size:17px" onclick="_ctRemove(${i})">×</button>
+        </div>`).join('')
+    : `<p class="empty" style="margin:0;padding:10px">No steps yet. Add at least one approver.</p>`;
+}
+function _ctMove(idx,dir){
+  const b=idx+dir; if(b<0||b>=_ctSteps.length) return;
+  [_ctSteps[idx],_ctSteps[b]]=[_ctSteps[b],_ctSteps[idx]];
+  _ctRenderSteps();
+}
+function _ctRemove(idx){ _ctSteps.splice(idx,1); _ctRenderSteps(); }
+function _ctAddStep(){
+  const sel=document.getElementById('ct-approver-pick');
+  const uid=sel.value; if(!uid) return;
+  const name=sel.options[sel.selectedIndex].text;
+  if(_ctSteps.find(s=>s.approver_id===uid)){flash('Already in chain.',false);return;}
+  _ctSteps.push({approver_id:uid,full_name:name,sla_days:2});
+  _ctRenderSteps();
+  sel.value='';
+}
+
+async function openCTModal(templateId){
+  _ctEditId=templateId||null;
+  _ctSteps=[];
+  document.getElementById('ct-modal-title').textContent=templateId?'Edit template':'New approval chain template';
+  const users=await _loadAllUsers();
+  document.getElementById('ct-approver-pick').innerHTML=
+    '<option value="">— add approver —</option>'+
+    users.map(u=>`<option value="${u.id}">${u.full_name} (${u.role.replace(/_/g,' ')})</option>`).join('');
+  document.getElementById('ct-name').value='';
+  document.getElementById('ct-desc').value='';
+  if(templateId){
+    const templates=await _loadTemplates(false);
+    const t=templates.find(x=>x.id===templateId);
+    if(t){
+      document.getElementById('ct-name').value=t.name;
+      document.getElementById('ct-desc').value=t.description||'';
+      _ctSteps=(t.steps||[]).map(s=>({approver_id:String(s.approver_id),full_name:s.full_name,sla_days:s.sla_days||2}));
+    }
+  }
+  _ctRenderSteps();
+  document.getElementById('ct-modal').classList.add('open');
+}
+function closeCTModal(){ document.getElementById('ct-modal').classList.remove('open'); }
+
+async function _ctSave(){
+  const name=document.getElementById('ct-name').value.trim();
+  if(!name){flash('Template name is required.',false);return;}
+  if(!_ctSteps.length){flash('Add at least one approver step.',false);return;}
+  const btn=document.getElementById('ct-save-btn');
+  btn.disabled=true;btn.textContent='Saving…';
+  const body={
+    name,
+    description:document.getElementById('ct-desc').value.trim()||null,
+    steps:_ctSteps.map(s=>({approver_id:s.approver_id,sla_days:s.sla_days||2})),
+  };
+  const url='/api/offer-chain-templates'+(_ctEditId?'/'+_ctEditId:'');
+  const method=_ctEditId?'PUT':'POST';
+  const res=await api(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  btn.disabled=false;btn.textContent='Save template';
+  if(!res||res.detail){flash(res?.detail||'Error saving template.',false);return;}
+  flash(_ctEditId?'Template updated.':'Template created.');
+  closeCTModal();
+  _cachedTemplates=null; // invalidate cache
+  screenChainTemplates();
+}
+async function _deleteCT(id,name){
+  if(!confirm(`Delete template "${name}"? This cannot be undone.`)) return;
+  const res=await api(`/api/offer-chain-templates/${id}`,{method:'DELETE'});
+  if(!res||res.detail){flash(res?.detail||'Error',false);return;}
+  flash('Template deleted.');
+  _cachedTemplates=null;
+  screenChainTemplates();
+}
+
 // ── SCREEN: SLA Settings ─────────────────────────────────────────────────────
 async function screenSLASettings(){
   setTitle('SLA Settings');
@@ -6487,13 +7426,14 @@ async function screenSLASettings(){
       <!-- Stage SLA card -->
       <div class="card" style="max-width:480px;flex:1;min-width:280px">
         <div class="card-title">Per-Stage SLA — max days a candidate may sit in each stage</div>
-        ${fld('stage_screening','Screening','default 3')}
-        ${fld('stage_screen_passed','Screening Cleared','default 3')}
-        ${fld('stage_interviewing','Panel Interview','default 7')}
-        ${fld('stage_selected','Selected (pre-offer)','default 3')}
-        ${fld('stage_offer_stage','Offer Stage / Offered','default 5')}
-        ${fld('stage_applied','Applied (awaiting screening)','default 5')}
-        ${fld('stage_default','Default (all other stages)','default 5')}
+        ${fld('stage_applied','Applied','default 5')}
+        ${fld('stage_screen','Screening','default 3')}
+        ${fld('stage_nexai_bot','NexAI Interview','default 3')}
+        ${fld('stage_shortlisted','Shortlisted','default 2')}
+        ${fld('stage_interview','Interview (per level)','default 5')}
+        ${fld('stage_documentation','Documentation','default 5')}
+        ${fld('stage_offered','Offered','default 3')}
+        ${fld('stage_default','Default (fallback)','default 5')}
       </div>
 
       <!-- Req + Approval SLA card -->
@@ -6526,8 +7466,8 @@ async function screenSLASettings(){
 }
 
 async function saveSLAConfig(){
-  const keys=['stage_screening','stage_screen_passed','stage_interviewing',
-              'stage_selected','stage_offer_stage','stage_applied','stage_default',
+  const keys=['stage_applied','stage_screen','stage_nexai_bot','stage_shortlisted',
+              'stage_interview','stage_documentation','stage_offered','stage_default',
               'req_time_to_fill','approval_step'];
   const body={};
   for(const k of keys){
@@ -6616,6 +7556,592 @@ async function screenSLADashboard(){
 const _qs=new URLSearchParams(window.location.search);
 if(_qs.get('connected')==='1'){history.replaceState({},'','/');flash('Google Calendar connected.');}
 if(_qs.get('gcal_error')){history.replaceState({},'','/');flash('GCal error: '+_qs.get('gcal_error'),false);}
+
+// ── SCREEN: CV Repository ────────────────────────────────────────────────────
+
+let _cvQuery = '', _cvSkills = '', _cvMinExp = '', _cvMapFilter = '';
+let _cvJobPollTimer = null;
+
+async function screenCVRepository() {
+  _currentScreen = 'cv_repository';
+  setActive('cv_repository');
+  setTitle('CV Repository');
+  const el = document.getElementById('content');
+  el.innerHTML = '<p class="empty">Loading…</p>';
+
+  const stats = await api('/api/cv/stats') || {};
+  const emailSt = await api('/api/cv/email-status') || {};
+
+  const enrichedPct = stats.enriched_pct || 0;
+  const isAdmin = ME.role === 'admin' || ME.role === 'ta_manager';
+
+  el.innerHTML = `
+    <!-- Stats strip -->
+    <div class="stat-row" style="margin-bottom:16px">
+      <div class="stat-box"><div class="stat-label">Total CVs</div><div class="stat-value">${stats.total||0}</div></div>
+      <div class="stat-box"><div class="stat-label">Mapped to Candidate</div><div class="stat-value" style="color:var(--green)">${stats.mapped||0}</div></div>
+      <div class="stat-box"><div class="stat-label">Talent Pool</div><div class="stat-value" style="color:#2563eb">${stats.pool||0}</div></div>
+      <div class="stat-box">
+        <div class="stat-label">AI Enriched</div>
+        <div class="stat-value" style="color:${enrichedPct>=80?'var(--green)':enrichedPct>=40?'#b08423':'var(--muted)'}">
+          ${enrichedPct}%
+          ${stats.pending>0?`<span style="font-size:11px;color:var(--muted);font-weight:400"> (${stats.pending} pending)</span>`:''}
+        </div>
+      </div>
+      ${stats.failed>0?`<div class="stat-box"><div class="stat-label">Enrichment Failed</div><div class="stat-value" style="color:#ef4444">${stats.failed}</div></div>`:''}
+      <div class="stat-box" style="cursor:pointer;${emailSt.configured?'':'color:var(--muted)'}"
+           title="${emailSt.configured?'Gmail ingest active — polling: '+emailSt.accounts.join(', '):'Gmail ingest idle — awaiting OAuth credentials'}">
+        <div class="stat-label">Email Ingest</div>
+        <div class="stat-value" style="font-size:13px">
+          ${emailSt.configured
+            ? '<span class="pill" style="background:#d1fae5;color:#065f46">Active</span>'
+            : '<span class="pill" style="background:#fef3c7;color:#92400e">Awaiting OAuth</span>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- Search + filters -->
+    <div class="card" style="padding:14px 16px;margin-bottom:16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <input id="cv-q" value="${_cvQuery.replace(/"/g,'&quot;')}" placeholder='e.g. python AND (django OR flask) NOT fresher'
+               style="flex:2;min-width:260px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px"
+               onkeydown="if(event.key==='Enter')_cvDoSearch()">
+        <input id="cv-skills" value="${_cvSkills}" placeholder="Skills (comma-sep: python,sql)"
+               style="flex:1;min-width:160px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px"
+               onkeydown="if(event.key==='Enter')_cvDoSearch()">
+        <input id="cv-min-exp" value="${_cvMinExp}" placeholder="Min exp (yrs)" type="number" min="0" step="0.5"
+               style="width:130px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px"
+               onkeydown="if(event.key==='Enter')_cvDoSearch()">
+        <select id="cv-map-filter" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+          <option value="" ${!_cvMapFilter?'selected':''}>All</option>
+          <option value="mapped" ${_cvMapFilter==='mapped'?'selected':''}>Mapped</option>
+          <option value="pool"   ${_cvMapFilter==='pool'?'selected':''}>Pool only</option>
+        </select>
+        <button class="btn btn-primary" onclick="_cvDoSearch()">Search</button>
+        <button class="btn btn-ghost" onclick="_cvClearSearch()">Clear</button>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">
+        Boolean: <code style="background:#f5f4f1;padding:2px 5px;border-radius:3px">AND OR NOT</code> keywords,
+        <code style="background:#f5f4f1;padding:2px 5px;border-radius:3px">"quoted phrase"</code>,
+        <code style="background:#f5f4f1;padding:2px 5px;border-radius:3px">(groups)</code>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      ${isAdmin ? `<button class="btn btn-ghost" onclick="_cvScanFolder()">Scan Ingest Folder</button>` : ''}
+      <button class="btn btn-primary" onclick="_cvUploadClick()">Upload Resumes</button>
+      <input id="cv-file-input" type="file" multiple accept=".pdf,.docx,.doc" style="display:none"
+             onchange="_cvUploadFiles(this.files)">
+      <div id="cv-upload-drop" style="flex:1;min-width:200px;border:2px dashed var(--border);border-radius:8px;
+           padding:8px 16px;font-size:13px;color:var(--muted);text-align:center;cursor:pointer"
+           onclick="_cvUploadClick()"
+           ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+           ondragleave="this.style.borderColor='var(--border)'"
+           ondrop="event.preventDefault();this.style.borderColor='var(--border)';_cvUploadFiles(event.dataTransfer.files)">
+        Drop .pdf / .docx / .doc files here
+      </div>
+    </div>
+
+    <!-- Results table (populated by search) -->
+    <div id="cv-results"></div>`;
+
+  // Auto-run search with current filters
+  _cvDoSearch();
+}
+
+async function _cvDoSearch() {
+  _cvQuery     = document.getElementById('cv-q')?.value || '';
+  _cvSkills    = document.getElementById('cv-skills')?.value || '';
+  _cvMinExp    = document.getElementById('cv-min-exp')?.value || '';
+  _cvMapFilter = document.getElementById('cv-map-filter')?.value || '';
+
+  const params = new URLSearchParams();
+  if (_cvQuery)     params.set('q', _cvQuery);
+  if (_cvSkills)    params.set('skills', _cvSkills);
+  if (_cvMinExp)    params.set('min_exp', _cvMinExp);
+  if (_cvMapFilter) params.set('map_status', _cvMapFilter);
+
+  const el = document.getElementById('cv-results');
+  if (!el) return;
+  el.innerHTML = '<p class="empty">Searching…</p>';
+
+  const d = await api('/api/cv/search?' + params.toString());
+  if (!d) { el.innerHTML = '<p class="empty" style="color:#ef4444">Search failed.</p>'; return; }
+  if (d.detail) { el.innerHTML = `<div class="card" style="padding:16px;color:#ef4444;font-size:13px">Search error: ${d.detail}</div>`; return; }
+
+  const rows = d.results || [];
+  if (!rows.length) {
+    el.innerHTML = '<div class="card" style="padding:32px;text-align:center;color:var(--muted)">No CVs found matching your search.</div>';
+    return;
+  }
+
+  const tRows = rows.map(r => {
+    const skillChips = (r.top_skills || []).map(s =>
+      `<span class="pill" style="background:#f0f4ff;color:#1e40af;font-size:11px">${s}</span>`
+    ).join(' ');
+    const enrichPill = r.enrich_status === 'done'
+      ? `<span class="pill" style="background:#d1fae5;color:#065f46;font-size:11px" title="${(r.ai_summary||'').replace(/"/g,'&quot;')}">AI ✓</span>`
+      : r.enrich_status === 'failed'
+      ? `<span class="pill" style="background:#fee2e2;color:#991b1b;font-size:11px">AI failed</span>`
+      : `<span class="pill" style="background:#f3f4f6;color:#6b7280;font-size:11px">AI processing…</span>`;
+    const mapBadge = r.map_status === 'mapped' && r.req_code
+      ? `<span class="pill" style="background:#d1fae5;color:#065f46;font-size:11px">${r.req_code}</span>`
+      : r.map_status === 'mapped'
+      ? `<span class="pill" style="background:#d1fae5;color:#065f46;font-size:11px">Mapped</span>`
+      : `<span class="pill" style="background:#f3f4f6;color:#6b7280;font-size:11px">Pool</span>`;
+    return `<tr>
+      <td><strong>${r.candidate_name||r.file_name||'Unknown'}</strong>
+          ${r.cand_full_name && r.cand_full_name!==r.candidate_name
+            ?`<br><span style="font-size:11px;color:var(--muted)">${r.cand_full_name}</span>`:''}
+      </td>
+      <td style="max-width:220px">${skillChips}</td>
+      <td>${r.experience_years!=null?r.experience_years+'y':'—'}</td>
+      <td>${r.current_role||'—'}</td>
+      <td>${r.location||'—'}</td>
+      <td>${mapBadge}</td>
+      <td>${enrichPill}</td>
+      <td>
+        <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px"
+                onclick="_cvOpenFile('${r.id}','${(r.file_name||'cv').replace(/'/g,"\\'")}')">View</button>
+        <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px"
+                onclick="downloadAuth('/api/cv/${r.id}/file','${(r.file_name||'cv').replace(/'/g,"\\'")}')">↓</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="card" style="padding:0;overflow:auto">
+      <div style="padding:10px 16px;font-size:13px;color:var(--muted);border-bottom:1px solid var(--border)">
+        ${d.total} result${d.total===1?'':'s'}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th><th>Top Skills</th><th>Exp</th><th>Role</th>
+            <th>Location</th><th>Status</th><th>AI</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>${tRows}</tbody>
+      </table>
+    </div>`;
+}
+
+function _cvClearSearch() {
+  _cvQuery = ''; _cvSkills = ''; _cvMinExp = ''; _cvMapFilter = '';
+  screenCVRepository();
+}
+
+function _cvOpenFile(cvId, name) {
+  downloadAuth(`/api/cv/${cvId}/file`, name || 'cv.pdf');
+}
+
+function _cvUploadClick() {
+  document.getElementById('cv-file-input')?.click();
+}
+
+async function _cvUploadFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  const fd = new FormData();
+  let count = 0;
+  for (const f of fileList) {
+    fd.append('files', f);
+    count++;
+  }
+  flash(`Uploading ${count} file${count===1?'':'s'}…`);
+  const res = await api('/api/cv/upload', { method: 'POST', body: fd });
+  if (!res || res.detail) { flash(res?.detail || 'Upload failed', false); return; }
+  flash(`Uploaded ${res.processed} CV${res.processed===1?'':'s'}. Duplicates skipped: ${res.duplicates}.`);
+  screenCVRepository();
+}
+
+async function _cvScanFolder() {
+  const res = await api('/api/cv/scan-folder', { method: 'POST' });
+  if (!res || res.detail) { flash(res?.detail || 'Could not start scan', false); return; }
+  document.getElementById('cv-job-modal')?.classList.add('open');
+  _cvPollJob(res.job_id);
+}
+
+function closeCVJobModal() {
+  document.getElementById('cv-job-modal')?.classList.remove('open');
+  clearTimeout(_cvJobPollTimer);
+}
+
+function _cvPollJob(jobId) {
+  const poll = async () => {
+    const j = await api(`/api/cv/jobs/${jobId}`);
+    if (!j) return;
+
+    const pct = j.total > 0 ? Math.round((j.processed + j.duplicates) / j.total * 100) : 0;
+    document.getElementById('cv-job-progress-bar').style.width = pct + '%';
+    document.getElementById('cv-job-stats').innerHTML =
+      `${j.processed + j.duplicates} / ${j.total} files — ` +
+      `${j.mapped} mapped, ${j.pooled} pooled, ${j.duplicates} duplicates`;
+
+    const errEl  = document.getElementById('cv-job-errors');
+    const errList = document.getElementById('cv-job-error-list');
+    if (j.errors && j.errors.length) {
+      errEl.style.display = 'block';
+      errList.innerHTML = j.errors.map(e =>
+        `<div>${e.file}: <span style="color:#991b1b">${e.error}</span></div>`
+      ).join('');
+    }
+
+    if (j.status === 'running') {
+      _cvJobPollTimer = setTimeout(poll, 1500);
+    } else {
+      document.getElementById('cv-job-stats').innerHTML +=
+        ` — <strong style="color:var(--green)">Done!</strong>`;
+      screenCVRepository();
+    }
+  };
+  poll();
+}
+
+// ── SCREEN: Hiring Plan ──────────────────────────────────────────────────────
+
+let _hpFilter = {};
+let _hpEditId  = null;
+
+function _hpMoney(v) {
+  if (v == null || v === '' || v === 0) return '—';
+  const n = parseFloat(v);
+  if (isNaN(n)) return '—';
+  if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2) + 'Cr';
+  if (n >= 1e5) return '₹' + (n / 1e5).toFixed(2) + 'L';
+  return '₹' + n.toLocaleString('en-IN');
+}
+
+function _hpStatusBadge(s) {
+  const map = {
+    'Open Position':     'background:#dbeafe;color:#1e40af',
+    'Offered':           'background:#fef3c7;color:#92400e',
+    'Joined':            'background:#d1fae5;color:#065f46',
+    'Hold':              'background:#f3f4f6;color:#6b7280',
+    'Internal Employee': 'background:#ede9fe;color:#5b21b6',
+  };
+  const st = map[s] || 'background:#f3f4f6;color:#374151';
+  return `<span class="pill" style="${st};font-size:11px">${s}</span>`;
+}
+
+function _hpLinkBadge(l) {
+  if (l === 'confirmed') return `<span class="pill" style="background:#d1fae5;color:#065f46;font-size:11px">Linked</span>`;
+  if (l === 'suggested')  return `<span class="pill" style="background:#fef3c7;color:#92400e;font-size:11px">Suggested</span>`;
+  return `<span class="pill" style="background:#f3f4f6;color:#6b7280;font-size:11px">Unlinked</span>`;
+}
+
+async function screenHiringPlan() {
+  _currentScreen = 'hiring_plan';
+  setActive('hiring_plan');
+  setTitle('Hiring Plan');
+  const el = document.getElementById('content');
+  el.innerHTML = '<p class="empty">Loading…</p>';
+
+  const q = new URLSearchParams(_hpFilter).toString();
+  const d = await api('/api/hiring-plan' + (q ? '?' + q : ''));
+  if (!d) { el.innerHTML = '<p class="empty">Failed to load hiring plan.</p>'; return; }
+
+  const rows = d.rows || [];
+  const tot  = d.totals || {};
+
+  const fySet  = [...new Set(rows.map(r => r.fiscal_year).filter(Boolean))].sort();
+  const buSet  = [...new Set(rows.map(r => r.bu).filter(Boolean))].sort();
+  const qSet   = ['Q1','Q2','Q3','Q4'];
+  const stSet  = ['Open Position','Offered','Joined','Hold','Internal Employee'];
+
+  const open       = rows.filter(r => r.hiring_status === 'Open Position').length;
+  const fulfilled  = rows.filter(r => ['Offered','Joined'].includes(r.hiring_status)).length;
+  const onHold     = rows.filter(r => r.hiring_status === 'Hold').length;
+  const overBudget = rows.filter(r => r.budget_offered_diff < 0).length;
+
+  const tRows = rows.map(r => `
+    <tr>
+      <td>${r.role_name||'—'}</td>
+      <td>${r.bu||'—'}</td>
+      <td>${r.fiscal_year||'—'} ${r.quarter||''}</td>
+      <td style="text-align:center">${r.headcount||1}</td>
+      <td>${_hpStatusBadge(r.hiring_status)}</td>
+      <td>${_hpLinkBadge(r.link_status)}${r.req_code ? ` <span style="font-size:11px;color:var(--muted)">${r.req_code}</span>` : ''}</td>
+      <td>${_hpMoney(r.budgeted_total)}</td>
+      <td>${r.months||0}m</td>
+      <td>${_hpMoney(r.prorata_budget)}</td>
+      <td>${_hpMoney(r.offered_total)}</td>
+      <td style="color:${(r.budget_offered_diff||0)<0?'#ef4444':'inherit'}">${_hpMoney(r.budget_offered_diff)}</td>
+      <td>${_hpMoney(r.actual_costing)}</td>
+      <td>
+        <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px" onclick="openHPModal('${r.id}')">Edit</button>
+        ${r.link_status==='suggested'
+          ? `<button class="btn btn-ghost" style="padding:3px 8px;font-size:12px;color:var(--green)" onclick="confirmHPLink('${r.id}')">Confirm Link</button>`
+          : ''}
+        ${!r.requisition_id
+          ? `<button class="btn btn-ghost" style="padding:3px 8px;font-size:12px" onclick="createReqFromHP('${r.id}')">Create Req</button>`
+          : ''}
+        ${r.hiring_status==='Offered'
+          ? `<button class="btn btn-ghost" style="padding:3px 8px;font-size:12px;color:var(--green)" onclick="markJoined('${r.id}')">Mark Joined</button>`
+          : ''}
+        <button class="btn btn-ghost" style="padding:3px 8px;font-size:12px;color:#ef4444" onclick="deleteHPRow('${r.id}')">Del</button>
+      </td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+    <div class="stat-row" style="margin-bottom:18px">
+      <div class="stat-box"><div class="stat-label">Total Demand</div><div class="stat-value">${tot.headcount||0}</div></div>
+      <div class="stat-box"><div class="stat-label">Open Positions</div><div class="stat-value" style="color:#2563eb">${open}</div></div>
+      <div class="stat-box"><div class="stat-label">Fulfilled</div><div class="stat-value" style="color:var(--green)">${fulfilled}</div></div>
+      <div class="stat-box"><div class="stat-label">On Hold</div><div class="stat-value" style="color:var(--muted)">${onHold}</div></div>
+      <div class="stat-box"><div class="stat-label">Total Budget</div><div class="stat-value" style="font-size:16px">${_hpMoney(tot.budgeted_total)}</div></div>
+      <div class="stat-box"><div class="stat-label">Pro-Rata Budget</div><div class="stat-value" style="font-size:16px">${_hpMoney(tot.prorata_budget)}</div></div>
+      <div class="stat-box"><div class="stat-label">Actual Costing</div><div class="stat-value" style="font-size:16px">${_hpMoney(tot.actual_costing)}</div></div>
+      <div class="stat-box" onclick="navigate('sla_dashboard')" style="cursor:pointer">
+        <div class="stat-label">Over Budget</div>
+        <div class="stat-value" style="color:${overBudget>0?'#ef4444':'inherit'}">${overBudget}</div>
+      </div>
+    </div>
+
+    <!-- filter bar -->
+    <div class="card" style="padding:12px 16px;margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <select id="hp-f-fy" onchange="_hpApplyFilter()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        <option value="">All FYs</option>
+        ${fySet.map(f=>`<option value="${f}" ${_hpFilter.fy===f?'selected':''}>${f}</option>`).join('')}
+      </select>
+      <select id="hp-f-q" onchange="_hpApplyFilter()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        <option value="">All Quarters</option>
+        ${qSet.map(q=>`<option value="${q}" ${_hpFilter.quarter===q?'selected':''}>${q}</option>`).join('')}
+      </select>
+      <select id="hp-f-bu" onchange="_hpApplyFilter()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        <option value="">All BUs</option>
+        ${buSet.map(b=>`<option value="${b}" ${_hpFilter.bu===b?'selected':''}>${b}</option>`).join('')}
+      </select>
+      <select id="hp-f-st" onchange="_hpApplyFilter()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        <option value="">All Statuses</option>
+        ${stSet.map(s=>`<option value="${s}" ${_hpFilter.status===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="importHPSheet()" style="font-size:13px">Import xlsx</button>
+      <button class="btn btn-ghost" onclick="_hpExcel()" style="font-size:13px">Export xlsx</button>
+      <button class="btn btn-primary" onclick="openHPModal(null)" style="font-size:13px">+ Add Row</button>
+    </div>
+
+    <!-- table -->
+    <div class="card" style="padding:0;overflow:auto">
+      <table style="min-width:1200px">
+        <thead>
+          <tr>
+            <th>Role</th><th>BU</th><th>FY / Q</th><th>HC</th><th>Status</th>
+            <th>Req Link</th><th>Budget</th><th>Months</th><th>ProRata</th>
+            <th>Offered</th><th>Diff</th><th>Actual</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>${tRows || '<tr><td colspan="13" style="text-align:center;padding:32px;color:var(--muted)">No hiring plan rows. Import a sheet or add manually.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
+function _hpApplyFilter() {
+  _hpFilter = {
+    fy:       document.getElementById('hp-f-fy')?.value || '',
+    quarter:  document.getElementById('hp-f-q')?.value || '',
+    bu:       document.getElementById('hp-f-bu')?.value || '',
+    status:   document.getElementById('hp-f-st')?.value || '',
+  };
+  Object.keys(_hpFilter).forEach(k => { if (!_hpFilter[k]) delete _hpFilter[k]; });
+  screenHiringPlan();
+}
+
+async function openHPModal(rowId) {
+  _hpEditId = rowId;
+  document.getElementById('hp-modal-title').textContent = rowId ? 'Edit Hiring Plan Row' : 'Add Hiring Plan Row';
+
+  const fields = ['entity','fy','quarter','pod','role','bu','function','sub-bu','project',
+                  'emp-type','billable','on-off','hc','priority','band','exp','loc',
+                  'bf','bv','sbt','status','ta','source','of','ov','odate','doj','emp','cemail','remarks'];
+  fields.forEach(f => {
+    const el = document.getElementById('hp-' + f);
+    if (el) el.value = '';
+  });
+  document.getElementById('hp-hc').value = 1;
+  document.getElementById('hp-status').value = 'Open Position';
+  document.getElementById('hp-compute-preview').style.display = 'none';
+
+  if (rowId) {
+    const r = await api('/api/hiring-plan?' + new URLSearchParams({..._hpFilter}));
+    const row = (r?.rows || []).find(x => x.id === rowId);
+    if (row) {
+      const set = (id, val) => { const e = document.getElementById(id); if (e) e.value = val||''; };
+      set('hp-entity', row.company_entity); set('hp-fy', row.fiscal_year);
+      set('hp-quarter', row.quarter); set('hp-pod', row.planned_onboarding_date||'');
+      set('hp-role', row.role_name); set('hp-bu', row.bu);
+      set('hp-function', row.function); set('hp-sub-bu', row.sub_bu);
+      set('hp-project', row.project_name); set('hp-emp-type', row.employment_type);
+      set('hp-billable', row.billable); set('hp-on-off', row.on_off_roll);
+      set('hp-hc', row.headcount||1); set('hp-priority', row.priority);
+      set('hp-band', row.band); set('hp-exp', row.experience); set('hp-loc', row.location);
+      set('hp-bf', row.budgeted_fixed||0); set('hp-bv', row.budgeted_variable||0);
+      set('hp-sbt', row.salary_budgeted_till||''); set('hp-status', row.hiring_status);
+      set('hp-ta', row.ta_owner); set('hp-source', row.source_of_hire);
+      set('hp-of', row.offered_fixed||0); set('hp-ov', row.offered_variable||0);
+      set('hp-odate', row.offer_date||''); set('hp-doj', row.tentative_doj||'');
+      set('hp-emp', row.employee_name); set('hp-cemail', row.candidate_email);
+      set('hp-remarks', row.remarks||'');
+      _hpComputeLive();
+    }
+  }
+  document.getElementById('hp-modal').classList.add('open');
+}
+
+function closeHPModal() {
+  document.getElementById('hp-modal').classList.remove('open');
+  _hpEditId = null;
+}
+
+function _hpComputeLive() {
+  const bf = parseFloat(document.getElementById('hp-bf')?.value)||0;
+  const bv = parseFloat(document.getElementById('hp-bv')?.value)||0;
+  const of_ = parseFloat(document.getElementById('hp-of')?.value)||0;
+  const ov  = parseFloat(document.getElementById('hp-ov')?.value)||0;
+  const budgetedTotal = bf + bv;
+  const offeredTotal  = of_ + ov;
+  const diff = budgetedTotal - offeredTotal;
+  const prev = document.getElementById('hp-compute-preview');
+  const grid = document.getElementById('hp-compute-grid');
+  if (budgetedTotal > 0 || offeredTotal > 0) {
+    grid.innerHTML = [
+      ['Budgeted Total', _hpMoney(budgetedTotal)],
+      ['Offered Total',  _hpMoney(offeredTotal)],
+      ['Diff',           `<span style="color:${diff<0?'#ef4444':'#065f46'}">${_hpMoney(diff)}</span>`],
+    ].map(([l,v])=>`<div><span style="color:var(--muted)">${l}:</span> ${v}</div>`).join('');
+    prev.style.display = 'block';
+  }
+}
+
+// wire live compute to inputs
+['hp-bf','hp-bv','hp-of','hp-ov'].forEach(id => {
+  document.addEventListener('input', e => { if(e.target.id === id) _hpComputeLive(); });
+});
+
+async function saveHPRow() {
+  const btn = document.getElementById('hp-save-btn');
+  btn.disabled = true;
+  const body = {
+    company_entity:          document.getElementById('hp-entity').value.trim()||null,
+    fiscal_year:             document.getElementById('hp-fy').value.trim()||null,
+    quarter:                 document.getElementById('hp-quarter').value||null,
+    planned_onboarding_date: document.getElementById('hp-pod').value||null,
+    role_name:               document.getElementById('hp-role').value.trim()||null,
+    bu:                      document.getElementById('hp-bu').value.trim()||null,
+    function:                document.getElementById('hp-function').value.trim()||null,
+    sub_bu:                  document.getElementById('hp-sub-bu').value.trim()||null,
+    project_name:            document.getElementById('hp-project').value.trim()||null,
+    employment_type:         document.getElementById('hp-emp-type').value||null,
+    billable:                document.getElementById('hp-billable').value||null,
+    on_off_roll:             document.getElementById('hp-on-off').value.trim()||null,
+    headcount:               parseInt(document.getElementById('hp-hc').value)||1,
+    priority:                document.getElementById('hp-priority').value||null,
+    band:                    document.getElementById('hp-band').value.trim()||null,
+    experience:              document.getElementById('hp-exp').value.trim()||null,
+    location:                document.getElementById('hp-loc').value.trim()||null,
+    budgeted_fixed:          parseFloat(document.getElementById('hp-bf').value)||0,
+    budgeted_variable:       parseFloat(document.getElementById('hp-bv').value)||0,
+    salary_budgeted_till:    document.getElementById('hp-sbt').value||null,
+    hiring_status:           document.getElementById('hp-status').value||'Open Position',
+    ta_owner:                document.getElementById('hp-ta').value.trim()||null,
+    source_of_hire:          document.getElementById('hp-source').value.trim()||null,
+    offered_fixed:           parseFloat(document.getElementById('hp-of').value)||0,
+    offered_variable:        parseFloat(document.getElementById('hp-ov').value)||0,
+    offer_date:              document.getElementById('hp-odate').value||null,
+    tentative_doj:           document.getElementById('hp-doj').value||null,
+    employee_name:           document.getElementById('hp-emp').value.trim()||null,
+    candidate_email:         document.getElementById('hp-cemail').value.trim()||null,
+    remarks:                 document.getElementById('hp-remarks').value.trim()||null,
+  };
+  const method = _hpEditId ? 'PUT' : 'POST';
+  const url    = _hpEditId ? `/api/hiring-plan/${_hpEditId}` : '/api/hiring-plan';
+  const res = await api(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  btn.disabled = false;
+  if (!res || res.detail) { flash(res?.detail||'Save failed', false); return; }
+  flash(_hpEditId ? 'Row updated.' : 'Row added.');
+  closeHPModal();
+  screenHiringPlan();
+}
+
+async function deleteHPRow(id) {
+  if (!confirm('Delete this hiring plan row?')) return;
+  const res = await api(`/api/hiring-plan/${id}`, {method:'DELETE'});
+  if (!res || res.detail) { flash(res?.detail||'Delete failed', false); return; }
+  flash('Row deleted.');
+  screenHiringPlan();
+}
+
+async function _hpPatch(id, patch) {
+  // Fetch current row, apply patch, then PUT full body
+  const d = await api('/api/hiring-plan');
+  const row = (d?.rows || []).find(r => r.id === id);
+  if (!row) { flash('Row not found', false); return false; }
+  const body = {
+    company_entity: row.company_entity, fiscal_year: row.fiscal_year, quarter: row.quarter,
+    planned_onboarding_date: row.planned_onboarding_date, role_name: row.role_name,
+    bu: row.bu, function: row.function, sub_bu: row.sub_bu, project_name: row.project_name,
+    employment_type: row.employment_type, billable: row.billable, sow_received: row.sow_received,
+    capex_opex: row.capex_opex, capex_opex_on_track: row.capex_opex_on_track,
+    on_off_roll: row.on_off_roll, headcount: row.headcount, priority: row.priority,
+    band: row.band, experience: row.experience, market_salary_range: row.market_salary_range,
+    location: row.location, budgeted_fixed: row.budgeted_fixed, budgeted_variable: row.budgeted_variable,
+    asset: row.asset, salary_budgeted_till: row.salary_budgeted_till,
+    hiring_status: row.hiring_status, replacement_for: row.replacement_for,
+    aipl_code: row.aipl_code, employee_name: row.employee_name,
+    offered_fixed: row.offered_fixed, offered_variable: row.offered_variable,
+    ta_owner: row.ta_owner, source_of_hire: row.source_of_hire,
+    candidate_email: row.candidate_email, offer_date: row.offer_date,
+    tentative_doj: row.tentative_doj, remarks: row.remarks,
+    requisition_id: row.requisition_id, link_status: row.link_status,
+    ...patch,
+  };
+  const res = await api(`/api/hiring-plan/${id}`, {
+    method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body),
+  });
+  if (!res || res.detail) { flash(res?.detail||'Update failed', false); return false; }
+  return true;
+}
+
+async function markJoined(id) {
+  if (!confirm('Mark this hire as Joined?')) return;
+  if (await _hpPatch(id, {hiring_status:'Joined'})) { flash('Marked as Joined.'); screenHiringPlan(); }
+}
+
+async function confirmHPLink(id) {
+  if (await _hpPatch(id, {link_status:'confirmed'})) { flash('Requisition link confirmed.'); screenHiringPlan(); }
+}
+
+async function createReqFromHP(id) {
+  if (!confirm('Create a new requisition from this hiring plan row?')) return;
+  const res = await api(`/api/hiring-plan/${id}/create-requisition`, {method:'POST'});
+  if (!res || res.detail) { flash(res?.detail||'Failed to create requisition', false); return; }
+  flash(`Requisition ${res.req_code} created and linked.`);
+  screenHiringPlan();
+}
+
+async function importHPSheet() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.xlsx,.xls';
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    flash('Importing…');
+    const res = await api('/api/hiring-plan/import', {method:'POST', body:fd});
+    if (!res || res.detail) { flash(res?.detail||'Import failed', false); return; }
+    flash(`Imported ${res.imported} rows. Skipped: ${res.skipped}. Auto-suggested links: ${res.suggested_links}.`);
+    screenHiringPlan();
+  };
+  inp.click();
+}
+
+async function _hpExcel() {
+  const q = new URLSearchParams(_hpFilter).toString();
+  downloadAuth('/api/hiring-plan/excel' + (q ? '?' + q : ''), 'egnex_hiring_plan.xlsx');
+}
 
 // ── 15-min inactivity logout ──────────────────────────────────────────────────
 let _idle;

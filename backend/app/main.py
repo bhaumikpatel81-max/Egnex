@@ -41,6 +41,12 @@ from .routers.email_template_api import router as _email_template_router
 from .routers.offers_api import router as _offers_router
 from .routers.transcript_api import router as _transcript_router
 from .routers.sla_api import router as _sla_router
+from .routers.chain_templates_api import router as _chain_templates_router
+from .routers.documentation_api import router as _documentation_router
+from .routers.kpi_api import router as _kpi_router
+from .routers.hiring_plan_api import router as _hiring_plan_router
+from .routers.cv_api import router as _cv_router
+from .routers.hm_api import router as _hm_router
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
@@ -57,6 +63,12 @@ app.include_router(_email_template_router)
 app.include_router(_offers_router)
 app.include_router(_transcript_router)
 app.include_router(_sla_router)
+app.include_router(_chain_templates_router)
+app.include_router(_documentation_router)
+app.include_router(_kpi_router)
+app.include_router(_hiring_plan_router)
+app.include_router(_cv_router)
+app.include_router(_hm_router)
 
 
 @app.on_event("startup")
@@ -278,6 +290,283 @@ END $$""",
             updated_by  UUID REFERENCES app_user(id)
         )""",
         "CREATE INDEX IF NOT EXISTS idx_sla_config_key ON sla_config (config_key)",
+        # Migration 29: Named reusable approval chain templates + per-step SLA (added 2026-06)
+        """CREATE TABLE IF NOT EXISTS offer_chain_template (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name        TEXT NOT NULL,
+            description TEXT,
+            is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by  UUID REFERENCES app_user(id),
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        """CREATE TABLE IF NOT EXISTS offer_chain_template_step (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            template_id UUID NOT NULL REFERENCES offer_chain_template(id) ON DELETE CASCADE,
+            sequence    INT NOT NULL,
+            approver_id UUID NOT NULL REFERENCES app_user(id),
+            sla_days    INT NOT NULL DEFAULT 2 CHECK (sla_days >= 1),
+            UNIQUE (template_id, sequence)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_oct_template ON offer_chain_template_step(template_id)",
+        # Per-step SLA on existing approval tables
+        "ALTER TABLE req_offer_approver   ADD COLUMN IF NOT EXISTS sla_days INT NOT NULL DEFAULT 2",
+        "ALTER TABLE offer_approval_step  ADD COLUMN IF NOT EXISTS sla_days INT NOT NULL DEFAULT 2",
+        # Migration 30: Recruitment Bifurcation — new pipeline stages + rich req fields (2026-06)
+        # Step 1: Widen application.status CHECK to include all old + new values
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'application'::regclass AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE application DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """ALTER TABLE application ADD CONSTRAINT application_status_check
+           CHECK (status IN (
+               'applied','ai_screening','nexai_bot','shortlisted','hm_screening',
+               'panel_interview','hr_round','offer_approval','offered',
+               'hired','rejected','on_hold',
+               'screening','screen_passed','screen_rejected','interviewing','selected',
+               'offer_stage','offer_on_hold','offer_cancelled','joined','dropped'
+           ))""",
+        # Step 2: Rename existing statuses to new pipeline stage names
+        "UPDATE application SET status='ai_screening'    WHERE status='screening'",
+        "UPDATE application SET status='shortlisted'     WHERE status='screen_passed'",
+        "UPDATE application SET status='panel_interview' WHERE status='interviewing'",
+        "UPDATE application SET status='hm_screening'    WHERE status='selected'",
+        "UPDATE application SET status='offer_approval'  WHERE status='offer_stage'",
+        "UPDATE application SET status='on_hold'         WHERE status='offer_on_hold'",
+        "UPDATE application SET status='hired'           WHERE status='joined'",
+        "UPDATE application SET status='rejected'        WHERE status IN ('screen_rejected','dropped','offer_cancelled')",
+        # Step 3: Tighten CHECK to new names only (old names all migrated away)
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'application'::regclass AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE application DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """ALTER TABLE application ADD CONSTRAINT application_status_check
+           CHECK (status IN (
+               'applied','ai_screening','nexai_bot','shortlisted','hm_screening',
+               'panel_interview','hr_round','offer_approval','offered',
+               'hired','rejected','on_hold'
+           ))""",
+        # Step 4: Rich requisition fields
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS req_code       TEXT UNIQUE",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS project        TEXT",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS grade_level    TEXT",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS max_experience NUMERIC",
+        """ALTER TABLE requisition ADD COLUMN IF NOT EXISTS priority TEXT
+           CHECK (priority IS NULL OR priority IN ('critical','high','medium','low'))""",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS source_channels TEXT[] NOT NULL DEFAULT '{}'",
+        # Step 5: Auto-generate req_codes for existing requisitions without one
+        """WITH numbered AS (
+               SELECT id, 'REQ-' || LPAD(ROW_NUMBER() OVER (ORDER BY created_at)::text, 4, '0') AS code
+               FROM requisition WHERE req_code IS NULL
+           )
+           UPDATE requisition SET req_code = numbered.code
+           FROM numbered WHERE requisition.id = numbered.id""",
+        # Step 6: Rename sla_config keys to match new stage names
+        "UPDATE sla_config SET config_key='stage_ai_screening'    WHERE config_key='stage_screening'",
+        "UPDATE sla_config SET config_key='stage_shortlisted'     WHERE config_key='stage_screen_passed'",
+        "UPDATE sla_config SET config_key='stage_panel_interview' WHERE config_key='stage_interviewing'",
+        "UPDATE sla_config SET config_key='stage_hm_screening'    WHERE config_key='stage_selected'",
+        "UPDATE sla_config SET config_key='stage_offer_approval'  WHERE config_key='stage_offer_stage'",
+        # ── Migration 31: Correct pipeline names to Amnex real flow ──────────────────
+        # Step 1: Widen CHECK constraint to include both old and new stage names
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'application'::regclass AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE application DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """ALTER TABLE application ADD CONSTRAINT application_status_check
+           CHECK (status IN (
+               'applied','screen','nexai_bot','shortlisted','interview','documentation','offered',
+               'hired','rejected','on_hold',
+               'ai_screening','hm_screening','panel_interview','hr_round','offer_approval'
+           ))""",
+        # Step 2: Rename statuses to corrected pipeline stage names
+        "UPDATE application SET status='screen'        WHERE status='ai_screening'",
+        "UPDATE application SET status='interview'     WHERE status IN ('hm_screening','panel_interview','hr_round')",
+        "UPDATE application SET status='documentation' WHERE status='offer_approval'",
+        # Step 3: Tighten CHECK to final stage names only
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'application'::regclass AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%status%'
+    LOOP
+        EXECUTE 'ALTER TABLE application DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """ALTER TABLE application ADD CONSTRAINT application_status_check
+           CHECK (status IN (
+               'applied','screen','nexai_bot','shortlisted','interview','documentation','offered',
+               'hired','rejected','on_hold'
+           ))""",
+        # Step 4: Screening decision fields on application
+        """ALTER TABLE application ADD COLUMN IF NOT EXISTS screening_decision TEXT
+           CHECK (screening_decision IS NULL OR screening_decision IN ('pass','hold','reject'))""",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS screening_notes TEXT",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS screened_by UUID REFERENCES app_user(id)",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS screened_at TIMESTAMPTZ",
+        # Step 5: Document collection table
+        """CREATE TABLE IF NOT EXISTS application_document (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            application_id UUID NOT NULL REFERENCES application(id) ON DELETE CASCADE,
+            file_name      TEXT NOT NULL,
+            file_path      TEXT NOT NULL,
+            doc_type       TEXT NOT NULL DEFAULT 'general',
+            uploaded_by    UUID REFERENCES app_user(id),
+            uploaded_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            notes          TEXT
+        )""",
+        # Step 6: Negotiation log table
+        """CREATE TABLE IF NOT EXISTS negotiation_log (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            application_id UUID NOT NULL REFERENCES application(id) ON DELETE CASCADE,
+            note           TEXT NOT NULL,
+            stage_detail   TEXT,
+            logged_by      UUID REFERENCES app_user(id),
+            logged_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        # Step 7: Reseed sla_config with corrected key names
+        "DELETE FROM sla_config WHERE config_key IN ('stage_ai_screening','stage_hm_screening','stage_panel_interview','stage_hr_round','stage_offer_approval')",
+        "INSERT INTO sla_config (config_key, days) VALUES ('stage_screen',3),('stage_interview',5),('stage_documentation',5) ON CONFLICT (config_key) DO NOTHING",
+        # ── Migration 32: Hiring Plan rows table ─────────────────────────────────
+        """CREATE TABLE IF NOT EXISTS hiring_plan_rows (
+            id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            fiscal_year             TEXT,
+            quarter                 TEXT,
+            company_entity          TEXT,
+            finance_onboarding_date DATE,
+            planned_onboarding_date DATE,
+            requisition_id          UUID REFERENCES requisition(id) ON DELETE SET NULL,
+            link_status             TEXT NOT NULL DEFAULT 'unlinked'
+                                    CHECK (link_status IN ('unlinked','suggested','confirmed')),
+            role_name               TEXT,
+            bu                      TEXT,
+            function                TEXT,
+            sub_bu                  TEXT,
+            project_name            TEXT,
+            employment_type         TEXT,
+            billable                TEXT,
+            sow_received            TEXT,
+            capex_opex              TEXT,
+            capex_opex_on_track     TEXT,
+            on_off_roll             TEXT,
+            headcount               INT  NOT NULL DEFAULT 1,
+            priority                TEXT,
+            band                    TEXT,
+            experience              TEXT,
+            market_salary_range     TEXT,
+            location                TEXT,
+            budgeted_fixed          NUMERIC NOT NULL DEFAULT 0,
+            budgeted_variable       NUMERIC NOT NULL DEFAULT 0,
+            asset                   TEXT,
+            salary_budgeted_till    DATE,
+            hiring_status           TEXT NOT NULL DEFAULT 'Open Position'
+                                    CHECK (hiring_status IN (
+                                        'Open Position','Offered','Joined','Hold','Internal Employee'
+                                    )),
+            replacement_for         TEXT,
+            aipl_code               TEXT,
+            employee_name           TEXT,
+            offered_fixed           NUMERIC NOT NULL DEFAULT 0,
+            offered_variable        NUMERIC NOT NULL DEFAULT 0,
+            ta_owner                TEXT,
+            source_of_hire          TEXT,
+            candidate_email         TEXT,
+            offer_date              DATE,
+            tentative_doj           DATE,
+            remarks                 TEXT,
+            created_by              UUID REFERENCES app_user(id),
+            created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_hp_rows_fy     ON hiring_plan_rows(fiscal_year)",
+        "CREATE INDEX IF NOT EXISTS idx_hp_rows_bu     ON hiring_plan_rows(bu)",
+        "CREATE INDEX IF NOT EXISTS idx_hp_rows_req    ON hiring_plan_rows(requisition_id)",
+        "CREATE INDEX IF NOT EXISTS idx_hp_rows_status ON hiring_plan_rows(hiring_status)",
+        # ── Migration 33: CV Repository ──────────────────────────────────────
+        """CREATE TABLE IF NOT EXISTS cv_repository (
+            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            file_name        TEXT NOT NULL,
+            file_path        TEXT,
+            file_hash        TEXT UNIQUE,
+            file_ext         TEXT,
+            candidate_name   TEXT,
+            candidate_id     UUID REFERENCES candidate(id) ON DELETE SET NULL,
+            requisition_id   UUID REFERENCES requisition(id) ON DELETE SET NULL,
+            map_status       TEXT NOT NULL DEFAULT 'pool'
+                             CHECK (map_status IN ('pool','mapped')),
+            raw_text         TEXT,
+            text_vector      tsvector,
+            skills           TEXT[],
+            enrich_status    TEXT NOT NULL DEFAULT 'pending'
+                             CHECK (enrich_status IN ('pending','done','failed')),
+            experience_years NUMERIC,
+            current_role     TEXT,
+            location         TEXT,
+            ai_summary       TEXT,
+            source           TEXT NOT NULL DEFAULT 'upload'
+                             CHECK (source IN ('bulk_folder','upload','watcher','email')),
+            uploaded_by      UUID REFERENCES app_user(id) ON DELETE SET NULL,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            enriched_at      TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cv_text_vector ON cv_repository USING GIN(text_vector)",
+        "CREATE INDEX IF NOT EXISTS idx_cv_skills      ON cv_repository USING GIN(skills)",
+        "CREATE INDEX IF NOT EXISTS idx_cv_candidate   ON cv_repository(candidate_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cv_hash        ON cv_repository(file_hash)",
+        """CREATE TABLE IF NOT EXISTS cv_ingest_jobs (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            status      TEXT NOT NULL DEFAULT 'running'
+                        CHECK (status IN ('running','done','failed')),
+            total       INT NOT NULL DEFAULT 0,
+            processed   INT NOT NULL DEFAULT 0,
+            mapped      INT NOT NULL DEFAULT 0,
+            pooled      INT NOT NULL DEFAULT 0,
+            duplicates  INT NOT NULL DEFAULT 0,
+            errors      JSONB NOT NULL DEFAULT '[]',
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "ALTER TABLE app_user ADD COLUMN IF NOT EXISTS api_token TEXT",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_api_token ON app_user(api_token) WHERE api_token IS NOT NULL",
+        "ALTER TABLE candidate ADD COLUMN IF NOT EXISTS cv_repository_id UUID REFERENCES cv_repository(id) ON DELETE SET NULL",
+        # ── Migration 34: HM Requisition Approval Workflow (added 2026-06) ───────
+        # Adds approval_status + created_by_role to requisition.
+        # Existing rows default to 'approved' — zero behaviour change.
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'approved'",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS created_by_role TEXT",
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'requisition'::regclass
+          AND conname  = 'requisition_approval_status_check'
+    ) THEN
+        EXECUTE $sql$
+            ALTER TABLE requisition ADD CONSTRAINT requisition_approval_status_check
+            CHECK (approval_status IN (''approved'',''pending_ta_approval'',''rejected''))
+        $sql$;
+    END IF;
+END $$""",
+        "CREATE INDEX IF NOT EXISTS idx_req_approval_status ON requisition (approval_status)",
     ]
     for sql in migrations:
         try:
@@ -292,6 +581,29 @@ END $$""",
         _ensure_email_defaults()
     except Exception as _edt_exc:
         print(f"[auto-migrate] email template seed failed: {_edt_exc}")
+
+    # Ensure CV store directory exists
+    import os as _os
+    _cv_store = _os.environ.get("CV_STORE_DIR", "/app/cv_store")
+    _os.makedirs(_cv_store, exist_ok=True)
+    _cv_inbox = _os.environ.get("CV_INBOX_DIR", "/app/cv_inbox")
+    _os.makedirs(_cv_inbox, exist_ok=True)
+
+
+@app.on_event("startup")
+async def _start_background_services():
+    """Start CV enricher and email ingest poller as background asyncio tasks."""
+    import asyncio as _asyncio
+    try:
+        from .services.cv_enricher import start_enricher as _start_cv_enricher
+        _asyncio.create_task(_start_cv_enricher())
+    except Exception as exc:
+        print(f"[startup] cv_enricher failed to start: {exc}")
+    try:
+        from .services.email_ingest import start_email_poller as _start_email_poller
+        _asyncio.create_task(_start_email_poller())
+    except Exception as exc:
+        print(f"[startup] email_ingest failed to start: {exc}")
 
 _UPLOADS_DIR = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "uploads")
@@ -447,6 +759,7 @@ def business_units(company_id: str = None):
 
 @app.get("/api/requisitions")
 def requisitions():
+    # Exclude pending_ta_approval reqs from the public listing used by the apply modal
     return query(
         """SELECT r.id, r.title, r.status, r.roll_type, r.fiscal_year,
                   r.budgeted_ctc, b.code AS band, bu.name AS business_unit,
@@ -455,6 +768,7 @@ def requisitions():
            FROM requisition r
            JOIN band b ON b.id = r.band_id
            JOIN business_unit bu ON bu.id = r.bu_id
+           WHERE COALESCE(r.approval_status, 'approved') = 'approved'
            ORDER BY r.created_at DESC"""
     )
 
@@ -612,6 +926,11 @@ def _store_extended_fields(application_id: str, **kwargs):
 @app.post("/api/apply")
 def apply(payload: ApplyIn):
     """Text-paste application: create/reuse candidate → auto-screen."""
+    _req_approval = query_one(
+        "SELECT approval_status FROM requisition WHERE id=%s", [payload.requisition_id]
+    )
+    if _req_approval and (_req_approval.get("approval_status") or "approved") != "approved":
+        raise HTTPException(403, "This requisition is not open for applications yet.")
     cand_id = _dedup_or_create_candidate(
         full_name=payload.full_name,
         email=payload.email,
@@ -681,6 +1000,11 @@ async def apply_upload(
     file: UploadFile = File(...),
 ):
     """File-upload path: extract text from PDF/Word, dedup check, then auto-screen."""
+    _req_approval_u = query_one(
+        "SELECT approval_status FROM requisition WHERE id=%s", [requisition_id]
+    )
+    if _req_approval_u and (_req_approval_u.get("approval_status") or "approved") != "approved":
+        raise HTTPException(403, "This requisition is not open for applications yet.")
     suffix = os.path.splitext(file.filename or "")[1].lower()
     if suffix not in _ALLOWED_RESUME_TYPES:
         raise HTTPException(
@@ -779,19 +1103,6 @@ def re_screen(application_id: str, request: Request):
     """
     actor_id = getattr(request.state, "user", {}).get("sub")
     return pipeline.rescreen_application(application_id, actor_id)
-
-
-class AdvanceIn(BaseModel):
-    to_status: str
-    actor_id: str | None = None
-    note: str | None = None
-
-
-@app.post("/api/applications/{application_id}/advance")
-def advance(application_id: str, payload: AdvanceIn, request: Request):
-    if request.state.user.get("role") not in ("recruiter", "ta_manager", "admin"):
-        return JSONResponse(status_code=403, content={"detail": "Not authorised to advance application stage"})
-    return pipeline.advance(application_id, payload.to_status, request.state.user.get("sub"), payload.note)
 
 
 @app.get("/api/requisitions/{requisition_id}/chart")

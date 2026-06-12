@@ -11,6 +11,12 @@ from ..auth_utils import get_current_user
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
+from ..services.sla import (
+    PIPELINE_STAGES, PIPELINE_STAGE_LABELS, NEXT_STAGE, TERMINAL,
+    STAGE_SLA_KEY, load_config, compute_rag,
+)
+from .hiring_plan_api import sync_plan_on_advance
+
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -58,13 +64,13 @@ def dashboard(user: dict = Depends(get_current_user)):
     counts = {
         "open_reqs":         int(open_reqs["n"]) if open_reqs else 0,
         "apps_received":     cnt("1=1"),
-        "under_screening":   cnt("a.status='screening'"),
-        "screening_cleared": cnt("a.status='screen_passed'"),
+        "under_screening":   cnt("a.status='screen'"),
+        "screening_cleared": cnt("a.status IN ('shortlisted','nexai_bot')"),
         "ai_interview":      cnt("a.bot_score IS NOT NULL"),
-        "panel_interview":   cnt("a.status='interviewing'"),
-        "selected":          cnt("a.status='selected'"),
-        "offer_stage":       cnt("a.status IN ('offer_stage','offered')"),
-        "joined":            cnt("a.status='joined'"),
+        "panel_interview":   cnt("a.status='interview'"),
+        "selected":          cnt("a.status='documentation'"),
+        "offer_stage":       cnt("a.status='offered'"),
+        "joined":            cnt("a.status='hired'"),
     }
 
     # Average days to hire (stage_event: applied → joined)
@@ -273,7 +279,7 @@ def dashboard(user: dict = Depends(get_current_user)):
             """
             SELECT u.id AS hm_id, u.full_name, u.email,
                    COUNT(DISTINCT r.id) AS assigned_reqs,
-                   SUM(CASE WHEN a.status = 'selected'
+                   SUM(CASE WHEN a.status = 'interview'
                                  AND (a.hm_feedback IS NULL OR a.hm_feedback = '')
                             THEN 1 ELSE 0 END)              AS pending_reviews,
                    COUNT(DISTINCT CASE WHEN a.hm_feedback IS NOT NULL
@@ -299,7 +305,7 @@ def dashboard(user: dict = Depends(get_current_user)):
             JOIN candidate  c ON c.id  = a.candidate_id
             JOIN requisition r ON r.id = a.requisition_id
             WHERE r.hiring_manager_id = %s
-              AND a.status = 'selected'
+              AND a.status = 'interview'
               AND (a.hm_feedback IS NULL OR a.hm_feedback = '')
             ORDER BY a.combined_score DESC NULLS LAST
             LIMIT 20
@@ -330,7 +336,7 @@ def dashboard(user: dict = Depends(get_current_user)):
             FROM application a
             JOIN requisition r ON r.id = a.requisition_id
             WHERE r.hiring_manager_id = %s
-              AND a.status IN ('selected','offer_stage','offered','joined','rejected')
+              AND a.status IN ('interview','documentation','offered','hired','rejected')
             GROUP BY COALESCE(NULLIF(a.hm_feedback,''), 'pending')
             ORDER BY n DESC
             """,
@@ -453,6 +459,7 @@ class RequisitionIn(BaseModel):
     roll_type: str = "on_roll"
     key_skills: list[str] = []
     min_experience: Optional[float] = None
+    max_experience: Optional[float] = None
     budgeted_ctc: Optional[float] = None
     budgeted_fixed: Optional[float] = None
     budgeted_variable: Optional[float] = None
@@ -462,13 +469,19 @@ class RequisitionIn(BaseModel):
     is_p1: bool = False
     risk: Optional[str] = None
     hiring_location: Optional[str] = None
+    project: Optional[str] = None
+    grade_level: Optional[str] = None
+    priority: Optional[str] = None
+    source_channels: list[str] = []
     rounds: list[RoundIn] = []
 
 
 @router.post("/requisitions")
 def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_user)):
-    if user["role"] not in ("recruiter", "ta_manager", "admin"):
-        raise HTTPException(403, "Only recruiters and TA managers can create requisitions")
+    role = user["role"]
+    if role not in ("recruiter", "ta_manager", "admin", "hiring_manager"):
+        raise HTTPException(403, "Not authorised to create requisitions")
+
     # Derive total CTC from fixed + variable if not explicitly provided
     fixed = body.budgeted_fixed
     variable = body.budgeted_variable
@@ -476,28 +489,42 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
     if total_ctc is None and (fixed is not None or variable is not None):
         total_ctc = (fixed or 0) + (variable or 0)
 
+    # Hiring manager reqs start as pending_ta_approval — not visible until TA approves
+    approval_status = "pending_ta_approval" if role == "hiring_manager" else "approved"
+
+    # Auto-generate req_code
+    seq_row = query_one(
+        "SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(req_code,'[^0-9]','','g') AS INTEGER)),0)+1 AS n FROM requisition WHERE req_code ~ '^REQ-[0-9]+'",
+        [],
+    )
+    req_code = f"REQ-{int((seq_row or {}).get('n') or 1):04d}"
+
     req = query_one(
         """
         INSERT INTO requisition
-          (title, bu_id, band_id, roll_type, key_skills, min_experience,
+          (title, bu_id, band_id, roll_type, key_skills, min_experience, max_experience,
            budgeted_ctc, budgeted_fixed, budgeted_variable,
            openings, fiscal_year, job_description,
            is_p1, risk, hiring_location,
-           status, opened_at, created_by)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s)
-        RETURNING id, title, status
+           project, grade_level, priority, source_channels,
+           req_code, status, opened_at, created_by,
+           approval_status, created_by_role)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s,%s,%s)
+        RETURNING id, title, status, req_code, approval_status
         """,
         [
             body.title, body.bu_id, body.band_id, body.roll_type,
-            body.key_skills, body.min_experience, total_ctc,
+            body.key_skills, body.min_experience, body.max_experience, total_ctc,
             fixed, variable,
             body.openings, body.fiscal_year, body.job_description,
             body.is_p1, body.risk, body.hiring_location,
-            user["sub"],
+            body.project, body.grade_level, body.priority, body.source_channels,
+            req_code, user["sub"], approval_status, role,
         ],
     )
-    # Auto-assign recruiter as owner
-    if user["role"] == "recruiter":
+
+    # Auto-assign the creating recruiter as owner
+    if role == "recruiter":
         query(
             """INSERT INTO requisition_recruiter
                (requisition_id, recruiter_id, is_owner, assigned_by)
@@ -505,6 +532,31 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
             [req["id"], user["sub"], user["sub"]],
             fetch=False,
         )
+
+    # Notify TA managers when a hiring manager creates a requisition needing approval
+    if role == "hiring_manager":
+        hm_row = query_one("SELECT full_name FROM app_user WHERE id=%s", [user["sub"]])
+        hm_name = (hm_row or {}).get("full_name") or "Hiring Manager"
+        ta_emails = query(
+            "SELECT email FROM app_user WHERE role='ta_manager' AND is_active=TRUE", []
+        )
+        ta_email_list = [r["email"] for r in (ta_emails or []) if r.get("email")]
+        if ta_email_list:
+            try:
+                from ..services.email_templates import render_template as _rt
+                from ..services.connectors import send_email as _se
+                subj, bdy = _rt("hm_req_approval_request", {
+                    "hm_name":   hm_name,
+                    "req_title": body.title,
+                })
+                for addr in ta_email_list:
+                    try:
+                        _se(addr, subj, bdy)
+                    except Exception as exc:
+                        print(f"[pipeline] ta-notification to {addr} failed: {exc}")
+            except Exception as exc:
+                print(f"[pipeline] hm req notification failed: {exc}")
+
     # Create panel rounds
     for r in body.rounds:
         query(
@@ -553,7 +605,7 @@ def kanban(req_id: str, _user: dict = Depends(get_current_user)):
         FROM application a
         JOIN candidate c ON c.id = a.candidate_id
         WHERE a.requisition_id = %s
-          AND a.status NOT IN ('screen_rejected','rejected','dropped')
+          AND a.status NOT IN ('hired','rejected','on_hold','screen_rejected','dropped','offer_cancelled')
         ORDER BY score DESC NULLS LAST
         """,
         [req_id],
@@ -804,7 +856,7 @@ def profiles_to_review(user: dict = Depends(get_current_user)):
         JOIN candidate  c ON c.id  = a.candidate_id
         JOIN requisition r ON r.id = a.requisition_id
         WHERE r.hiring_manager_id = %s
-          AND a.status IN ('selected','interviewing')
+          AND a.status = 'interview'
           AND (a.hm_feedback IS NULL OR a.hm_feedback = '')
         ORDER BY a.combined_score DESC NULLS LAST
         """,
@@ -928,3 +980,355 @@ def hm_feedback(
     if not row:
         raise HTTPException(404, "application not found")
     return row
+
+
+# ─── Pipeline bifurcated view ─────────────────────────────────────────────────
+
+@router.get("/requisitions/{req_id}/pipeline")
+def get_req_pipeline(req_id: str, user: dict = Depends(get_current_user)):
+    """
+    Return all candidates for a requisition grouped by pipeline stage,
+    with SLA/RAG status per candidate. Role-scoped.
+    """
+    role, uid = user["role"], user["sub"]
+
+    # Role scope: recruiter must own the req
+    if role == "recruiter":
+        if not query_one(
+            "SELECT 1 FROM requisition_recruiter WHERE requisition_id=%s AND recruiter_id=%s",
+            [req_id, uid],
+        ):
+            raise HTTPException(403, "Not authorised")
+
+    rows = query(
+        """
+        SELECT a.id AS app_id, a.status, a.ai_fit_score, a.bot_score,
+               a.combined_score, a.match_score, a.current_round,
+               a.screening_decision,
+               c.full_name, c.email,
+               EXTRACT(EPOCH FROM (
+                   now() - COALESCE(
+                       (SELECT se.occurred_at FROM stage_event se
+                        WHERE se.application_id=a.id AND se.to_status=a.status
+                        ORDER BY se.occurred_at DESC LIMIT 1),
+                       a.applied_at
+                   )
+               ))/86400.0 AS elapsed_days
+        FROM application a
+        JOIN candidate c ON c.id=a.candidate_id
+        WHERE a.requisition_id=%s
+        ORDER BY a.applied_at DESC
+        """,
+        [req_id],
+    ) or []
+
+    cfg = load_config()
+
+    # Fetch round_config for dynamic interview level names
+    round_cfg = query(
+        "SELECT sequence, name FROM round_config WHERE requisition_id=%s ORDER BY sequence",
+        [req_id],
+    ) or []
+    round_names = {r["sequence"]: r["name"] for r in round_cfg}
+    max_interview_rounds = max((r["sequence"] for r in round_cfg), default=0)
+
+    stage_map = {s: [] for s in PIPELINE_STAGES}
+    terminals = {"hired": [], "rejected": [], "on_hold": []}
+
+    for r in rows:
+        status = r["status"]
+        elapsed = float(r["elapsed_days"] or 0)
+        if status in TERMINAL:
+            rag = None
+        else:
+            sla_key = STAGE_SLA_KEY.get(status, "stage_default")
+            tgt = cfg.get(sla_key, cfg.get("stage_default", 5))
+            rag = compute_rag(elapsed, tgt)
+
+        entry = {
+            "app_id":            str(r["app_id"]),
+            "full_name":         r["full_name"],
+            "email":             r["email"],
+            "elapsed_days":      round(elapsed, 1),
+            "ai_fit_score":      r["ai_fit_score"],
+            "bot_score":         r["bot_score"],
+            "combined_score":    r["combined_score"],
+            "current_round":     r["current_round"],
+            "screening_decision": r["screening_decision"],
+            "rag":               rag,
+        }
+        if status in stage_map:
+            stage_map[status].append(entry)
+        elif status in terminals:
+            terminals[status].append(entry)
+
+    # Build per-level sub-groups for the interview stage
+    interview_candidates = stage_map["interview"]
+    level_map: dict[int, list] = {}
+    for c in interview_candidates:
+        lvl = int(c["current_round"] or 1)
+        level_map.setdefault(lvl, []).append(c)
+    interview_levels = [
+        {
+            "level":      lvl,
+            "round_name": round_names.get(lvl, f"Level {lvl}"),
+            "count":      len(cands),
+            "candidates": cands,
+        }
+        for lvl, cands in sorted(level_map.items())
+    ]
+
+    req = query_one("SELECT title, req_code FROM requisition WHERE id=%s", [req_id])
+
+    stages_out = []
+    for s in PIPELINE_STAGES:
+        stage_entry = {
+            "stage":      s,
+            "label":      PIPELINE_STAGE_LABELS.get(s, s.replace("_", " ").title()),
+            "count":      len(stage_map[s]),
+            "candidates": stage_map[s],
+        }
+        if s == "interview":
+            stage_entry["levels"] = interview_levels
+        stages_out.append(stage_entry)
+
+    return {
+        "req_id":               req_id,
+        "title":                req["title"] if req else "",
+        "req_code":             req["req_code"] if req else "",
+        "max_interview_rounds": max_interview_rounds,
+        "round_config":         [{"sequence": r["sequence"], "name": r["name"]} for r in round_cfg],
+        "stages":               stages_out,
+        "terminal":             {k: {"count": len(v), "candidates": v} for k, v in terminals.items()},
+    }
+
+
+# ─── One-click advance ────────────────────────────────────────────────────────
+
+class AdvanceIn(BaseModel):
+    target: Optional[str] = None   # "rejected" | "on_hold" | "hired" for terminal; None = auto-next
+
+
+@router.post("/applications/{app_id}/advance")
+def advance_application(
+    app_id: str,
+    body: AdvanceIn = AdvanceIn(),
+    user: dict = Depends(get_current_user),
+):
+    """Advance (or terminate) a candidate in the pipeline. Logs to stage_event."""
+    role = user["role"]
+    if role not in ("recruiter", "ta_manager", "admin", "hiring_manager"):
+        raise HTTPException(403, "Not authorised to advance candidates")
+
+    app = query_one(
+        "SELECT id, status, requisition_id, current_round FROM application WHERE id=%s", [app_id]
+    )
+    if not app:
+        raise HTTPException(404, "Application not found")
+
+    # Hiring manager may only advance on their own requisitions
+    if role == "hiring_manager":
+        req_id_str = str(app["requisition_id"]) if app["requisition_id"] else None
+        if not req_id_str or not query_one(
+            "SELECT 1 FROM requisition WHERE id=%s AND hiring_manager_id=%s",
+            [req_id_str, user["sub"]],
+        ):
+            raise HTTPException(403, "Not authorised to advance candidates on this requisition")
+
+    current = app["status"]
+    req_id  = str(app["requisition_id"]) if app["requisition_id"] else None
+
+    # Terminal move (reject / hold / hire)
+    if body.target in ("rejected", "on_hold", "hired"):
+        if current in TERMINAL:
+            raise HTTPException(400, f"Already in terminal status '{current}'")
+        query(
+            "UPDATE application SET status=%s WHERE id=%s",
+            [body.target, app_id], fetch=False,
+        )
+        query(
+            "INSERT INTO stage_event (application_id, from_status, to_status, actor_id) VALUES (%s,%s,%s,%s)",
+            [app_id, current, body.target, user["sub"]], fetch=False,
+        )
+        sync_plan_on_advance(app_id, body.target, current, req_id)
+        return {"ok": True, "prev_stage": current, "new_stage": body.target}
+
+    # Auto advance
+    if current in TERMINAL:
+        raise HTTPException(400, f"Application is in terminal status '{current}'")
+
+    # ── Dynamic interview level advance ───────────────────────────────────────
+    if current == "interview":
+        current_round = int(app["current_round"] or 1)
+        max_row = query_one(
+            "SELECT COALESCE(MAX(sequence),0) AS max_seq FROM round_config WHERE requisition_id=%s",
+            [req_id],
+        )
+        max_seq = int((max_row or {}).get("max_seq") or 1)
+
+        if current_round < max_seq:
+            # Advance to next interview level (status stays 'interview')
+            new_round = current_round + 1
+            round_name_row = query_one(
+                "SELECT name FROM round_config WHERE requisition_id=%s AND sequence=%s",
+                [req_id, new_round],
+            )
+            round_label = (round_name_row or {}).get("name") or f"Level {new_round}"
+            query(
+                "UPDATE application SET current_round=%s WHERE id=%s",
+                [new_round, app_id], fetch=False,
+            )
+            query(
+                "INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note) VALUES (%s,%s,%s,%s,%s)",
+                [app_id, current, current, user["sub"], f"Interview level {new_round}: {round_label}"],
+                fetch=False,
+            )
+            return {
+                "ok":         True,
+                "prev_stage": "interview",
+                "new_stage":  "interview",
+                "level":      new_round,
+                "level_name": round_label,
+            }
+        else:
+            # All levels complete — advance to documentation
+            query(
+                "UPDATE application SET status='documentation' WHERE id=%s",
+                [app_id], fetch=False,
+            )
+            query(
+                "INSERT INTO stage_event (application_id, from_status, to_status, actor_id) VALUES (%s,%s,%s,%s)",
+                [app_id, "interview", "documentation", user["sub"]], fetch=False,
+            )
+            return {
+                "ok":         True,
+                "prev_stage": "interview",
+                "new_stage":  "documentation",
+                "needs_offer": True,
+            }
+
+    # ── Standard next-stage advance ──────────────────────────────────────────
+    next_stage = NEXT_STAGE.get(current)
+    if not next_stage:
+        raise HTTPException(400, f"No next stage after '{current}' (already at end of pipeline)")
+
+    extra_set = ""
+    extra_params: list = [app_id]
+    # Set current_round=1 when entering interview for the first time
+    if next_stage == "interview":
+        # Skip interview if no rounds are configured — go straight to documentation
+        rounds_count_row = query_one(
+            "SELECT COALESCE(MAX(sequence),0) AS n FROM round_config WHERE requisition_id=%s",
+            [req_id],
+        )
+        rounds_n = int((rounds_count_row or {}).get("n") or 0)
+        if rounds_n == 0:
+            next_stage = "documentation"
+        else:
+            extra_set = ", current_round=1"
+
+    query(
+        f"UPDATE application SET status=%s{extra_set} WHERE id=%s",
+        [next_stage] + extra_params, fetch=False,
+    )
+    query(
+        "INSERT INTO stage_event (application_id, from_status, to_status, actor_id) VALUES (%s,%s,%s,%s)",
+        [app_id, current, next_stage, user["sub"]], fetch=False,
+    )
+
+    flags = {}
+    if next_stage == "nexai_bot":
+        flags["needs_nexai_invite"] = True
+    elif next_stage == "documentation":
+        flags["needs_offer"] = True
+
+    sync_plan_on_advance(app_id, next_stage, current, req_id)
+    return {"ok": True, "prev_stage": current, "new_stage": next_stage, **flags}
+
+
+# ─── Manual screening decision ───────────────────────────────────────────────
+
+class ScreenDecisionIn(BaseModel):
+    decision: str   # "pass" | "hold" | "reject"
+    notes: Optional[str] = None
+
+
+@router.post("/applications/{app_id}/screen-decision")
+def record_screen_decision(
+    app_id: str,
+    body: ScreenDecisionIn,
+    user: dict = Depends(get_current_user),
+):
+    """Record recruiter's manual screening decision (pass/hold/reject) on an application."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    if body.decision not in ("pass", "hold", "reject"):
+        raise HTTPException(400, "decision must be 'pass', 'hold', or 'reject'")
+
+    row = query_one(
+        """UPDATE application
+           SET screening_decision=%s, screening_notes=%s,
+               screened_by=%s, screened_at=now()
+           WHERE id=%s
+           RETURNING id, status, screening_decision""",
+        [body.decision, body.notes, user["sub"], app_id],
+    )
+    if not row:
+        raise HTTPException(404, "Application not found")
+
+    # Reject decision immediately moves to terminal
+    if body.decision == "reject":
+        query("UPDATE application SET status='rejected' WHERE id=%s", [app_id], fetch=False)
+        query(
+            "INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note) VALUES (%s,'screen','rejected',%s,'Rejected at screening')",
+            [app_id, user["sub"]], fetch=False,
+        )
+
+    return row
+
+
+# ─── Per-stage report ─────────────────────────────────────────────────────────
+
+@router.get("/requisitions/{req_id}/stage/{stage}/report")
+def stage_report(req_id: str, stage: str, user: dict = Depends(get_current_user)):
+    """Return all candidates in a given stage for CSV export. Role-scoped."""
+    role, uid = user["role"], user["sub"]
+    if role == "recruiter":
+        if not query_one(
+            "SELECT 1 FROM requisition_recruiter WHERE requisition_id=%s AND recruiter_id=%s",
+            [req_id, uid],
+        ):
+            raise HTTPException(403, "Not authorised")
+
+    rows = query(
+        """
+        SELECT a.id AS app_id, c.full_name, c.email, c.gender,
+               a.status, a.ai_fit_score, a.bot_score, a.combined_score,
+               a.current_company, a.current_designation,
+               a.notice_period_days, a.current_ctc_total, a.expected_ctc_total,
+               a.applied_at,
+               EXTRACT(EPOCH FROM (
+                   now() - COALESCE(
+                       (SELECT se.occurred_at FROM stage_event se
+                        WHERE se.application_id=a.id AND se.to_status=a.status
+                        ORDER BY se.occurred_at DESC LIMIT 1),
+                       a.applied_at
+                   )
+               ))/86400.0 AS days_in_stage
+        FROM application a
+        JOIN candidate c ON c.id=a.candidate_id
+        WHERE a.requisition_id=%s AND a.status=%s
+        ORDER BY a.combined_score DESC NULLS LAST
+        """,
+        [req_id, stage],
+    ) or []
+
+    req = query_one("SELECT title, req_code FROM requisition WHERE id=%s", [req_id])
+
+    return {
+        "requisition": dict(req) if req else {},
+        "stage": stage,
+        "stage_label": PIPELINE_STAGE_LABELS.get(stage, stage),
+        "count": len(rows),
+        "rows": [dict(r) for r in rows],
+    }

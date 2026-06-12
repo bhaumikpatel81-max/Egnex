@@ -165,6 +165,52 @@ DEFAULTS: dict[str, dict] = {
         "category": "panel",
     },
 
+    # ── HM Requisition Approval email templates ──────────────────────────────
+
+    "hm_req_approval_request": {
+        "name":    "HM Requisition Approval Request (TA Manager)",
+        "subject": "Approval required: New requisition '{{req_title}}' from {{hm_name}}",
+        "body": (
+            "Hi TA Team,\n\n"
+            "{{hm_name}} has created a new requisition that requires your approval "
+            "before it becomes active in the pipeline.\n\n"
+            "Requisition: {{req_title}}\n"
+            "Submitted by: {{hm_name}} (Hiring Manager)\n\n"
+            "Please log in to Egnex and navigate to 'Req Approvals' to approve or "
+            "reject this requisition.\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": ["hm_name", "req_title"],
+        "category": "panel",
+    },
+    "hm_req_approved": {
+        "name":    "HM Requisition Approved (Hiring Manager Notification)",
+        "subject": "Your requisition '{{req_title}}' has been approved",
+        "body": (
+            "Hi {{hm_name}},\n\n"
+            "Your requisition '{{req_title}}' has been approved by the TA team "
+            "and is now active in the pipeline.\n\n"
+            "Candidates can now be received and processed for this position.\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": ["hm_name", "req_title"],
+        "category": "panel",
+    },
+    "hm_req_rejected": {
+        "name":    "HM Requisition Rejected (Hiring Manager Notification)",
+        "subject": "Your requisition '{{req_title}}' was not approved",
+        "body": (
+            "Hi {{hm_name}},\n\n"
+            "Your requisition '{{req_title}}' could not be approved at this time.\n\n"
+            "Reason: {{reason}}\n\n"
+            "Please contact the TA team if you have questions or wish to revise "
+            "and resubmit.\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": ["hm_name", "req_title", "reason"],
+        "category": "panel",
+    },
+
     "offer_approved_darwinbox": {
         "name":    "Offer Fully Approved — Sent to Darwinbox (Recruiter + TA Manager)",
         "subject": "Offer fully approved — {{candidate_name}} sent to Darwinbox (Ref: {{darwin_ref}})",
@@ -224,6 +270,10 @@ SAMPLE_VALUES: dict[str, str] = {
     "rejected_at":        "12 June 2026 at 2:30 PM",
     "notes":              "All requirements met.",
     "darwin_ref":         "STUB-DRW-2026001",
+    # hm req approval placeholders
+    "hm_name":   "Bhaumik Patel",
+    "req_title": "Senior Software Engineer",
+    "reason":    "Budget not approved for this quarter.",
 }
 
 

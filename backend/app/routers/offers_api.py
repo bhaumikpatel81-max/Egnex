@@ -15,15 +15,15 @@ Approval flow (sequential per requisition chain)
                   → audit email (recruiter + all TA managers) on EACH step
 
  Reject step N  → status=revising, revise_note=reason
-                  application stays at offer_stage
+                  application stays at offer_approval
                   → email recruiter + TA managers
 
  Resubmit       → restart chain (delete + recreate pending steps)
                   current_step=1, status=pending_approval
                   → email step-1 approver again
 
- On Hold        → offer status=on_hold, application→offer_on_hold
- Cancel         → offer status=cancelled, application→offer_cancelled
+ On Hold        → offer status=on_hold, application→on_hold
+ Cancel         → offer status=cancelled, application→rejected
 
 Role-based visibility (server-enforced)
 ---------------------------------------
@@ -48,8 +48,22 @@ router = APIRouter(prefix="/api", tags=["offers"])
 
 # ── Pydantic models ────────────────────────────────────────────────────────────
 
+class ApproverStepIn(BaseModel):
+    """Single step in an approval chain — used by both templates and per-req chains."""
+    approver_id: str
+    sla_days: int = 2
+
+
 class ApproverChainIn(BaseModel):
-    approvers: list[str]   # ordered list of app_user UUIDs
+    """Accepts either the legacy flat list (approvers) or the new per-step form (steps)."""
+    approvers: list[str] = []          # legacy: ordered UUIDs, default sla_days=2
+    steps: list[ApproverStepIn] = []   # new: UUIDs + per-step SLA
+
+    def effective_steps(self) -> list[ApproverStepIn]:
+        """Return a normalised list of ApproverStepIn regardless of input form."""
+        if self.steps:
+            return self.steps
+        return [ApproverStepIn(approver_id=uid, sla_days=2) for uid in self.approvers]
 
 
 class CreateOfferIn(BaseModel):
@@ -177,6 +191,7 @@ def _create_pending_steps(offer_id: str, requisition_id: str) -> int:
     """
     Delete ALL existing steps for this offer and recreate them from the
     current req_offer_approver chain.  Returns total step count.
+    Per-step sla_days is copied from req_offer_approver (default 2 if NULL).
 
     Called on initial create (no prior steps) and on resubmit (need clean slate so
     previously-approved/rejected history rows don't collide with new pending rows).
@@ -186,15 +201,18 @@ def _create_pending_steps(offer_id: str, requisition_id: str) -> int:
         [offer_id], fetch=False,
     )
     chain = query(
-        """SELECT approver_id, sequence FROM req_offer_approver
+        """SELECT approver_id, sequence, COALESCE(sla_days, 2) AS sla_days
+           FROM req_offer_approver
            WHERE requisition_id=%s ORDER BY sequence""",
         [requisition_id],
     )
     for step in (chain or []):
         query(
-            """INSERT INTO offer_approval_step (offer_id, approver_id, sequence, status)
-               VALUES (%s, %s, %s, 'pending')""",
-            [offer_id, str(step["approver_id"]), step["sequence"]],
+            """INSERT INTO offer_approval_step
+                   (offer_id, approver_id, sequence, status, sla_days)
+               VALUES (%s, %s, %s, 'pending', %s)""",
+            [offer_id, str(step["approver_id"]), step["sequence"],
+             int(step.get("sla_days") or 2)],
             fetch=False,
         )
     return len(chain or [])
@@ -211,6 +229,7 @@ def get_offer_approvers(req_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(404, "Requisition not found")
     rows = query(
         """SELECT roa.sequence, roa.approver_id,
+                  COALESCE(roa.sla_days, 2) AS sla_days,
                   u.full_name, u.email, u.role
            FROM req_offer_approver roa
            JOIN app_user u ON u.id = roa.approver_id
@@ -236,21 +255,27 @@ def set_offer_approvers(
     if not query_one("SELECT id FROM requisition WHERE id=%s", [req_id]):
         raise HTTPException(404, "Requisition not found")
 
-    # Validate all approver IDs exist
-    for uid in body.approvers:
-        if not query_one("SELECT id FROM app_user WHERE id=%s AND is_active=TRUE", [uid]):
-            raise HTTPException(400, f"User {uid} not found or inactive")
+    steps = body.effective_steps()
+    if not steps:
+        # Clearing the chain is allowed (empty list)
+        query("DELETE FROM req_offer_approver WHERE requisition_id=%s", [req_id], fetch=False)
+        return {"ok": True, "total_steps": 0}
 
-    # Replace chain
+    # Validate all approver IDs exist
+    for s in steps:
+        if not query_one("SELECT id FROM app_user WHERE id=%s AND is_active=TRUE", [s.approver_id]):
+            raise HTTPException(400, f"User {s.approver_id} not found or inactive")
+
+    # Replace chain (delete + re-insert to preserve ordering cleanly)
     query("DELETE FROM req_offer_approver WHERE requisition_id=%s", [req_id], fetch=False)
-    for i, uid in enumerate(body.approvers, start=1):
+    for i, s in enumerate(steps, start=1):
         query(
-            """INSERT INTO req_offer_approver (requisition_id, approver_id, sequence)
-               VALUES (%s, %s, %s)""",
-            [req_id, uid, i],
+            """INSERT INTO req_offer_approver (requisition_id, approver_id, sequence, sla_days)
+               VALUES (%s, %s, %s, %s)""",
+            [req_id, s.approver_id, i, max(1, s.sla_days)],
             fetch=False,
         )
-    return {"ok": True, "total_steps": len(body.approvers)}
+    return {"ok": True, "total_steps": len(steps)}
 
 
 # ── Create offer ───────────────────────────────────────────────────────────────
@@ -277,8 +302,11 @@ def create_offer(body: CreateOfferIn, user: dict = Depends(get_current_user)):
     )
     if not app_row:
         raise HTTPException(404, "Application not found")
-    if app_row["status"] != "selected":
-        raise HTTPException(400, f"Application must be at 'selected' stage (current: {app_row['status']})")
+    if app_row["status"] not in (
+        "documentation", "interview",                           # current stage names
+        "hr_round", "offer_approval", "hm_screening", "selected",  # legacy
+    ):
+        raise HTTPException(400, f"Application must be at documentation or interview stage (current: {app_row['status']})")
 
     # Check req has a chain
     chain = query(
@@ -319,14 +347,15 @@ def create_offer(body: CreateOfferIn, user: dict = Depends(get_current_user)):
 
     # Advance application status
     old_status = app_row["status"]
-    query(
-        "UPDATE application SET status='offer_stage' WHERE id=%s",
-        [body.application_id], fetch=False,
-    )
-    query(
-        "INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note) VALUES (%s,%s,'offer_stage',%s,'Offer created')",
-        [body.application_id, old_status, user["sub"]], fetch=False,
-    )
+    if old_status != "documentation":
+        query(
+            "UPDATE application SET status='documentation' WHERE id=%s",
+            [body.application_id], fetch=False,
+        )
+        query(
+            "INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note) VALUES (%s,%s,'documentation',%s,'Offer created')",
+            [body.application_id, old_status, user["sub"]], fetch=False,
+        )
 
     # Notify step-1 approver
     step1_user_id = str(chain[0]["approver_id"])
@@ -447,19 +476,22 @@ def get_offer(offer_id: str, user: dict = Depends(get_current_user)):
 
     _assert_offer_role(user, offer)
 
-    # Approval chain definition
+    # Approval chain definition (current state on requisition)
     chain = query(
-        """SELECT roa.sequence, u.id AS approver_id, u.full_name, u.role
+        """SELECT roa.sequence, u.id AS approver_id, u.full_name, u.role,
+                  COALESCE(roa.sla_days, 2) AS sla_days
            FROM req_offer_approver roa
            JOIN app_user u ON u.id = roa.approver_id
            WHERE roa.requisition_id = %s ORDER BY roa.sequence""",
         [str(offer["requisition_id"])],
     )
 
-    # Approval step log (history)
+    # Approval step log (history) — includes per-step sla_days captured at offer creation
     steps = query(
         """SELECT oas.sequence, oas.status, oas.notes, oas.acted_at,
-                  u.full_name AS approver_name, u.role AS approver_role
+                  COALESCE(oas.sla_days, 2) AS sla_days,
+                  u.full_name AS approver_name, u.role AS approver_role,
+                  u.id AS approver_id
            FROM offer_approval_step oas
            JOIN app_user u ON u.id = oas.approver_id
            WHERE oas.offer_id = %s ORDER BY oas.sequence""",
@@ -553,7 +585,7 @@ def resubmit_offer(offer_id: str, user: dict = Depends(get_current_user)):
         [offer_id], fetch=False,
     )
     query(
-        "UPDATE application SET status='offer_stage' WHERE id=%s",
+        "UPDATE application SET status='documentation' WHERE id=%s",
         [str(offer["application_id"])], fetch=False,
     )
 
@@ -685,7 +717,7 @@ def approve_offer_step(offer_id: str, body: ApproveIn, user: dict = Depends(get_
         )
         query(
             """INSERT INTO stage_event (application_id, from_status, to_status, actor_id, note)
-               VALUES (%s,'offer_stage','offered',%s,'Offer fully approved — sent to Darwinbox')""",
+               VALUES (%s,'documentation','offered',%s,'Offer fully approved — sent to Darwinbox')""",
             [str(offer["application_id"]), uid],
             fetch=False,
         )
@@ -833,7 +865,7 @@ def update_offer_status(offer_id: str, body: OfferStatusIn, user: dict = Depends
     if offer["status"] in ("sent_to_darwinbox",):
         raise HTTPException(400, "Cannot hold or cancel an offer that has already been sent to Darwinbox")
 
-    app_status = "offer_on_hold" if body.status == "on_hold" else "offer_cancelled"
+    app_status = "on_hold" if body.status == "on_hold" else "rejected"
 
     query(
         "UPDATE offer SET status=%s, updated_at=now() WHERE id=%s",

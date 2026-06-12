@@ -11,15 +11,47 @@ Missing keys fall back to SLA_DEFAULTS.
 """
 from ..db import query
 
+# ── Ordered pipeline stages (single source of truth) ─────────────────────────
+PIPELINE_STAGES = [
+    "applied",
+    "screen",
+    "nexai_bot",
+    "shortlisted",
+    "interview",
+    "documentation",
+    "offered",
+]
+
+PIPELINE_STAGE_LABELS = {
+    "applied":       "Applied",
+    "screen":        "Screening",
+    "nexai_bot":     "NexAI Interview",
+    "shortlisted":   "Shortlisted",
+    "interview":     "Interview",
+    "documentation": "Documentation",
+    "offered":       "Offered",
+}
+
+# "interview" is intentionally absent — advance endpoint handles it dynamically
+# based on the requisition's round_config (number of panel levels configured).
+NEXT_STAGE = {
+    "applied":       "screen",
+    "screen":        "nexai_bot",
+    "nexai_bot":     "shortlisted",
+    "shortlisted":   "interview",
+    "documentation": "offered",
+}
+
 # ── Defaults (editable via TA-manager settings screen) ───────────────────────
 
 SLA_DEFAULTS = {
     "stage_applied":       5,
-    "stage_screening":     3,
-    "stage_screen_passed": 3,
-    "stage_interviewing":  7,
-    "stage_selected":      3,
-    "stage_offer_stage":   5,
+    "stage_screen":        3,
+    "stage_nexai_bot":     3,
+    "stage_shortlisted":   2,
+    "stage_interview":     5,
+    "stage_documentation": 5,
+    "stage_offered":       3,
     "stage_default":       5,
     "req_time_to_fill":   45,
     "approval_step":       2,
@@ -28,18 +60,31 @@ SLA_DEFAULTS = {
 # application.status  →  sla_config key
 STAGE_SLA_KEY = {
     "applied":       "stage_applied",
-    "screening":     "stage_screening",
-    "screen_passed": "stage_screen_passed",
-    "interviewing":  "stage_interviewing",
-    "selected":      "stage_selected",
-    "offer_stage":   "stage_offer_stage",
-    "offered":       "stage_offer_stage",
-    "offer_on_hold": "stage_offer_stage",
+    "screen":        "stage_screen",
+    "nexai_bot":     "stage_nexai_bot",
+    "shortlisted":   "stage_shortlisted",
+    "interview":     "stage_interview",
+    "documentation": "stage_documentation",
+    "offered":       "stage_offered",
+    # Legacy aliases (Task 3 → Task 4 + any pre-migration records)
+    "ai_screening":    "stage_screen",
+    "screening":       "stage_screen",
+    "screen_passed":   "stage_shortlisted",
+    "hm_screening":    "stage_interview",
+    "panel_interview": "stage_interview",
+    "hr_round":        "stage_interview",
+    "offer_approval":  "stage_documentation",
+    "offer_stage":     "stage_documentation",
+    "offer_on_hold":   "stage_offered",
+    "selected":        "stage_interview",
+    "interviewing":    "stage_interview",
 }
 
 # Statuses for which SLA tracking is suspended (candidate no longer active)
 TERMINAL = frozenset({
-    "joined", "rejected", "screen_rejected", "dropped", "offer_cancelled",
+    "hired", "rejected", "on_hold",
+    # Legacy
+    "joined", "screen_rejected", "dropped", "offer_cancelled",
 })
 
 
@@ -57,10 +102,6 @@ def load_config() -> dict:
 # ── RAG computation ───────────────────────────────────────────────────────────
 
 def compute_rag(elapsed_days, target_days) -> dict:
-    """
-    Return a RAG dict for elapsed time vs target.
-    elapsed_days may be a float (from SQL EXTRACT).
-    """
     if elapsed_days is None or target_days is None or target_days <= 0:
         return {
             "status": "green",
@@ -88,19 +129,11 @@ def compute_rag(elapsed_days, target_days) -> dict:
 # ── Bulk application-stage RAG ────────────────────────────────────────────────
 
 def bulk_application_rag(app_ids: list[str], sla_cfg: dict | None = None) -> dict:
-    """
-    Given a list of application UUIDs, return {app_id: rag_dict} for each.
-    Terminal-status applications get status='green' / no badge.
-    sla_cfg is optional; if None, it is loaded from DB.
-    """
     if not app_ids:
         return {}
 
     cfg = sla_cfg or load_config()
 
-    # Pull status + time-in-current-stage for all requested apps in one query.
-    # elapsed_days = time since the most-recent stage_event that set current status;
-    # falls back to applied_at if no stage_event row exists yet.
     placeholders = ", ".join(["%s"] * len(app_ids))
     rows = query(
         f"""
@@ -132,9 +165,9 @@ def bulk_application_rag(app_ids: list[str], sla_cfg: dict | None = None) -> dic
             result[app_id] = {"status": "green", "pct": 0.0,
                               "elapsed_days": 0.0, "target_days": 0}
             continue
-        sla_key    = STAGE_SLA_KEY.get(status, "stage_default")
-        target     = cfg.get(sla_key, cfg.get("stage_default", 5))
-        rag        = compute_rag(r["elapsed_days"], target)
+        sla_key = STAGE_SLA_KEY.get(status, "stage_default")
+        target  = cfg.get(sla_key, cfg.get("stage_default", 5))
+        rag     = compute_rag(r["elapsed_days"], target)
         rag["stage"] = status
         result[app_id] = rag
 
@@ -144,14 +177,10 @@ def bulk_application_rag(app_ids: list[str], sla_cfg: dict | None = None) -> dic
 # ── Bulk requisition RAG ──────────────────────────────────────────────────────
 
 def bulk_requisition_rag(req_ids: list[str], sla_cfg: dict | None = None) -> dict:
-    """
-    Given a list of requisition UUIDs, return {req_id: rag_dict}.
-    Only 'open' requisitions get a non-green status; others return green.
-    """
     if not req_ids:
         return {}
 
-    cfg = sla_cfg or load_config()
+    cfg    = sla_cfg or load_config()
     target = cfg.get("req_time_to_fill", SLA_DEFAULTS["req_time_to_fill"])
 
     placeholders = ", ".join(["%s"] * len(req_ids))

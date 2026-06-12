@@ -2,6 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# System packages: LibreOffice headless for .doc → .docx conversion
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-writer \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install dependencies first so this layer caches until requirements change.
 # Build context is the project root, so paths are relative to it.
 COPY backend/requirements.txt .
