@@ -544,14 +544,17 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
         if ta_email_list:
             try:
                 from ..services.email_templates import render_template as _rt
-                from ..services.connectors import send_email as _se
+                from ..services.connectors import send_email as _se, resolve_global_placeholders
+                req_id_for_globals = str(new_req["id"]) if new_req else None
+                globals_ = resolve_global_placeholders(req_id=req_id_for_globals, actor=user)
+                reply_to = globals_.get("recruiter_email") or None
                 subj, bdy = _rt("hm_req_approval_request", {
                     "hm_name":   hm_name,
                     "req_title": body.title,
-                })
+                }, req_id=req_id_for_globals, actor=user)
                 for addr in ta_email_list:
                     try:
-                        _se(addr, subj, bdy)
+                        _se(addr, subj, bdy, reply_to=reply_to)
                     except Exception as exc:
                         print(f"[pipeline] ta-notification to {addr} failed: {exc}")
             except Exception as exc:

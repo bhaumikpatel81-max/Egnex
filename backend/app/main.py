@@ -6,6 +6,7 @@ prerequisites. Serves a JSON API plus a simple bundled frontend so the whole
 pipeline can be demonstrated end to end.
 """
 import os
+import re as _re
 import uuid as _uuid
 import json
 from datetime import datetime, timedelta
@@ -172,12 +173,13 @@ END $$""",
         """ALTER TABLE application ADD COLUMN IF NOT EXISTS stability_status TEXT
            CHECK (stability_status IS NULL
                OR stability_status IN ('computed','pending_manual','not_applicable'))""",
-        # Migration 24: scorecard draft/submit workflow (added 2026-06)
+        # Migration 23: scorecard draft/submit workflow (added 2026-06)
+        # NOTE: comment numbering was 24 before 23 historically; SQL is idempotent so order is irrelevant.
         "ALTER TABLE scorecard ALTER COLUMN submitted_at DROP NOT NULL",
         "ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS status     TEXT        NOT NULL DEFAULT 'draft'",
         "ALTER TABLE scorecard ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now()",
         "UPDATE scorecard SET status = 'submitted' WHERE submitted_at IS NOT NULL AND status = 'draft'",
-        # Migration 23: extended application fields — employment snapshot + CTC (added 2026-06)
+        # Migration 24: extended application fields — employment snapshot + CTC (added 2026-06)
         "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_company       TEXT",
         "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_designation   TEXT",
         "ALTER TABLE application ADD COLUMN IF NOT EXISTS current_location      TEXT",
@@ -595,11 +597,18 @@ BEGIN
         $sql$;
     END IF;
 END $$""",
-        # Seed new settings defaults (idempotent)
+        # Seed new settings defaults (idempotent — ON CONFLICT preserves existing values)
         """INSERT INTO system_settings (key, value)
            VALUES
-             ('about_company_text', 'Amnex Infotechnologies Pvt. Ltd. is a leading technology company specialising in smart city, public safety, and e-governance solutions.'),
+             ('about_company_text', 'About Amnex: [Configure in Settings]'),
              ('auto_jd_email', 'true')
+           ON CONFLICT (key) DO NOTHING""",
+
+        # ── Migration 37: seed company_name + ta_default_signature settings ───────
+        """INSERT INTO system_settings (key, value)
+           VALUES
+             ('company_name',          'Amnex Infotechnologies Pvt. Ltd.'),
+             ('ta_default_signature',  'Talent Acquisition Team')
            ON CONFLICT (key) DO NOTHING""",
     ]
     for sql in migrations:
@@ -731,7 +740,11 @@ def serve_resume(filename: str, request: Request):
 
     file_path = os.path.join(_UPLOADS_DIR, safe_name)
     if not os.path.isfile(file_path):
-        raise HTTPException(404, "Resume file not found")
+        # Fallback: new resumes are stored in cv_store (single canonical location)
+        _cv_store_dir = os.environ.get("CV_STORE_DIR", "/app/cv_store")
+        file_path = os.path.join(_cv_store_dir, safe_name)
+        if not os.path.isfile(file_path):
+            raise HTTPException(404, "Resume file not found")
 
     ext = os.path.splitext(safe_name)[1].lower()
     media_type = _RESUME_MIME.get(ext, "application/octet-stream")
@@ -960,7 +973,10 @@ def _send_jd_email(candidate_name: str, candidate_email: str, req_id: str) -> No
         jd_raw = (req.get("job_description") or "").strip()
 
         from .services.email_templates import get_template
-        from .services.connectors import send_email
+        from .services.connectors import send_email, resolve_global_placeholders
+
+        globals_ = resolve_global_placeholders(req_id=req_id)
+        reply_to = globals_.get("recruiter_email") or None
 
         tmpl = get_template("application_received_jd")
         subject = tmpl["subject"]
@@ -974,6 +990,7 @@ def _send_jd_email(candidate_name: str, candidate_email: str, req_id: str) -> No
             "experience":     experience,
             "qualification":  "As per role requirements",
             "about_company":  about_company,
+            **globals_,  # company_name, recruiter_name, recruiter_email
         }
         if jd_raw:
             subs["jd_body"] = jd_raw
@@ -986,10 +1003,15 @@ def _send_jd_email(candidate_name: str, candidate_email: str, req_id: str) -> No
             subs["jd_body"] = ""  # won't appear after line removal
 
         for k, v in subs.items():
-            subject = subject.replace("{{" + k + "}}", v)
-            body    = body.replace("{{" + k + "}}", v)
+            subject = subject.replace("{{" + k + "}}", str(v))
+            body    = body.replace("{{" + k + "}}", str(v))
 
-        send_email(candidate_email, subject, body)
+        # Defensive sweep: strip any remaining unresolved {{placeholders}} so
+        # raw template tokens never appear in a sent email.
+        subject = _re.sub(r'\{\{[^}]+\}\}', '', subject)
+        body    = _re.sub(r'\{\{[^}]+\}\}', '', body)
+
+        send_email(candidate_email, subject, body, reply_to=reply_to)
     except Exception as exc:
         print(f"[jd-email] Failed to send JD confirmation to {candidate_email}: {exc}")
 
@@ -1123,18 +1145,15 @@ async def apply_upload(
     file_bytes = await file.read()
     resume_text, warning = _parse_resume(file_bytes, file.filename or "")
 
-    saved_name = f"{_uuid.uuid4()}{suffix}"
-    saved_path = os.path.join(_UPLOADS_DIR, saved_name)
-    with open(saved_path, "wb") as fout:
-        fout.write(file_bytes)
-
+    # No save to _UPLOADS_DIR — cv_store is the single canonical location.
+    # Candidate is created first (needed for ingest), resume_url updated after.
     cand_id = _dedup_or_create_candidate(
         full_name=full_name,
         email=email,
         phone=phone or None,
         gender=gender,
         source=source,
-        resume_url=saved_path,
+        resume_url=None,
         requisition_id=requisition_id,
     )
     app_row = pipeline.intake_and_screen(
@@ -1154,16 +1173,29 @@ async def apply_upload(
         notice_period_days=notice_period_days,
         willing_to_relocate=_parse_relocate(willing_to_relocate),
     )
-    # Feed the resume file into the CV Repository (idempotent hash-dedupe)
+    # Ingest into CV Repository (single canonical file in cv_store, hash-deduped).
+    # After ingest, point candidate.resume_url at the cv_store file so every
+    # downstream consumer (profile view, rescreen, CSV export) resolves one path.
     try:
-        _cv_ingest_and_link(
+        _cv_result = _cv_ingest_and_link(
             data=file_bytes,
-            filename=file.filename or saved_name,
+            filename=file.filename or f"{_uuid.uuid4()}{suffix}",
             source="application",
             uploaded_by=None,
             candidate_id=str(cand_id),
             req_id=requisition_id,
         )
+        _cv_id = _cv_result.get("cv_id") if _cv_result else None
+        if _cv_id:
+            _cv_row = query_one(
+                "SELECT file_path FROM cv_repository WHERE id=%s", [_cv_id]
+            )
+            if _cv_row and _cv_row.get("file_path"):
+                query(
+                    "UPDATE candidate SET resume_url=%s WHERE id=%s",
+                    [_cv_row["file_path"], str(cand_id)],
+                    fetch=False,
+                )
     except Exception as _cv_exc:
         print(f"[cv-ingest] Failed to link resume for candidate {cand_id}: {_cv_exc}")
     _send_jd_email(full_name, email, requisition_id)

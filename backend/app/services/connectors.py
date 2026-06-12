@@ -10,7 +10,9 @@ Google Calendar + Meet (Phase 3): real implementation.
 Gmail, AI interview bot, Darwinbox: clearly-marked stubs for later phases.
 """
 import os
+import re as _re
 import uuid
+from typing import Optional
 from datetime import datetime, timedelta
 
 from ..db import query, query_one
@@ -152,6 +154,70 @@ def schedule_meeting(recruiter_id: str, candidate_email: str,
 #  EMAIL  (SMTP — reads SMTP_USER / SMTP_PASSWORD from env)            #
 # ------------------------------------------------------------------ #
 
+def resolve_global_placeholders(
+    req_id: Optional[str] = None,
+    actor: Optional[dict] = None,
+) -> dict:
+    """
+    Resolve the three global placeholders injected into every email template.
+
+    company_name   → system_settings['company_name']
+    recruiter_name → (1) actor['full_name'] if provided,
+                     (2) first assigned recruiter for req_id,
+                     (3) system_settings['ta_default_signature']
+    recruiter_email → (1) actor['email'] if provided,
+                      (2) first assigned recruiter's email for req_id,
+                      (3) empty string
+
+    Never raises — returns safe defaults on any error.
+    """
+    try:
+        rows = query(
+            "SELECT key, value FROM system_settings WHERE key IN ('company_name','ta_default_signature')"
+        )
+        cfg = {r["key"]: (r["value"] or "").strip() for r in (rows or [])}
+    except Exception:
+        cfg = {}
+
+    company_name = cfg.get("company_name") or "Amnex Infotechnologies Pvt. Ltd."
+    ta_sig       = cfg.get("ta_default_signature") or "Talent Acquisition Team"
+
+    recruiter_name  = None
+    recruiter_email = None
+
+    # 1. Logged-in actor
+    if actor and isinstance(actor, dict):
+        recruiter_name  = (actor.get("full_name") or actor.get("name") or "").strip() or None
+        recruiter_email = (actor.get("email") or "").strip() or None
+
+    # 2. Assigned recruiter for the requisition
+    if req_id and not (recruiter_name and recruiter_email):
+        try:
+            rec = query_one(
+                """SELECT u.full_name, u.email
+                   FROM requisition_recruiter rr
+                   JOIN app_user u ON u.id = rr.recruiter_id
+                   WHERE rr.requisition_id = %s AND u.is_active = TRUE
+                   ORDER BY rr.created_at LIMIT 1""",
+                [req_id],
+            )
+            if rec:
+                recruiter_name  = recruiter_name  or (rec["full_name"] or "").strip() or None
+                recruiter_email = recruiter_email or (rec["email"]     or "").strip() or None
+        except Exception:
+            pass
+
+    # 3. Fallback
+    recruiter_name  = recruiter_name  or ta_sig
+    recruiter_email = recruiter_email or ""
+
+    return {
+        "company_name":    company_name,
+        "recruiter_name":  recruiter_name,
+        "recruiter_email": recruiter_email,
+    }
+
+
 def _load_email_cfg() -> dict:
     """
     Load all email config from system_settings (DB first, env vars as fallback).
@@ -185,14 +251,16 @@ _load_smtp_settings = _load_email_cfg
 
 
 def _send_via_sendgrid(api_key: str, from_email: str, from_name: str,
-                       to_email: str, subject: str, body: str, html: str = None):
+                       to_email: str, subject: str, body: str,
+                       html: str = None, reply_to: str = None):
     """Send transactional email via SendGrid HTTP API."""
     import requests as _req
 
+    _reply_email = reply_to or from_email
     payload = {
         "personalizations": [{"to": [{"email": to_email}]}],
         "from":     {"email": from_email, "name": from_name},
-        "reply_to": {"email": from_email, "name": from_name},
+        "reply_to": {"email": _reply_email},
         "subject":  subject,
         "content":  [{"type": "text/plain", "value": body}],
         # Mark as transactional — uses SendGrid's dedicated transactional IP pool
@@ -259,14 +327,29 @@ def _send_smtp(cfg: dict, to_email: str, msg_obj) -> None:
         )
 
 
-def send_email(to_email: str, subject: str, body: str, html: str = None) -> dict:
+def send_email(
+    to_email: str,
+    subject: str,
+    body: str,
+    html: str = None,
+    reply_to: str = None,
+) -> dict:
     """
     Send email.  Priority:
       1. SendGrid HTTP API  (set sendgrid_api_key in Settings — works on all networks)
       2. Gmail / SMTP       (set smtp_user + smtp_password in Settings)
       3. Stub               (logs to console only — neither is configured)
+
+    reply_to: if set, adds Reply-To header so candidate replies go to the recruiter.
     """
     import smtplib
+
+    # Defensive sweep — strip any unresolved {{placeholders}} before sending.
+    # This is the last line of defence after all caller substitutions have run.
+    subject = _re.sub(r'\{\{[^}]+\}\}', '', subject)
+    body    = _re.sub(r'\{\{[^}]+\}\}', '', body)
+    if html:
+        html = _re.sub(r'\{\{[^}]+\}\}', '', html)
 
     cfg = _load_email_cfg()
 
@@ -275,7 +358,7 @@ def send_email(to_email: str, subject: str, body: str, html: str = None) -> dict
         from_email = cfg["user"] or "noreply@egnex.io"
         _send_via_sendgrid(
             cfg["sendgrid_api_key"], from_email, cfg["from_name"],
-            to_email, subject, body, html,
+            to_email, subject, body, html, reply_to=reply_to,
         )
         return {"sent": True, "to": to_email, "via": "sendgrid"}
 
@@ -287,6 +370,8 @@ def send_email(to_email: str, subject: str, body: str, html: str = None) -> dict
         msg["Subject"] = subject
         msg["From"]    = f"{cfg['from_name']} <{cfg['user']}>"
         msg["To"]      = to_email
+        if reply_to:
+            msg["Reply-To"] = reply_to
         msg.attach(MIMEText(body, "plain", "utf-8"))
         if html:
             msg.attach(MIMEText(html, "html", "utf-8"))

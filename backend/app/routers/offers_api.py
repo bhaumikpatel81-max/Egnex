@@ -154,15 +154,24 @@ def _fmt_inr(val) -> str:
         return str(val)
 
 
-def _send_offer_email(template_key: str, values: dict, to_emails: list[str]) -> None:
+def _send_offer_email(
+    template_key: str,
+    values: dict,
+    to_emails: list[str],
+    req_id: str | None = None,
+    actor: dict | None = None,
+) -> None:
     """Fire-and-forget offer notification — never crashes the workflow."""
     if not to_emails:
         return
     try:
-        subject, body = render_template(template_key, values)
+        from ..services.connectors import resolve_global_placeholders
+        globals_ = resolve_global_placeholders(req_id=req_id, actor=actor)
+        reply_to = globals_.get("recruiter_email") or None
+        subject, body = render_template(template_key, values, req_id=req_id, actor=actor)
         for addr in to_emails:
             try:
-                send_email(addr, subject, body)
+                send_email(addr, subject, body, reply_to=reply_to)
             except Exception as exc:
                 print(f"[offers] email to {addr} failed: {exc}")
     except Exception as exc:
@@ -370,7 +379,7 @@ def create_offer(body: CreateOfferIn, user: dict = Depends(get_current_user)):
             "joining_date":   body.joining_date,
             "step_num":       "1",
             "total_steps":    str(len(chain)),
-        }, [approver_email])
+        }, [approver_email], req_id=str(app_row["requisition_id"]), actor=user)
 
     return {"offer_id": offer_id, "status": "pending_approval", "total_steps": len(chain)}
 
@@ -601,7 +610,7 @@ def resubmit_offer(offer_id: str, user: dict = Depends(get_current_user)):
             "joining_date":   str(offer["joining_date"]) if offer["joining_date"] else "—",
             "step_num":       "1",
             "total_steps":    str(total_steps),
-        }, [approver_email])
+        }, [approver_email], req_id=str(offer["requisition_id"]), actor=user)
 
     return {"ok": True, "status": "pending_approval", "total_steps": total_steps}
 
@@ -689,7 +698,7 @@ def approve_offer_step(offer_id: str, body: ApproveIn, user: dict = Depends(get_
         "total_steps":    str(total_steps),
         "approved_at":    now_str,
         "notes":          body.notes or "—",
-    }, audit_to)
+    }, audit_to, req_id=req_id, actor=user)
 
     # ── Final step? ────────────────────────────────────────────────────────────
     if current_step >= total_steps:
@@ -730,7 +739,7 @@ def approve_offer_step(offer_id: str, body: ApproveIn, user: dict = Depends(get_
             "joining_date":   str(offer["joining_date"]) if offer["joining_date"] else "—",
             "darwin_ref":     darwin_ref,
             "approved_at":    now_str,
-        }, audit_to)
+        }, audit_to, req_id=req_id, actor=user)
 
         return {"ok": True, "status": "sent_to_darwinbox", "darwin_ref": darwin_ref}
 
@@ -759,7 +768,7 @@ def approve_offer_step(offer_id: str, body: ApproveIn, user: dict = Depends(get_
                 "joining_date":   str(offer["joining_date"]) if offer["joining_date"] else "—",
                 "step_num":       str(next_step),
                 "total_steps":    str(total_steps),
-            }, [next_email])
+            }, [next_email], req_id=req_id, actor=user)
 
     return {"ok": True, "status": "pending_approval", "current_step": next_step, "total_steps": int(total_steps)}
 
@@ -839,7 +848,7 @@ def reject_offer_step(offer_id: str, body: RejectIn, user: dict = Depends(get_cu
         "step_num":       str(current_step),
         "notes":          body.notes,
         "rejected_at":    now_str,
-    }, notify_to)
+    }, notify_to, req_id=None, actor=user)
 
     return {"ok": True, "status": "revising"}
 

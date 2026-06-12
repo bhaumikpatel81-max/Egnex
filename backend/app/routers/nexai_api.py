@@ -809,13 +809,17 @@ def _do_single_invite(app_id: str, user: dict, background_tasks: BackgroundTasks
     job     = app_row["job_title"]
     company = app_row["company"]
 
+    from ..services.connectors import resolve_global_placeholders as _resolve_globals
+    _globals = _resolve_globals(req_id=str(app_row["requisition_id"]), actor=user)
+    _reply_to = _globals.get("recruiter_email") or None
+
     try:
         email_subject, plain = _render_email_tmpl("nexai_invite", {
             "candidate_name": name,
             "job_title":      job,
             "company_name":   company,
             "interview_link": invite_url,
-        })
+        }, req_id=str(app_row["requisition_id"]), actor=user)
     except ValueError as _tmpl_err:
         email_sent  = False
         email_error = (
@@ -835,7 +839,7 @@ def _do_single_invite(app_id: str, user: dict, background_tasks: BackgroundTasks
     html = _build_invite_html(name=name, job=job, company=company, invite_url=invite_url)
 
     try:
-        send_email(app_row["email"], email_subject, plain, html=html)
+        send_email(app_row["email"], email_subject, plain, html=html, reply_to=_reply_to)
         email_sent  = True
         email_error = None
     except Exception as exc:
@@ -941,8 +945,8 @@ def bulk_nexai_invite(
         except Exception as exc:
             results.append({"app_id": app_id, "status": "failed", "reason": str(exc)})
 
-        # Small delay between invites to avoid SMTP burst
-        time.sleep(0.3)
+        # ~1s delay between invites to avoid SMTP burst
+        time.sleep(1.0)
 
     sent    = sum(1 for r in results if r.get("email_sent"))
     skipped = sum(1 for r in results if r.get("status") == "skipped")
@@ -1238,8 +1242,10 @@ def _fire_completion_email(session_id: str) -> None:
     try:
         row = query_one(
             """SELECT u.email        AS recruiter_email,
+                      u.full_name    AS recruiter_name,
                       c.full_name    AS candidate_name,
                       r.title        AS requisition_title,
+                      r.id           AS requisition_id,
                       ns.raw_score, ns.score_detail,
                       ns.transcript, ns.conversation,
                       ns.email_sent
@@ -1274,6 +1280,8 @@ def _fire_completion_email(session_id: str) -> None:
             if row["raw_score"] is not None
             else "N/A"
         )
+        _compl_actor = {"email": row["recruiter_email"], "full_name": row["recruiter_name"]}
+        _compl_req_id = str(row["requisition_id"]) if row.get("requisition_id") else None
         try:
             _et_subj, plain = _render_email_tmpl("nexai_completion", {
                 "candidate_name": row["candidate_name"],
@@ -1281,7 +1289,7 @@ def _fire_completion_email(session_id: str) -> None:
                 "ai_score":       score_display,
                 "strengths":      sd.get("strengths") or "—",
                 "concerns":       sd.get("concerns") or "—",
-            })
+            }, req_id=_compl_req_id, actor=_compl_actor)
         except ValueError as _te:
             print(f"[nexai_email] template error for session {session_id}: {_te}")
             return
@@ -1290,6 +1298,7 @@ def _fire_completion_email(session_id: str) -> None:
             subject=_et_subj,
             body=plain,
             html=html_body,
+            reply_to=row["recruiter_email"],
         )
         query(
             "UPDATE nexai_session SET email_sent = TRUE WHERE id = %s",

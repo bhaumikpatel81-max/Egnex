@@ -57,14 +57,23 @@ def _ta_manager_emails() -> list[str]:
     return [r["email"] for r in (rows or []) if r.get("email")]
 
 
-def _send_safe(template_key: str, values: dict, to_emails: list[str]) -> None:
+def _send_safe(
+    template_key: str,
+    values: dict,
+    to_emails: list[str],
+    req_id: str | None = None,
+    actor: dict | None = None,
+) -> None:
     if not to_emails:
         return
     try:
-        subject, body = render_template(template_key, values)
+        from ..services.connectors import resolve_global_placeholders
+        globals_ = resolve_global_placeholders(req_id=req_id, actor=actor)
+        reply_to = globals_.get("recruiter_email") or None
+        subject, body = render_template(template_key, values, req_id=req_id, actor=actor)
         for addr in to_emails:
             try:
-                send_email(addr, subject, body)
+                send_email(addr, subject, body, reply_to=reply_to)
             except Exception as exc:
                 print(f"[hm_api] email to {addr} failed: {exc}")
     except Exception as exc:
@@ -444,7 +453,7 @@ def ta_approve_requisition(req_id: str, user: dict = Depends(get_current_user)):
             _send_safe("hm_req_approved", {
                 "hm_name":   hm_name,
                 "req_title": req["title"],
-            }, [hm_email])
+            }, [hm_email], req_id=req_id, actor=user)
 
     return {"ok": True, "approval_status": "approved"}
 
@@ -488,6 +497,6 @@ def ta_reject_requisition(
                 "hm_name":   hm_name,
                 "req_title": req["title"],
                 "reason":    body.reason,
-            }, [hm_email])
+            }, [hm_email], req_id=req_id, actor=user)
 
     return {"ok": True, "approval_status": "rejected"}

@@ -224,14 +224,29 @@ def rescreen_application(application_id: str, actor_id=None):
         [app["requisition_id"]],
     )
 
-    # Re-parse resume from stored file
+    # Resolve resume text: fast path from cv_repository.raw_text (already extracted),
+    # fall back to re-parsing from disk if the row is missing or text is empty.
     resume_text = ""
-    if cand.get("resume_url"):
+    try:
+        _cv = query_one(
+            """SELECT cv.raw_text, cv.file_path
+               FROM cv_repository cv
+               WHERE cv.candidate_id = %s
+               ORDER BY cv.created_at DESC LIMIT 1""",
+            [str(cand["id"])],
+        )
+    except Exception:
+        _cv = None
+
+    if _cv and _cv.get("raw_text"):
+        resume_text = _cv["raw_text"]
+    elif cand.get("resume_url") or (_cv and _cv.get("file_path")):
+        _resume_path = (_cv or {}).get("file_path") or cand.get("resume_url") or ""
         try:
             from .resume_parser import extract_text as _parse_resume
-            with open(cand["resume_url"], "rb") as fh:
+            with open(_resume_path, "rb") as fh:
                 file_bytes = fh.read()
-            filename    = os.path.basename(cand["resume_url"])
+            filename = os.path.basename(_resume_path)
             resume_text, _ = _parse_resume(file_bytes, filename)
         except Exception as exc:
             print(f"[rescreen] Could not read resume for {application_id}: {exc}")

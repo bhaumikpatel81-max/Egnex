@@ -36,10 +36,11 @@ DEFAULTS: dict[str, dict] = {
             "- You can close and re-open the link within that window if needed\n"
             "- NexAI never auto-rejects — all scores are reviewed by a human recruiter\n\n"
             "Best regards,\n"
-            "Egnex Hiring Team | {{company_name}}"
+            "{{recruiter_name}} | {{company_name}}"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "company_name", "interview_link",
+            "recruiter_name", "recruiter_email",
         ],
         "category": "candidate",
     },
@@ -52,10 +53,12 @@ DEFAULTS: dict[str, dict] = {
             "Role: {{job_title}}\n"
             "AI Score: {{ai_score}}\n\n"
             "Strengths:\n{{strengths}}\n\n"
-            "Areas to Probe:\n{{concerns}}"
+            "Areas to Probe:\n{{concerns}}\n\n"
+            "Regards,\n{{company_name}} Hiring System"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "ai_score", "strengths", "concerns",
+            "company_name", "recruiter_name", "recruiter_email",
         ],
         "category": "panel",
     },
@@ -68,10 +71,11 @@ DEFAULTS: dict[str, dict] = {
             "Date & Time: {{interview_time}}\n"
             "Meeting Link: {{meet_link}}\n\n"
             "Please join on time. If you have any questions, please reply to this email.\n\n"
-            "Regards,\nEgnex Hiring Team"
+            "Regards,\n{{recruiter_name}}\n{{company_name}} Talent Acquisition"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "interview_time", "meet_link",
+            "company_name", "recruiter_name", "recruiter_email",
         ],
         "category": "candidate",
     },
@@ -90,11 +94,12 @@ DEFAULTS: dict[str, dict] = {
             "── CONCERNS / GAPS ──\n{{concerns}}\n\n"
             "── OVERALL NOTE ──\n{{overall_note}}\n\n"
             "The full transcript is available in Egnex (Interviews → Transcript).\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{company_name}} Hiring System"
         ),
         "valid_placeholders": [
             "recruiter_name", "candidate_name", "job_title", "interview_date",
             "discussion_points", "strengths", "concerns", "overall_note",
+            "company_name", "recruiter_email",
         ],
         "category": "panel",
     },
@@ -113,11 +118,12 @@ DEFAULTS: dict[str, dict] = {
             "Total CTC:    {{total_ctc}}\n"
             "Joining Date: {{joining_date}}\n\n"
             "Please log in to Egnex and navigate to Offers & Approvals to approve or reject this offer.\n\n"
-            "Regards,\nEgnex Hiring Team"
+            "Regards,\n{{recruiter_name}}\n{{company_name}} Talent Acquisition"
         ),
         "valid_placeholders": [
             "approver_name", "candidate_name", "job_title", "designation",
             "total_ctc", "joining_date", "step_num", "total_steps",
+            "company_name", "recruiter_name", "recruiter_email",
         ],
         "category": "panel",
     },
@@ -134,11 +140,12 @@ DEFAULTS: dict[str, dict] = {
             "At:          {{approved_at}}\n"
             "Notes:       {{notes}}\n\n"
             "This is an automated audit notification. No action is required at this stage.\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{company_name}} Hiring System"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "approver_name",
             "step_num", "total_steps", "approved_at", "notes",
+            "company_name", "recruiter_name", "recruiter_email",
         ],
         "category": "panel",
     },
@@ -156,11 +163,12 @@ DEFAULTS: dict[str, dict] = {
             "At:          {{rejected_at}}\n\n"
             "The offer is now in 'Revising' state. The recruiter must update the offer details "
             "and resubmit it to restart the approval chain.\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{company_name}} Hiring System"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "approver_name",
             "step_num", "notes", "rejected_at",
+            "company_name", "recruiter_name", "recruiter_email",
         ],
         "category": "panel",
     },
@@ -178,9 +186,12 @@ DEFAULTS: dict[str, dict] = {
             "Submitted by: {{hm_name}} (Hiring Manager)\n\n"
             "Please log in to Egnex and navigate to 'Req Approvals' to approve or "
             "reject this requisition.\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{company_name}} Hiring System"
         ),
-        "valid_placeholders": ["hm_name", "req_title"],
+        "valid_placeholders": [
+            "hm_name", "req_title",
+            "company_name", "recruiter_name", "recruiter_email",
+        ],
         "category": "panel",
     },
     "hm_req_approved": {
@@ -191,9 +202,12 @@ DEFAULTS: dict[str, dict] = {
             "Your requisition '{{req_title}}' has been approved by the TA team "
             "and is now active in the pipeline.\n\n"
             "Candidates can now be received and processed for this position.\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{company_name}} Hiring System"
         ),
-        "valid_placeholders": ["hm_name", "req_title"],
+        "valid_placeholders": [
+            "hm_name", "req_title",
+            "company_name", "recruiter_name", "recruiter_email",
+        ],
         "category": "panel",
     },
     "hm_req_rejected": {
@@ -205,9 +219,12 @@ DEFAULTS: dict[str, dict] = {
             "Reason: {{reason}}\n\n"
             "Please contact the TA team if you have questions or wish to revise "
             "and resubmit.\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{company_name}} Hiring System"
         ),
-        "valid_placeholders": ["hm_name", "req_title", "reason"],
+        "valid_placeholders": [
+            "hm_name", "req_title", "reason",
+            "company_name", "recruiter_name", "recruiter_email",
+        ],
         "category": "panel",
     },
 
@@ -226,13 +243,14 @@ DEFAULTS: dict[str, dict] = {
             "Qualification:  {{qualification}}\n"
             "──────────────────────────────\n\n"
             "{{jd_body}}\n\n"
-            "About Amnex:\n{{about_company}}\n\n"
+            "About {{company_name}}:\n{{about_company}}\n\n"
             "Our recruitment team will review your profile and be in touch.\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{recruiter_name}}\n{{company_name}} Talent Acquisition"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "location",
             "experience", "qualification", "jd_body", "about_company",
+            "company_name", "recruiter_name", "recruiter_email",
         ],
         "category": "candidate",
     },
@@ -251,11 +269,12 @@ DEFAULTS: dict[str, dict] = {
             "Approved At:  {{approved_at}}\n\n"
             "The offer has cleared all approval steps and has been handed off to Darwinbox "
             "for letter generation and onboarding initiation.\n\n"
-            "Regards,\nEgnex Hiring System"
+            "Regards,\n{{company_name}} Hiring System"
         ),
         "valid_placeholders": [
             "candidate_name", "job_title", "designation", "total_ctc",
             "joining_date", "darwin_ref", "approved_at",
+            "company_name", "recruiter_name", "recruiter_email",
         ],
         "category": "panel",
     },
@@ -263,7 +282,7 @@ DEFAULTS: dict[str, dict] = {
 
 # Placeholders guaranteed to be fillable for ANY application (used by custom templates)
 CUSTOM_PLACEHOLDERS: list[str] = [
-    "candidate_name", "job_title", "company_name", "recruiter_name",
+    "candidate_name", "job_title", "company_name", "recruiter_name", "recruiter_email",
 ]
 
 # Keys of all built-in templates (used to guard against deletion)
@@ -281,6 +300,7 @@ SAMPLE_VALUES: dict[str, str] = {
     "interview_time":     "Thursday, 12 June 2026 at 11:00 AM IST",
     "meet_link":          "https://meet.google.com/abc-defg-hij",
     "recruiter_name":     "Priya Sharma",
+    "recruiter_email":    "priya.sharma@amnex.com",
     # meeting_summary placeholders
     "interview_date":     "12 June 2026",
     "discussion_points":  "Candidate's sales experience, key accounts managed, CRM tools used.",
@@ -338,11 +358,20 @@ def ensure_defaults() -> None:
             except Exception as exc:
                 print(f"[email_templates] Could not seed default '{key}': {exc}")
         else:
-            # Ensure is_builtin is stamped on rows that pre-date this migration
+            # Sync body, subject, valid_placeholders, and is_builtin for existing built-in rows
             try:
                 query(
-                    "UPDATE email_template SET is_builtin = TRUE WHERE template_key = %s AND is_builtin IS DISTINCT FROM TRUE",
-                    [key],
+                    """UPDATE email_template
+                       SET is_builtin          = TRUE,
+                           subject             = %s,
+                           body                = %s,
+                           valid_placeholders  = %s::jsonb
+                       WHERE template_key = %s AND is_builtin IS NOT FALSE""",
+                    [
+                        tmpl["subject"], tmpl["body"],
+                        json.dumps(tmpl["valid_placeholders"]),
+                        key,
+                    ],
                     fetch=False,
                 )
             except Exception:
@@ -406,27 +435,42 @@ def _substitute(text: str, values: dict) -> str:
     return _PH_RE.sub(lambda m: str(values[m.group(1)]), text)
 
 
-def render_template(key: str, values: dict) -> tuple[str, str]:
+def render_template(
+    key: str,
+    values: dict,
+    req_id: str | None = None,
+    actor: dict | None = None,
+) -> tuple[str, str]:
     """
     Load template for *key*, substitute {{placeholders}} with *values*.
+
+    Global placeholders (company_name, recruiter_name, recruiter_email) are
+    auto-resolved via resolve_global_placeholders and merged BEFORE checking
+    for missing values — callers do not need to supply them explicitly.
 
     Returns (rendered_subject, rendered_body).
 
     Raises ValueError if any placeholder in subject or body cannot be filled —
     the caller must handle this and NEVER send a message containing raw braces.
     """
+    from .connectors import resolve_global_placeholders  # local import — avoids circular dep
+
     tmpl = get_template(key)
     subject = tmpl["subject"] or ""
     body    = tmpl["body"]    or ""
 
+    # Merge globals first; caller-supplied values override globals
+    merged = resolve_global_placeholders(req_id=req_id, actor=actor)
+    merged.update(values)
+
     all_ph = _find_placeholders(subject) | _find_placeholders(body)
-    missing = [p for p in all_ph if not values.get(p)]
+    missing = [p for p in all_ph if not merged.get(p)]
     if missing:
         raise ValueError(
             f"placeholder(s) have no value: {', '.join(sorted(missing))}"
         )
 
-    return _substitute(subject, values), _substitute(body, values)
+    return _substitute(subject, merged), _substitute(body, merged)
 
 
 def validate_placeholders(key: str, subject: str, body: str) -> list[str]:
