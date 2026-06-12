@@ -6080,30 +6080,12 @@ async function submitApply(){
       res=await _tr.json();
     }
     if(res.detail){_showApplyErr(res.detail);return;}
+    const score=Math.round(res.match_score??0);
     const b=res.breakdown||{};
-    const scoreColor=res.match_score>=60?'#1d6e56':res.match_score>=40?'var(--gold)':'var(--accent)';
-    const dimRows=_screeningDimRows(b);
-    const aiHtml=_screeningAiHtml(b);
-    const stabilityWarn=b.stability_status==='pending_manual'
-      ?`<p style="color:var(--gold);font-size:12px;margin-top:6px">⚠ Tenure could not be parsed — stability pending recruiter input</p>`:'';
-    resEl.innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-        <div>
-          <span style="font-size:28px;font-weight:700;color:${scoreColor}">${Math.round(res.match_score??0)}</span>
-          <span style="font-size:12px;color:var(--muted)"> / 100</span>
-        </div>
-        <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="closeApplyModal();navigate('kanban','${_reqId}')">View in pipeline →</button>
-      </div>
-      <div style="font-size:13px;margin-bottom:8px">
-        Skills matched: <strong>${b.skills_matched_count??'—'}/${b.skills_total??'—'}</strong>
-        &nbsp;·&nbsp; Matched: ${(b.matched_skills||[]).join(', ')||'—'}
-        ${(b.missing_skills||[]).length?`<br>Missing: <span style="color:var(--muted)">${b.missing_skills.join(', ')}</span>`:''}
-      </div>
-      ${dimRows?`<table style="font-size:12px;margin-bottom:8px;width:100%">${dimRows}</table>`:''}
-      ${aiHtml}
-      ${stabilityWarn}
-      ${res.warning?`<p style="color:var(--gold);font-size:12px;margin-top:4px">⚠ ${res.warning}</p>`:''}`;
-    resEl.style.display='block';
+    const stabilityNote=b.stability_status==='pending_manual'?' · stability pending':'';
+    closeApplyModal();
+    navigate('kanban',_reqId);
+    flash(`Application submitted — Score: ${score}/100${stabilityNote}`);
   }finally{btn.disabled=false;btn.textContent='Submit & screen';}
 }
 function _showApplyErr(msg){

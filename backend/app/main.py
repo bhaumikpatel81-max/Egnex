@@ -612,12 +612,19 @@ END $$""",
            ON CONFLICT (key) DO NOTHING""",
 
         # ── Migration 38: guarantee final application.status constraint ──────────
-        # Uses DROP IF EXISTS + ADD in one DO block so it runs atomically and
-        # cannot be left half-applied even if earlier DO $$ migrations silently
-        # failed on this database instance.
+        # Drops the old constraint first (safe with IF EXISTS), migrates any
+        # remaining rows that still carry legacy status names, then re-adds the
+        # final constraint. Runs atomically so it cannot be left half-applied.
         """DO $$
 BEGIN
     ALTER TABLE application DROP CONSTRAINT IF EXISTS application_status_check;
+    UPDATE application SET status='screen'        WHERE status IN ('screening','ai_screening');
+    UPDATE application SET status='shortlisted'   WHERE status='screen_passed';
+    UPDATE application SET status='interview'     WHERE status IN ('interviewing','hm_screening','panel_interview','hr_round');
+    UPDATE application SET status='documentation' WHERE status='offer_approval';
+    UPDATE application SET status='rejected'      WHERE status IN ('screen_rejected','dropped','offer_cancelled');
+    UPDATE application SET status='on_hold'       WHERE status='offer_on_hold';
+    UPDATE application SET status='hired'         WHERE status='joined';
     ALTER TABLE application ADD CONSTRAINT application_status_check
         CHECK (status IN (
             'applied','screen','nexai_bot','shortlisted','interview',
