@@ -610,6 +610,20 @@ END $$""",
              ('company_name',          'Amnex Infotechnologies Pvt. Ltd.'),
              ('ta_default_signature',  'Talent Acquisition Team')
            ON CONFLICT (key) DO NOTHING""",
+
+        # ── Migration 38: guarantee final application.status constraint ──────────
+        # Uses DROP IF EXISTS + ADD in one DO block so it runs atomically and
+        # cannot be left half-applied even if earlier DO $$ migrations silently
+        # failed on this database instance.
+        """DO $$
+BEGIN
+    ALTER TABLE application DROP CONSTRAINT IF EXISTS application_status_check;
+    ALTER TABLE application ADD CONSTRAINT application_status_check
+        CHECK (status IN (
+            'applied','screen','nexai_bot','shortlisted','interview',
+            'documentation','offered','hired','rejected','on_hold'
+        ));
+END $$""",
     ]
     for sql in migrations:
         try:

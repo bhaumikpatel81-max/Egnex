@@ -25,10 +25,8 @@ router = APIRouter(prefix="/api", tags=["hm"])
 
 _TERMINAL = frozenset({
     "hired", "rejected", "on_hold",
-    "joined", "screen_rejected", "dropped", "offer_cancelled",
 })
-_TERMINAL_TUPLE = ("hired", "rejected", "on_hold", "joined",
-                   "screen_rejected", "dropped", "offer_cancelled")
+_TERMINAL_TUPLE = ("hired", "rejected", "on_hold")
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
