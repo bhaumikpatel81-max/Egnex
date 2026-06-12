@@ -215,6 +215,78 @@ def _ingest_one(
     return {"status": "ok", "cv_id": cv_id, "mapped": map_status == "mapped"}
 
 
+def ingest_and_link(
+    data: bytes,
+    filename: str,
+    source: str,
+    uploaded_by: Optional[str],
+    candidate_id: str,
+    req_id: Optional[str],
+) -> dict:
+    """
+    Ingest a resume file and hard-link it to a known candidate + requisition.
+    Always produces map_status='mapped'. Hash-deduplication still applies —
+    if the same bytes already exist, the existing row is re-linked if unlinked.
+    Returns: {status:'ok'|'duplicate'|'error', cv_id, mapped:True}.
+    """
+    os.makedirs(_CV_STORE, exist_ok=True)
+
+    ext = Path(filename).suffix.lower().lstrip(".")
+    if not ext:
+        ext = "bin"
+    file_hash = _parser.sha256_hash(data)
+
+    existing = query_one(
+        "SELECT id, candidate_id FROM cv_repository WHERE file_hash=%s", [file_hash]
+    )
+    if existing:
+        # Existing row — update link if it's currently unmapped
+        if not existing["candidate_id"] and candidate_id:
+            query(
+                """UPDATE cv_repository
+                   SET candidate_id=%s, requisition_id=%s, map_status='mapped'
+                   WHERE id=%s""",
+                [candidate_id, req_id, str(existing["id"])],
+                fetch=False,
+            )
+            query(
+                "UPDATE candidate SET cv_repository_id=%s WHERE id=%s AND cv_repository_id IS NULL",
+                [str(existing["id"]), candidate_id],
+                fetch=False,
+            )
+        return {"status": "duplicate", "cv_id": str(existing["id"]), "mapped": True, "filename": filename}
+
+    raw_text = _parser.extract_text(data, ext)
+    skills   = _parser.extract_tier1_skills(raw_text)
+    name     = _parser.parse_candidate_name(filename)
+
+    cv_id = str(uuid.uuid4())
+    dest  = os.path.join(_CV_STORE, f"{cv_id}.{ext}")
+    with open(dest, "wb") as f:
+        f.write(data)
+
+    query(
+        """INSERT INTO cv_repository
+           (id, file_name, file_path, file_hash, file_ext, candidate_name,
+            candidate_id, requisition_id, map_status, raw_text,
+            text_vector, skills, source, uploaded_by)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'mapped',%s,
+                   to_tsvector('english', %s), %s, %s, %s)""",
+        [cv_id, filename, dest, file_hash, ext, name,
+         candidate_id, req_id, raw_text,
+         raw_text or "", skills, source, uploaded_by],
+        fetch=False,
+    )
+
+    query(
+        "UPDATE candidate SET cv_repository_id=%s WHERE id=%s AND cv_repository_id IS NULL",
+        [cv_id, candidate_id],
+        fetch=False,
+    )
+
+    return {"status": "ok", "cv_id": cv_id, "mapped": True}
+
+
 def _run_ingest_job(job_id: str, folder: str, uploaded_by: Optional[str]):
     """Background worker for scan-folder ingestion."""
     paths: list[Path] = []
@@ -339,17 +411,24 @@ def cv_search(
     rows = query(
         f"""SELECT
                cv.id, cv.file_name, cv.candidate_name, cv.map_status,
-               cv.enrich_status, cv.experience_years, cv.current_role,
+               cv.enrich_status, cv.experience_years, cv.current_position,
                cv.location, cv.ai_summary,
                cv.skills[1:8]               AS top_skills,
                cv.source, cv.created_at,
                cv.candidate_id,
                c.full_name                  AS cand_full_name,
                cv.requisition_id,
-               r.req_code, r.title          AS req_title
+               r.req_code, r.title          AS req_title,
+               lat_app.status               AS candidate_stage,
+               lat_app.id                   AS application_id
            FROM cv_repository cv
            LEFT JOIN candidate c   ON c.id = cv.candidate_id
            LEFT JOIN requisition r ON r.id = cv.requisition_id
+           LEFT JOIN LATERAL (
+               SELECT id, status FROM application
+               WHERE candidate_id = cv.candidate_id
+               ORDER BY applied_at DESC LIMIT 1
+           ) lat_app ON cv.candidate_id IS NOT NULL
            {where}
            ORDER BY cv.created_at DESC
            LIMIT %s OFFSET %s""",
@@ -364,7 +443,7 @@ def cv_search(
             "map_status":      r["map_status"],
             "enrich_status":   r["enrich_status"],
             "experience_years": r["experience_years"],
-            "current_role":    r["current_role"],
+            "current_position": r["current_position"],
             "location":        r["location"],
             "ai_summary":      r["ai_summary"],
             "top_skills":      list(r["top_skills"] or []),
@@ -375,6 +454,8 @@ def cv_search(
             "requisition_id":  str(r["requisition_id"]) if r["requisition_id"] else None,
             "req_code":        r["req_code"],
             "req_title":       r["req_title"],
+            "candidate_stage": r["candidate_stage"],
+            "application_id":  str(r["application_id"]) if r["application_id"] else None,
         }
 
     return {"total": total, "results": [_row(r) for r in rows]}
@@ -491,6 +572,70 @@ def scan_folder(
     )
     background_tasks.add_task(_run_ingest_job, job_id, inbox, user["sub"])
     return {"job_id": job_id, "message": "Ingest job started"}
+
+
+# ── Backfill: sync uploaded candidate resumes into CV Repository ──────────────
+
+@router.post("/backfill-candidates")
+def backfill_candidates(user: dict = Depends(_cv_auth)):
+    """
+    Idempotent — walks all candidates that have a resume file stored on disk
+    (resume_url points to a file in UPLOADS_DIR) and ingests each one into
+    cv_repository with map_status='mapped' and source='application'.
+    Hash dedupe ensures running twice is safe.
+    Returns counts: {processed, duplicates, skipped, errors}.
+    """
+    if user.get("role") not in ("ta_manager", "admin"):
+        raise HTTPException(403, "Only ta_manager or admin can run backfill")
+
+    rows = query(
+        """SELECT c.id AS candidate_id, c.resume_url, c.full_name,
+                  a.requisition_id
+           FROM candidate c
+           LEFT JOIN LATERAL (
+               SELECT requisition_id FROM application
+               WHERE candidate_id = c.id
+               ORDER BY applied_at DESC LIMIT 1
+           ) a ON true
+           WHERE c.resume_url IS NOT NULL
+             AND c.resume_url != ''
+           ORDER BY c.id""",
+        [],
+    ) or []
+
+    processed = duplicates = skipped = 0
+    errors: list[dict] = []
+
+    for row in rows:
+        resume_path = row["resume_url"]
+        if not resume_path or not os.path.isfile(resume_path):
+            skipped += 1
+            continue
+        try:
+            data = Path(resume_path).read_bytes()
+            filename = Path(resume_path).name
+            r = ingest_and_link(
+                data=data,
+                filename=filename,
+                source="application",
+                uploaded_by=user["sub"],
+                candidate_id=str(row["candidate_id"]),
+                req_id=str(row["requisition_id"]) if row["requisition_id"] else None,
+            )
+            if r["status"] == "duplicate":
+                duplicates += 1
+            else:
+                processed += 1
+        except Exception as exc:
+            errors.append({"candidate_id": str(row["candidate_id"]), "error": str(exc)})
+
+    return {
+        "processed":  processed,
+        "duplicates": duplicates,
+        "skipped":    skipped,
+        "errors":     errors,
+        "total_candidates": len(rows),
+    }
 
 
 # ── Generate / regenerate long-lived API token ────────────────────────────────

@@ -12,8 +12,8 @@
 <meta http-equiv="Expires" content="0">
 <meta name="egnex-version" content="3.8">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=37 to bypass stale cache -->
-<script>if(!location.search.includes('v=38')){var u=location.href.split('?')[0];location.replace(u+'?v=38');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=39 to bypass stale cache -->
+<script>if(!location.search.includes('v=39')){var u=location.href.split('?')[0];location.replace(u+'?v=39');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -2390,9 +2390,11 @@ async function screenKanban(reqId) {
 
   const canApply = ['recruiter','ta_manager','admin'].includes(ME.role);
   const canNexAI = canApply;
+  const bulkStages = new Set(['screen','nexai_bot']);
 
   const colsHtml = cols.map((col,i)=>{
     const cards = cardsFor(col);
+    const isBulkCol = canNexAI && bulkStages.has(col.status);
     const cardHtml = cards.map(c=>{
     const _cr=_kbRag[c.app_id];
     const _rdot=_cr&&_cr.status!=='green'
@@ -2401,7 +2403,11 @@ async function screenKanban(reqId) {
     return `
       <div class="kb-card" draggable="true" data-app-id="${c.app_id}"
         ondragstart="kbDS(event)" ondragend="kbDE(event)">
-        <div class="cname" style="display:flex;align-items:center;gap:4px">${c.full_name}${_rdot}</div>
+        ${isBulkCol?`<label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:4px">
+          <input type="checkbox" class="bulk-cb" data-app-id="${c.app_id}" data-name="${c.full_name.replace(/"/g,'&quot;')}"
+                 onchange="_pipelineBulkChange()" style="width:14px;height:14px">
+          <span class="cname" style="display:flex;align-items:center;gap:4px">${c.full_name}${_rdot}</span>
+        </label>`:`<div class="cname" style="display:flex;align-items:center;gap:4px">${c.full_name}${_rdot}</div>`}
         <div class="cscore">Score: ${c.score!=null?Math.round(c.score):'—'} · ${c.gender||'—'}</div>
         ${canApply&&col.status==='screen'?`
           <div style="display:flex;gap:4px;margin-top:6px">
@@ -2412,9 +2418,21 @@ async function screenKanban(reqId) {
         ${canApply&&col.status==='documentation'?`<button class="btn btn-primary btn-sm" style="margin-top:6px;width:100%;background:var(--green)" onclick="openCreateOfferModal('${c.app_id}','${c.full_name.replace(/'/g,"\\'")}',event,'${reqId}')">📄 Create Offer</button>`:''}
       </div>`;
   }).join('');
+    const selectAll = isBulkCol && cards.length > 0
+      ? `<label style="font-size:11px;cursor:pointer;display:flex;align-items:center;gap:4px;color:var(--muted)">
+           <input type="checkbox" id="bulk-all-${col.status}" onchange="_pipelineBulkSelectAll('${col.status}',this.checked)" style="width:12px;height:12px">
+           all
+         </label>`
+      : '';
     return `
       <div class="kb-col">
-        <div class="kb-col-head"><span>${col.label}</span><span class="cnt">${cards.length}</span></div>
+        <div class="kb-col-head">
+          <span>${col.label}</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            ${selectAll}
+            <span class="cnt">${cards.length}</span>
+          </div>
+        </div>
         <div class="kb-col-body" ondragover="kbDO(event)" ondrop="kbDrop(event,this,'${col.status}',${col.round_seq||0})" ondragleave="kbDL(event)">
           ${cardHtml}
         </div>
@@ -2436,7 +2454,13 @@ async function screenKanban(reqId) {
       ${canApply?`<button class="btn btn-primary" onclick="openApplyModal('${reqId}')">+ Submit application</button>`:''}
     </div>
     ${assignedHtml}
-    <div class="kanban">${colsHtml}</div>`;
+    <div class="kanban">${colsHtml}</div>
+    ${canNexAI?`<div id="pipeline-bulk-bar" style="display:none;position:sticky;bottom:0;left:0;right:0;background:#fff;border-top:2px solid var(--accent);padding:10px 20px;display:none;align-items:center;gap:12px;z-index:100;box-shadow:0 -2px 12px rgba(0,0,0,.08)">
+      <span id="pipeline-bulk-count" style="font-weight:600;color:var(--accent)">0 selected</span>
+      <button class="btn btn-primary" onclick="_pipelineBulkInvite('${reqId}')">📧 Send NexAI Invite (<span id="pipeline-bulk-n">0</span>)</button>
+      <button class="btn btn-ghost btn-sm" onclick="_pipelineBulkClear()">✕ Clear</button>
+    </div>`:''}
+    `;
 }
 
 let _dragAppId=null;
@@ -2469,6 +2493,91 @@ async function rejectScreening(appId){
   if(res){flash('Candidate rejected at screening.');
     if(_kanbanReqId) screenKanban(_kanbanReqId); else screenCandidates();
   }
+}
+
+// ── Pipeline bulk NexAI invite ────────────────────────────────────────────────
+function _pipelineBulkChange(){
+  const checked = [...document.querySelectorAll('.bulk-cb:checked')];
+  const bar = document.getElementById('pipeline-bulk-bar');
+  const n = checked.length;
+  if(bar){
+    bar.style.display = n > 0 ? 'flex' : 'none';
+    const cnt = document.getElementById('pipeline-bulk-count');
+    const nEl = document.getElementById('pipeline-bulk-n');
+    if(cnt) cnt.textContent = `${n} selected`;
+    if(nEl) nEl.textContent = n;
+  }
+}
+
+function _pipelineBulkSelectAll(status, checked){
+  document.querySelectorAll('.kb-col').forEach(col => {
+    if(col.querySelector(`#bulk-all-${status}`)){
+      col.querySelectorAll('.bulk-cb').forEach(cb => cb.checked = checked);
+    }
+  });
+  _pipelineBulkChange();
+}
+
+function _pipelineBulkClear(){
+  document.querySelectorAll('.bulk-cb').forEach(cb => cb.checked = false);
+  document.querySelectorAll('[id^="bulk-all-"]').forEach(cb => cb.checked = false);
+  _pipelineBulkChange();
+}
+
+async function _pipelineBulkInvite(reqId){
+  const checked = [...document.querySelectorAll('.bulk-cb:checked')];
+  if(!checked.length) return;
+  const names = checked.map(cb => cb.dataset.name).join(', ');
+  if(!confirm(`Send NexAI AI Interview invite to ${checked.length} candidate(s)?\n\n${names}`)) return;
+
+  const appIds = checked.map(cb => cb.dataset.appId);
+  const bar = document.getElementById('pipeline-bulk-bar');
+  if(bar){ bar.innerHTML = `<span style="color:var(--accent);font-weight:600">Sending… please wait</span>`; }
+
+  const res = await api('/api/nexai/bulk-invite', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({application_ids: appIds})
+  });
+
+  if(!res || res.detail){
+    flash(res?.detail || 'Bulk invite failed', false);
+    screenPipeline(reqId);
+    return;
+  }
+
+  const {sent=0, skipped=0, failed=0, results=[]} = res;
+  const skippedRows = results.filter(r=>r.status==='skipped').map(r=>`• ${r.candidate_name||r.app_id}: ${r.reason}`).join('\n');
+  const failedRows  = results.filter(r=>r.status==='error').map(r=>`• ${r.candidate_name||r.app_id}: ${r.reason}`).join('\n');
+
+  let summaryHtml = `<div style="padding:0 0 12px">
+    <div style="display:flex;gap:24px;margin-bottom:16px">
+      <div style="text-align:center"><div style="font-size:28px;font-weight:700;color:var(--green)">${sent}</div><div style="font-size:12px;color:var(--muted)">Sent</div></div>
+      <div style="text-align:center"><div style="font-size:28px;font-weight:700;color:#f39c12">${skipped}</div><div style="font-size:12px;color:var(--muted)">Skipped</div></div>
+      <div style="text-align:center"><div style="font-size:28px;font-weight:700;color:#c0392b">${failed}</div><div style="font-size:12px;color:var(--muted)">Failed</div></div>
+    </div>`;
+  if(skippedRows) summaryHtml += `<div style="font-size:12px;margin-bottom:8px"><strong>Skipped:</strong><pre style="margin:4px 0;white-space:pre-wrap;font-size:11px;color:var(--muted)">${skippedRows}</pre></div>`;
+  if(failedRows)  summaryHtml += `<div style="font-size:12px"><strong>Failed:</strong><pre style="margin:4px 0;white-space:pre-wrap;font-size:11px;color:#c0392b">${failedRows}</pre></div>`;
+  summaryHtml += `<button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="navigator.clipboard?.writeText(\`Sent:${sent}\\nSkipped:${skipped}\\nFailed:${failed}\\n${skippedRows}\\n${failedRows}\`.trim()).then(()=>flash('Copied'))">📋 Copy summary</button>`;
+  summaryHtml += `</div>`;
+
+  // Show results modal inline
+  const existing = document.getElementById('_bulk-result-overlay');
+  if(existing) existing.remove();
+  const ov = document.createElement('div');
+  ov.id = '_bulk-result-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center';
+  ov.innerHTML = `<div style="background:#fff;border-radius:8px;padding:24px;max-width:460px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <strong style="font-size:15px">NexAI Bulk Invite — Results</strong>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('_bulk-result-overlay').remove()">✕</button>
+    </div>
+    ${summaryHtml}
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if(e.target===ov) ov.remove(); });
+  flash(`${sent} invite${sent!==1?'s':''} sent, ${skipped} skipped, ${failed} failed.`, sent > 0 || skipped > 0);
+  screenPipeline(reqId);
 }
 
 // ── SCREEN: Candidates ────────────────────────────────────────────────────────
@@ -2831,7 +2940,11 @@ const _VERDICT_COLOR = {
   'Strong Hire':'pf-sh','Hire':'pf-h','No Hire':'pf-nh','Strong No Hire':'pf-snh',
 };
 
-function closeScorecardModal(){ document.getElementById('sc-modal').classList.remove('open'); }
+let _scOnSubmit = null;
+function closeScorecardModal(){
+  document.getElementById('sc-modal').classList.remove('open');
+  _scOnSubmit = null;
+}
 
 async function openScorecardModal(interviewId){
   _scInterviewId = interviewId;
@@ -3000,6 +3113,7 @@ async function scSubmit(){
 
   _scLocked = true;
   flash('Scorecard submitted!');
+  if(_scOnSubmit){ try{ _scOnSubmit(); }catch(e){} _scOnSubmit=null; }
   const sc = res.scorecard;
   const scoreDisplay = sc.overall_score ? sc.overall_score.toFixed(1) : '—';
 
@@ -4050,6 +4164,20 @@ async function screenSettings(){
             ✓ Resolved effective URL: <strong>${_buEffective}</strong> <span style="color:var(--muted)">(source: ${_buSource})</span>
            </div>`}
 
+      <div class="form-group" style="margin-top:16px;margin-bottom:8px">
+        <label style="display:flex;align-items:center;gap:10px">
+          <span>Auto-send JD email on application</span>
+          <input type="checkbox" id="cfg-auto-jd-email" ${cfg.auto_jd_email!=='false'?'checked':''} style="width:16px;height:16px">
+        </label>
+        <span style="font-size:11px;color:var(--muted)">Automatically send the "Application Received — Job Description" email to every candidate who applies.</span>
+      </div>
+
+      <div class="form-group" style="margin-bottom:16px">
+        <label>About Company (used in JD emails)</label>
+        <textarea id="cfg-about-company" rows="4" style="width:100%;resize:vertical;font-family:inherit;font-size:13px;padding:8px;border:1px solid var(--border);border-radius:4px">${(cfg.about_company_text||'').replace(/</g,'&lt;')}</textarea>
+        <span style="font-size:11px;color:var(--muted)">Inserted as {{about_company}} in the application confirmation email.</span>
+      </div>
+
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
         <button class="btn btn-ghost" onclick="testEmail()" id="test-email-btn">Send test email</button>
@@ -4136,11 +4264,13 @@ async function saveSettings(){
   const msg=document.getElementById('settings-msg');
   msg.textContent='Saving…';msg.style.color='var(--muted)';
   const body={
-    smtp_user:      document.getElementById('cfg-smtp-user').value.trim(),
-    smtp_from_name: document.getElementById('cfg-smtp-name').value.trim(),
-    smtp_host:      (document.getElementById('cfg-smtp-host')||{value:''}).value.trim(),
-    smtp_port:      (document.getElementById('cfg-smtp-port')||{value:''}).value.trim(),
-    app_base_url:   document.getElementById('cfg-base-url').value.trim(),
+    smtp_user:          document.getElementById('cfg-smtp-user').value.trim(),
+    smtp_from_name:     document.getElementById('cfg-smtp-name').value.trim(),
+    smtp_host:          (document.getElementById('cfg-smtp-host')||{value:''}).value.trim(),
+    smtp_port:          (document.getElementById('cfg-smtp-port')||{value:''}).value.trim(),
+    app_base_url:       document.getElementById('cfg-base-url').value.trim(),
+    about_company_text: (document.getElementById('cfg-about-company')||{value:''}).value.trim(),
+    auto_jd_email:      document.getElementById('cfg-auto-jd-email')?.checked ? 'true' : 'false',
   };
   const sgKey=document.getElementById('cfg-sg-key').value.trim();
   if(sgKey) body.sendgrid_api_key=sgKey;
@@ -4655,6 +4785,333 @@ async function screenHMReports(){
   }else{
     document.querySelector('#chm-outcomes')?.closest('.chart-wrap')?.insertAdjacentHTML('afterend','<p class="empty">No outcomes recorded yet.</p>');
   }
+}
+
+// ── SCREEN: HM Dashboard ─────────────────────────────────────────────────────
+let _hmDashData = null;
+
+async function screenHMDashboard(){
+  _currentScreen = 'hm_dashboard';
+  setTitle('My Dashboard');
+  document.getElementById('content').innerHTML =
+    '<p class="empty" style="padding:40px">Loading dashboard…</p>';
+
+  const d = await api('/api/hm/dashboard');
+  if(!d){ showErr('Could not load HM dashboard.'); return; }
+  _hmDashData = d;
+
+  const kpi = d.kpi_strip || {};
+  const queue = d.action_queue || [];
+  const reqs  = d.my_reqs || [];
+
+  const ragDot = (r) => {
+    const c = r==='red'?'#e74c3c':r==='amber'?'#f39c12':'#27ae60';
+    return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c};margin-right:6px;flex-shrink:0"></span>`;
+  };
+
+  const daysLabel = (n) => {
+    const d = Math.round(n||0);
+    return d <= 0 ? 'today' : `${d}d waiting`;
+  };
+
+  // KPI strip
+  const kpiHtml = `
+    <div class="stage-grid" style="margin-bottom:24px">
+      <div class="stage-card"><div class="n">${kpi.open_reqs??0}</div><div class="lbl">Open Reqs</div></div>
+      <div class="stage-card"><div class="n">${kpi.candidates_in_pipeline??0}</div><div class="lbl">In Pipeline</div></div>
+      <div class="stage-card"><div class="n" style="${(kpi.avg_days_pending_feedback||0)>3?'color:var(--accent)':''}">${kpi.avg_days_pending_feedback!=null?kpi.avg_days_pending_feedback.toFixed(1):'—'}</div><div class="lbl">Avg Days Pending Feedback</div></div>
+      <div class="stage-card"><div class="n" style="${(kpi.sla_breaches||0)>0?'color:#e74c3c':''}">${kpi.sla_breaches??0}</div><div class="lbl">SLA Breaches</div></div>
+    </div>`;
+
+  // Action queue cards
+  const scorecardsHtml = (queue.filter(i=>i.type==='scorecard')||[]).map(item=>`
+    <div class="card" id="hm-sc-card-${item.interview_id}" style="margin-bottom:12px;display:flex;align-items:flex-start;gap:12px;padding:14px 16px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;font-weight:600;font-size:14px;margin-bottom:3px">
+          ${ragDot(item.rag?.status)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.candidate_name}</span>
+          <span style="margin-left:8px;font-size:11px;color:var(--muted);font-weight:400;white-space:nowrap">${daysLabel(item.days_waiting)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">${item.req_title} · ${item.round_name}</div>
+      </div>
+      <button class="btn btn-primary" style="font-size:12px;padding:5px 12px;flex-shrink:0"
+        onclick="_hmOpenScorecard('${item.interview_id}')">Give Feedback</button>
+    </div>`).join('');
+
+  const approvalsHtml = (queue.filter(i=>i.type==='approval')||[]).map(item=>`
+    <div class="card" id="hm-ap-card-${item.offer_id}" style="margin-bottom:12px;display:flex;align-items:flex-start;gap:12px;padding:14px 16px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;font-weight:600;font-size:14px;margin-bottom:3px">
+          ${ragDot(item.rag?.status)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.candidate_name}</span>
+          <span style="margin-left:8px;font-size:11px;color:var(--muted);font-weight:400;white-space:nowrap">${daysLabel(item.days_waiting)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">${item.req_title} · Offer Approval (Step ${item.current_step}/${item.total_steps})</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-green" style="font-size:12px;padding:5px 12px"
+          onclick="_hmApproveOffer('${item.offer_id}','${item.candidate_name}')">Approve</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px;background:var(--danger,#c0392b);color:#fff"
+          onclick="_hmRejectOffer('${item.offer_id}','${item.candidate_name}')">Reject</button>
+      </div>
+    </div>`).join('');
+
+  const decisionsHtml = (queue.filter(i=>i.type==='decision')||[]).map(item=>`
+    <div class="card" id="hm-dec-card-${item.application_id}" style="margin-bottom:12px;display:flex;align-items:flex-start;gap:12px;padding:14px 16px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;font-weight:600;font-size:14px;margin-bottom:3px">
+          ${ragDot(item.rag?.status)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${item.candidate_name}</span>
+          <span style="margin-left:8px;font-size:11px;color:var(--muted);font-weight:400;white-space:nowrap">${daysLabel(item.days_waiting)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">${item.req_title} · ${item.stage}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="btn btn-green" style="font-size:12px;padding:5px 12px"
+          onclick="_hmAdvanceApp('${item.application_id}','${item.candidate_name}')">Advance</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px;background:var(--danger,#c0392b);color:#fff"
+          onclick="_hmRejectApp('${item.application_id}','${item.candidate_name}')">Reject</button>
+      </div>
+    </div>`).join('');
+
+  const hasQueue = queue.length > 0;
+
+  // My Reqs mini cards
+  const approvalBadge = (s) => {
+    if(s==='pending_ta_approval') return `<span style="font-size:10px;background:#f39c12;color:#fff;padding:2px 6px;border-radius:3px;margin-left:6px">Pending TA</span>`;
+    if(s==='rejected') return `<span style="font-size:10px;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:3px;margin-left:6px">Rejected</span>`;
+    return `<span style="font-size:10px;background:#27ae60;color:#fff;padding:2px 6px;border-radius:3px;margin-left:6px">Approved</span>`;
+  };
+
+  const STAGE_MINI = ['applied','screen','nexai_bot','shortlisted','interview','documentation','offered'];
+  const reqCardsHtml = reqs.map(r=>{
+    const sc = r.stage_counts || {};
+    const funnel = STAGE_MINI.map(s=>{
+      const n = sc[s]||0;
+      return `<div style="text-align:center;flex:1">
+        <div style="font-size:13px;font-weight:600">${n}</div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">${s.slice(0,3)}</div>
+      </div>`;
+    }).join('');
+    return `
+    <div class="card" style="margin-bottom:12px;padding:14px 16px;cursor:pointer" onclick="navigate('pipeline','${r.id}')">
+      <div style="display:flex;align-items:center;margin-bottom:10px">
+        ${ragDot(r.rag?.status)}<span style="font-weight:600;font-size:14px">${r.title}</span>
+        ${approvalBadge(r.approval_status)}
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${r.status}</span>
+      </div>
+      <div style="display:flex;gap:4px;background:var(--bg2,#1a1b1e);border-radius:4px;padding:8px">
+        ${funnel}
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header" style="justify-content:space-between">
+      <h1>My Dashboard</h1>
+      <button class="btn btn-primary" onclick="openReqModal()">+ New Requisition</button>
+    </div>
+    ${kpiHtml}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+      <div>
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:12px">Action Queue ${hasQueue?`<span style="font-size:12px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;margin-left:6px">${queue.length}</span>`:''}</h2>
+        ${!hasQueue?'<p class="empty">No pending actions — all clear!</p>':''}
+        ${scorecardsHtml}${approvalsHtml}${decisionsHtml}
+      </div>
+      <div>
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:12px">My Requisitions</h2>
+        ${reqs.length===0?'<p class="empty">No requisitions yet.</p>':reqCardsHtml}
+      </div>
+    </div>`;
+}
+
+function _hmOpenScorecard(interviewId){
+  const iid = String(interviewId);
+  _scOnSubmit = () => {
+    const card = document.getElementById(`hm-sc-card-${iid}`);
+    if(card) card.remove();
+    // update queue count badge
+    const h2 = document.querySelector('#content h2');
+    const remaining = document.querySelectorAll('[id^="hm-sc-card-"],[id^="hm-ap-card-"],[id^="hm-dec-card-"]').length;
+    if(h2 && remaining === 0){
+      h2.innerHTML = 'Action Queue <span style="font-size:12px;background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;margin-left:6px">0</span>';
+    }
+  };
+  openScorecardModal(iid);
+}
+
+async function _hmApproveOffer(offerId, candidateName){
+  if(!confirm(`Approve offer for ${candidateName}?`)) return;
+  const res = await api(`/api/offers/${offerId}/approve`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({notes:''})
+  });
+  if(res && !res.detail){
+    flash(`Offer approved for ${candidateName}.`);
+    document.getElementById(`hm-ap-card-${offerId}`)?.remove();
+  }
+}
+
+async function _hmRejectOffer(offerId, candidateName){
+  const reason = prompt(`Reject offer for ${candidateName}?\nEnter reason (required):`);
+  if(reason===null) return;
+  if(!reason.trim()){ flash('A reason is required to reject.',false); return; }
+  const res = await api(`/api/offers/${offerId}/reject`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({notes:reason})
+  });
+  if(res && !res.detail){
+    flash(`Offer rejected for ${candidateName}.`);
+    document.getElementById(`hm-ap-card-${offerId}`)?.remove();
+  }
+}
+
+async function _hmAdvanceApp(applicationId, candidateName){
+  if(!confirm(`Advance ${candidateName} to the next stage?`)) return;
+  const res = await api(`/api/applications/${applicationId}/advance`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({target:null})
+  });
+  if(res && !res.detail){
+    flash(`${candidateName} advanced.`);
+    document.getElementById(`hm-dec-card-${applicationId}`)?.remove();
+  }
+}
+
+async function _hmRejectApp(applicationId, candidateName){
+  if(!confirm(`Reject ${candidateName}? This cannot be undone.`)) return;
+  const res = await api(`/api/applications/${applicationId}/advance`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({target:'rejected'})
+  });
+  if(res && !res.detail){
+    flash(`${candidateName} rejected.`);
+    document.getElementById(`hm-dec-card-${applicationId}`)?.remove();
+  }
+}
+
+// ── SCREEN: HM My Requisitions ────────────────────────────────────────────────
+async function screenHMMyReqs(){
+  _currentScreen = 'hm_my_reqs';
+  setTitle('My Requisitions');
+  document.getElementById('content').innerHTML =
+    '<p class="empty" style="padding:40px">Loading…</p>';
+
+  const d = await api('/api/hm/dashboard');
+  if(!d){ showErr('Could not load requisitions.'); return; }
+
+  const reqs = d.my_reqs || [];
+  const ragDot = (r) => {
+    const c = r==='red'?'#e74c3c':r==='amber'?'#f39c12':'#27ae60';
+    return `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${c};margin-right:6px;flex-shrink:0"></span>`;
+  };
+  const approvalBadge = (s) => {
+    if(s==='pending_ta_approval') return `<span style="font-size:10px;background:#f39c12;color:#fff;padding:2px 6px;border-radius:3px;margin-left:6px">Pending TA Approval</span>`;
+    if(s==='rejected') return `<span style="font-size:10px;background:#e74c3c;color:#fff;padding:2px 6px;border-radius:3px;margin-left:6px">Rejected by TA</span>`;
+    return `<span style="font-size:10px;background:#27ae60;color:#fff;padding:2px 6px;border-radius:3px;margin-left:6px">Active</span>`;
+  };
+  const STAGE_MINI = ['applied','screen','nexai_bot','shortlisted','interview','documentation','offered'];
+
+  const cardsHtml = reqs.map(r=>{
+    const sc = r.stage_counts || {};
+    const funnel = STAGE_MINI.map(s=>{
+      const n = sc[s]||0;
+      return `<div style="text-align:center;flex:1;cursor:pointer" onclick="navigate('pipeline','${r.id}')">
+        <div style="font-size:14px;font-weight:700">${n}</div>
+        <div style="font-size:9px;color:var(--muted);text-transform:uppercase">${s.slice(0,4)}</div>
+      </div>`;
+    }).join('');
+    return `
+    <div class="card" style="margin-bottom:14px;padding:16px 18px">
+      <div style="display:flex;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:4px">
+        ${ragDot(r.rag?.status)}<span style="font-weight:700;font-size:15px">${r.title}</span>
+        ${approvalBadge(r.approval_status)}
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">${r.status}</span>
+      </div>
+      <div style="display:flex;gap:4px;background:var(--bg2,#1a1b1e);border-radius:4px;padding:10px;margin-bottom:10px">
+        ${funnel}
+      </div>
+      ${r.approval_status==='approved'?`<button class="btn btn-ghost" style="font-size:12px" onclick="navigate('pipeline','${r.id}')">View Pipeline →</button>`:''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header" style="justify-content:space-between">
+      <h1>My Requisitions</h1>
+      <button class="btn btn-primary" onclick="openReqModal()">+ New Requisition</button>
+    </div>
+    ${reqs.length===0?'<p class="empty">No requisitions yet. Create one above.</p>':cardsHtml}`;
+}
+
+// ── SCREEN: TA Req Approvals ──────────────────────────────────────────────────
+async function screenTAReqApprovals(){
+  _currentScreen = 'ta_req_approvals';
+  setTitle('Requisition Approvals');
+  document.getElementById('content').innerHTML =
+    '<p class="empty" style="padding:40px">Loading…</p>';
+
+  const reqs = await api('/api/hm/ta-pending-reqs');
+  if(!reqs){ showErr('Could not load pending approvals.'); return; }
+
+  const rowsHtml = reqs.map(r=>`
+    <div class="card" id="ta-req-card-${r.id}" style="margin-bottom:12px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:14px;margin-bottom:3px">${r.title}</div>
+        <div style="font-size:12px;color:var(--muted)">
+          Raised by <strong>${r.hm_name||r.created_by_name||'HM'}</strong> · ${r.openings} opening${r.openings!==1?'s':''}
+          ${r.business_unit?` · ${r.business_unit}`:''}${r.band?` · ${r.band}`:''}
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">Submitted ${r.created_at?new Date(r.created_at).toLocaleDateString():'—'}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+        <button class="btn btn-green" style="font-size:12px;padding:5px 12px"
+          onclick="_taApproveReq(${r.id},'${r.title.replace(/'/g,"\\'")}')">Approve</button>
+        <button class="btn" style="font-size:12px;padding:5px 12px;background:var(--danger,#c0392b);color:#fff"
+          onclick="_taRejectReq(${r.id},'${r.title.replace(/'/g,"\\'")}')">Reject</button>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div class="page-header"><h1>Pending Requisition Approvals ${reqs.length>0?`<span style="font-size:14px;background:var(--accent);color:#fff;border-radius:10px;padding:2px 8px;margin-left:8px">${reqs.length}</span>`:''}</h1></div>
+    ${reqs.length===0?'<p class="empty">No requisitions pending approval.</p>':rowsHtml}`;
+}
+
+async function _taApproveReq(reqId, title){
+  if(!confirm(`Approve requisition "${title}"?`)) return;
+  const res = await api(`/api/requisitions/${reqId}/ta-approve`,{method:'POST'});
+  if(res && !res.detail){
+    flash(`Requisition "${title}" approved and now active.`);
+    document.getElementById(`ta-req-card-${reqId}`)?.remove();
+    _updateReqApprovalBadge();
+  } else {
+    flash(res?.detail||'Error approving requisition.',false);
+  }
+}
+
+async function _taRejectReq(reqId, title){
+  const reason = prompt(`Reject "${title}"?\nEnter reason (sent to hiring manager):`);
+  if(reason===null) return;
+  if(!reason.trim()){ flash('A reason is required to reject.',false); return; }
+  const res = await api(`/api/requisitions/${reqId}/ta-reject`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({reason})
+  });
+  if(res && !res.detail){
+    flash(`Requisition "${title}" rejected.`);
+    document.getElementById(`ta-req-card-${reqId}`)?.remove();
+    _updateReqApprovalBadge();
+  } else {
+    flash(res?.detail||'Error rejecting requisition.',false);
+  }
+}
+
+async function _updateReqApprovalBadge(){
+  if(!ME || ME.role !== 'ta_manager') return;
+  try {
+    const r = await api('/api/hm/ta-pending-count');
+    const count = r?.count||0;
+    const navEl = document.getElementById('nav-ta_req_approvals');
+    if(navEl){
+      navEl.innerHTML = `<span class="nav-icon">📝</span>${count>0?`Req Approvals (${count})`:'Req Approvals'}`;
+    }
+  } catch(e){}
 }
 
 // ── SCREEN: KPI Dashboard ─────────────────────────────────────────────────────
@@ -7630,6 +8087,7 @@ async function screenCVRepository() {
     <!-- Action buttons -->
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
       ${isAdmin ? `<button class="btn btn-ghost" onclick="_cvScanFolder()">Scan Ingest Folder</button>` : ''}
+      ${isAdmin ? `<button class="btn btn-ghost" onclick="_cvBackfillCandidates()" id="cv-backfill-btn">Sync Candidate Resumes</button>` : ''}
       <button class="btn btn-primary" onclick="_cvUploadClick()">Upload Resumes</button>
       <input id="cv-file-input" type="file" multiple accept=".pdf,.docx,.doc" style="display:none"
              onchange="_cvUploadFiles(this.files)">
@@ -7690,14 +8148,20 @@ async function _cvDoSearch() {
       : r.map_status === 'mapped'
       ? `<span class="pill" style="background:#d1fae5;color:#065f46;font-size:11px">Mapped</span>`
       : `<span class="pill" style="background:#f3f4f6;color:#6b7280;font-size:11px">Pool</span>`;
+    const stagePill = r.candidate_stage
+      ? `<span class="pill" style="background:#e0e7ff;color:#3730a3;font-size:11px">${r.candidate_stage.replace(/_/g,' ')}</span>`
+      : '';
+    const nameClick = r.candidate_id
+      ? `style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="navigate('profiles','${r.candidate_id}')"`
+      : '';
     return `<tr>
-      <td><strong>${r.candidate_name||r.file_name||'Unknown'}</strong>
-          ${r.cand_full_name && r.cand_full_name!==r.candidate_name
-            ?`<br><span style="font-size:11px;color:var(--muted)">${r.cand_full_name}</span>`:''}
+      <td><strong ${nameClick}>${r.cand_full_name||r.candidate_name||r.file_name||'Unknown'}</strong>
+          ${r.req_title ? `<br><span style="font-size:11px;color:var(--muted)">${r.req_title}</span>` : ''}
+          ${stagePill}
       </td>
       <td style="max-width:220px">${skillChips}</td>
       <td>${r.experience_years!=null?r.experience_years+'y':'—'}</td>
-      <td>${r.current_role||'—'}</td>
+      <td>${r.current_position||'—'}</td>
       <td>${r.location||'—'}</td>
       <td>${mapBadge}</td>
       <td>${enrichPill}</td>
@@ -7718,7 +8182,7 @@ async function _cvDoSearch() {
       <table>
         <thead>
           <tr>
-            <th>Name</th><th>Top Skills</th><th>Exp</th><th>Role</th>
+            <th>Name / Req</th><th>Top Skills</th><th>Exp</th><th>Role</th>
             <th>Location</th><th>Status</th><th>AI</th><th>Actions</th>
           </tr>
         </thead>
@@ -7738,6 +8202,16 @@ function _cvOpenFile(cvId, name) {
 
 function _cvUploadClick() {
   document.getElementById('cv-file-input')?.click();
+}
+
+async function _cvBackfillCandidates() {
+  const btn = document.getElementById('cv-backfill-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  const res = await api('/api/cv/backfill-candidates', { method: 'POST' });
+  if (btn) { btn.disabled = false; btn.textContent = 'Sync Candidate Resumes'; }
+  if (!res || res.detail) { flash(res?.detail || 'Backfill failed', false); return; }
+  flash(`Sync complete — ${res.processed} new, ${res.duplicates} already linked, ${res.skipped} skipped (no file), ${res.errors.length} errors.`);
+  _cvDoSearch();
 }
 
 async function _cvUploadFiles(fileList) {
@@ -8157,9 +8631,13 @@ _resetIdle();
   try { buildNav(); } catch(e){ console.error('buildNav:',e); }
   refreshGCal().catch(()=>{});
   const hp=(location.hash||'').split(/[#\/]/);
-  const initId=hp[1]||(ME.role==='admin'?'sys_health':'dashboard');
+  const defaultScreen = ME.role==='admin' ? 'sys_health'
+    : ME.role==='hiring_manager' ? 'hm_dashboard'
+    : 'dashboard';
+  const initId=hp[1]||defaultScreen;
   const initParam=hp[2];
   try { runRoute(initId,initParam); } catch(e){ showErr(e.message); console.error('boot:',e); }
+  if(ME.role==='ta_manager') _updateReqApprovalBadge();
 })();
 </script>
 </body>

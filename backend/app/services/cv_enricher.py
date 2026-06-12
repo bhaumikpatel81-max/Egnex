@@ -43,7 +43,7 @@ Required fields:
 {
   "skills": ["array", "of", "normalized", "lowercase", "technical", "skills"],
   "experience_years": <total years of professional experience as a number, or null>,
-  "current_role": "<most recent job title, or null>",
+  "current_position": "<most recent job title, or null>",
   "location": "<city or state/country, or null>",
   "summary": "<one concise sentence describing the candidate's profile>"
 }"""
@@ -94,7 +94,7 @@ async def _enrich_one(row_id: str, raw_text: str) -> Optional[dict]:
             return {
                 "skills":           skills,
                 "experience_years": exp,
-                "current_role":     str(data.get("current_role") or "") or None,
+                "current_position":  str(data.get("current_position") or "") or None,
                 "location":         str(data.get("location") or "") or None,
                 "ai_summary":       str(data.get("summary") or "") or None,
             }
@@ -155,7 +155,7 @@ async def start_enricher():
                     """UPDATE cv_repository
                        SET skills           = %s,
                            experience_years = %s,
-                           current_role     = %s,
+                           current_position = %s,
                            location         = %s,
                            ai_summary       = %s,
                            enrich_status    = 'done',
@@ -164,7 +164,7 @@ async def start_enricher():
                     [
                         result["skills"],
                         result["experience_years"],
-                        result["current_role"],
+                        result["current_position"],
                         result["location"],
                         result["ai_summary"],
                         row_id,

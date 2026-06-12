@@ -211,6 +211,32 @@ DEFAULTS: dict[str, dict] = {
         "category": "panel",
     },
 
+    "application_received_jd": {
+        "name":    "Application Received — Job Description (Candidate Confirmation)",
+        "subject": "Your application for {{job_title}} has been received",
+        "body": (
+            "Hi {{candidate_name}},\n\n"
+            "Thank you for applying — your application for {{job_title}} "
+            "({{location}}) has been submitted successfully.\n\n"
+            "Please find the job description below:\n\n"
+            "──────────────────────────────\n"
+            "Job Title:      {{job_title}}\n"
+            "Location:       {{location}}\n"
+            "Experience:     {{experience}}\n"
+            "Qualification:  {{qualification}}\n"
+            "──────────────────────────────\n\n"
+            "{{jd_body}}\n\n"
+            "About Amnex:\n{{about_company}}\n\n"
+            "Our recruitment team will review your profile and be in touch.\n\n"
+            "Regards,\nEgnex Hiring System"
+        ),
+        "valid_placeholders": [
+            "candidate_name", "job_title", "location",
+            "experience", "qualification", "jd_body", "about_company",
+        ],
+        "category": "candidate",
+    },
+
     "offer_approved_darwinbox": {
         "name":    "Offer Fully Approved — Sent to Darwinbox (Recruiter + TA Manager)",
         "subject": "Offer fully approved — {{candidate_name}} sent to Darwinbox (Ref: {{darwin_ref}})",
@@ -274,6 +300,12 @@ SAMPLE_VALUES: dict[str, str] = {
     "hm_name":   "Bhaumik Patel",
     "req_title": "Senior Software Engineer",
     "reason":    "Budget not approved for this quarter.",
+    # application_received_jd placeholders
+    "location":       "Ahmedabad, India",
+    "experience":     "3–5 years",
+    "qualification":  "B.E. / B.Tech in Computer Science or equivalent",
+    "jd_body":        "We are looking for a motivated engineer to join our team...",
+    "about_company":  "Amnex Infotechnologies Pvt. Ltd. is a leading technology company.",
 }
 
 

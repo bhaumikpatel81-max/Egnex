@@ -712,15 +712,12 @@ def base_url_status(user: dict = Depends(get_current_user)):
 
 # ── Candidate Invite Flow ─────────────────────────────────────────────────────
 
-@router.post("/invite/send/{app_id}", status_code=201)
-def create_nexai_invite(
-    app_id: str,
-    background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user),
-):
-    """Recruiter sends an AI interview invite link to the candidate's email."""
-    if user["role"] not in ("recruiter", "ta_manager", "admin"):
-        raise HTTPException(403, "Not authorised")
+def _do_single_invite(app_id: str, user: dict, background_tasks: BackgroundTasks) -> dict:
+    """
+    Core invite logic — shared by single-invite and bulk-invite endpoints.
+    Returns the invite result dict; does NOT raise HTTP exceptions so bulk
+    callers can record per-item failures without aborting the batch.
+    """
 
     app_row = query_one(
         """SELECT a.id, a.status, c.full_name, c.email,
@@ -736,9 +733,21 @@ def create_nexai_invite(
         [app_id],
     )
     if not app_row:
-        raise HTTPException(404, "Application not found")
+        return {"status": "error", "reason": "Application not found", "app_id": app_id}
     if not app_row["email"]:
-        raise HTTPException(400, "Candidate has no email address on record")
+        return {"status": "skipped", "reason": "no_email", "app_id": app_id,
+                "candidate_name": app_row.get("full_name")}
+
+    # Skip if an active (non-expired, non-used) invite already exists
+    active = query_one(
+        """SELECT id FROM nexai_invite
+           WHERE application_id=%s AND used_at IS NULL AND expires_at > now()
+           LIMIT 1""",
+        [app_id],
+    )
+    if active:
+        return {"status": "skipped", "reason": "active_invite_exists",
+                "app_id": app_id, "candidate_name": app_row.get("full_name")}
 
     token = secrets.token_urlsafe(32)
     query(
@@ -850,6 +859,99 @@ def create_nexai_invite(
         "email_error":    email_error if not email_sent else None,
         "candidate_name": name,
         "job_title":      job,
+    }
+
+
+@router.post("/invite/send/{app_id}", status_code=201)
+def create_nexai_invite(
+    app_id: str,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """Recruiter sends an AI interview invite link to the candidate's email."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+    result = _do_single_invite(app_id, user, background_tasks)
+    # Surface skip/error reasons as HTTP errors for single-invite UI
+    if result.get("status") == "error":
+        raise HTTPException(404, result.get("reason", "Not found"))
+    if result.get("status") == "skipped":
+        raise HTTPException(400, result.get("reason", "Skipped"))
+    return result
+
+
+class BulkInviteIn(BaseModel):
+    application_ids: list[str]
+
+
+@router.post("/bulk-invite")
+def bulk_nexai_invite(
+    body: BulkInviteIn,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Send NexAI invites to multiple candidates.
+    Role scope: recruiter only for applications on their assigned reqs.
+    Returns per-application results: sent / skipped(reason) / failed(error).
+    """
+    import time
+
+    role = user["role"]
+    uid  = user["sub"]
+    if role not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    results: list[dict] = []
+    for app_id in body.application_ids:
+        # Recruiter scope check — must own the requisition via requisition_recruiter
+        if role == "recruiter":
+            scope = query_one(
+                """SELECT 1 FROM application a
+                   JOIN requisition_recruiter rr ON rr.requisition_id = a.requisition_id
+                   WHERE a.id=%s AND rr.recruiter_id=%s""",
+                [app_id, uid],
+            )
+            if not scope:
+                results.append({
+                    "app_id":  app_id,
+                    "status":  "skipped",
+                    "reason":  "not_your_requisition",
+                })
+                continue
+
+        # Check stage is appropriate for NexAI invites
+        app_check = query_one(
+            "SELECT status, id FROM application WHERE id=%s", [app_id]
+        )
+        if not app_check:
+            results.append({"app_id": app_id, "status": "error", "reason": "not_found"})
+            continue
+        if app_check["status"] not in ("applied", "screen", "nexai_bot"):
+            results.append({
+                "app_id":  app_id,
+                "status":  "skipped",
+                "reason":  f"wrong_stage:{app_check['status']}",
+            })
+            continue
+
+        try:
+            r = _do_single_invite(app_id, user, background_tasks)
+            results.append({**r, "app_id": app_id})
+        except Exception as exc:
+            results.append({"app_id": app_id, "status": "failed", "reason": str(exc)})
+
+        # Small delay between invites to avoid SMTP burst
+        time.sleep(0.3)
+
+    sent    = sum(1 for r in results if r.get("email_sent"))
+    skipped = sum(1 for r in results if r.get("status") == "skipped")
+    failed  = sum(1 for r in results if r.get("status") in ("error", "failed"))
+    return {
+        "sent":    sent,
+        "skipped": skipped,
+        "failed":  failed,
+        "results": results,
     }
 
 

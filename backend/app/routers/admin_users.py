@@ -110,13 +110,15 @@ _SECRET_KEYS = {"smtp_password", "sendgrid_api_key"}
 
 # All recognised setting keys with their defaults
 _SETTING_DEFAULTS = {
-    "sendgrid_api_key": "",
-    "smtp_user":        "",
-    "smtp_password":    "",
-    "smtp_host":        "smtp.gmail.com",
-    "smtp_port":        "587",
-    "smtp_from_name":   "Egnex Hiring",
-    "app_base_url":     "http://localhost:8000",
+    "sendgrid_api_key":   "",
+    "smtp_user":          "",
+    "smtp_password":      "",
+    "smtp_host":          "smtp.gmail.com",
+    "smtp_port":          "587",
+    "smtp_from_name":     "Egnex Hiring",
+    "app_base_url":       "http://localhost:8000",
+    "about_company_text": "Amnex Infotechnologies Pvt. Ltd. is a leading technology company specialising in smart city, public safety, and e-governance solutions.",
+    "auto_jd_email":      "true",
 }
 
 
@@ -145,23 +147,27 @@ def get_settings(user: dict = Depends(_require_admin_settings)):
 
 
 class SaveSettingsIn(BaseModel):
-    sendgrid_api_key: Optional[str] = None
-    smtp_user:        Optional[str] = None
-    smtp_password:    Optional[str] = None
-    smtp_host:        Optional[str] = None
-    smtp_port:        Optional[str] = None
-    smtp_from_name:   Optional[str] = None
-    app_base_url:     Optional[str] = None
+    sendgrid_api_key:   Optional[str] = None
+    smtp_user:          Optional[str] = None
+    smtp_password:      Optional[str] = None
+    smtp_host:          Optional[str] = None
+    smtp_port:          Optional[str] = None
+    smtp_from_name:     Optional[str] = None
+    app_base_url:       Optional[str] = None
+    about_company_text: Optional[str] = None
+    auto_jd_email:      Optional[str] = None
 
 
 @router.post("/settings")
 def save_settings(body: SaveSettingsIn, user: dict = Depends(_require_admin_settings)):
     updates = {
-        "smtp_user":      body.smtp_user,
-        "smtp_host":      body.smtp_host,
-        "smtp_port":      body.smtp_port,
-        "smtp_from_name": body.smtp_from_name,
-        "app_base_url":   body.app_base_url,
+        "smtp_user":          body.smtp_user,
+        "smtp_host":          body.smtp_host,
+        "smtp_port":          body.smtp_port,
+        "smtp_from_name":     body.smtp_from_name,
+        "app_base_url":       body.app_base_url,
+        "about_company_text": body.about_company_text,
+        "auto_jd_email":      body.auto_jd_email,
     }
     if body.smtp_password and body.smtp_password not in ("", "••••••••"):
         updates["smtp_password"] = body.smtp_password

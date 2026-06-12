@@ -47,6 +47,7 @@ from .routers.kpi_api import router as _kpi_router
 from .routers.hiring_plan_api import router as _hiring_plan_router
 from .routers.cv_api import router as _cv_router
 from .routers.hm_api import router as _hm_router
+from .routers.cv_api import ingest_and_link as _cv_ingest_and_link
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
@@ -519,7 +520,7 @@ END $$""",
             enrich_status    TEXT NOT NULL DEFAULT 'pending'
                              CHECK (enrich_status IN ('pending','done','failed')),
             experience_years NUMERIC,
-            current_role     TEXT,
+            current_position TEXT,
             location         TEXT,
             ai_summary       TEXT,
             source           TEXT NOT NULL DEFAULT 'upload'
@@ -562,11 +563,44 @@ BEGIN
     ) THEN
         EXECUTE $sql$
             ALTER TABLE requisition ADD CONSTRAINT requisition_approval_status_check
-            CHECK (approval_status IN (''approved'',''pending_ta_approval'',''rejected''))
+            CHECK (approval_status IN ('approved','pending_ta_approval','rejected'))
         $sql$;
     END IF;
 END $$""",
         "CREATE INDEX IF NOT EXISTS idx_req_approval_status ON requisition (approval_status)",
+        # ── Migration 35: is_builtin flag on email_template (added 2026-06) ─────
+        "ALTER TABLE email_template ADD COLUMN IF NOT EXISTS is_builtin BOOLEAN NOT NULL DEFAULT FALSE",
+        # ── Migration 36: widen cv_repository.source CHECK to add 'application' ─
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT conname FROM pg_constraint
+             WHERE conrelid = 'cv_repository'::regclass
+               AND contype = 'c'
+               AND pg_get_constraintdef(oid) ILIKE '%source%'
+    LOOP
+        EXECUTE 'ALTER TABLE cv_repository DROP CONSTRAINT ' || quote_ident(r.conname);
+    END LOOP;
+END $$""",
+        """DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'cv_repository'::regclass
+          AND conname = 'cv_repository_source_check'
+    ) THEN
+        EXECUTE $sql$
+            ALTER TABLE cv_repository ADD CONSTRAINT cv_repository_source_check
+            CHECK (source IN ('bulk_folder','upload','watcher','email','application'))
+        $sql$;
+    END IF;
+END $$""",
+        # Seed new settings defaults (idempotent)
+        """INSERT INTO system_settings (key, value)
+           VALUES
+             ('about_company_text', 'Amnex Infotechnologies Pvt. Ltd. is a leading technology company specialising in smart city, public safety, and e-governance solutions.'),
+             ('auto_jd_email', 'true')
+           ON CONFLICT (key) DO NOTHING""",
     ]
     for sql in migrations:
         try:
@@ -886,6 +920,80 @@ def _parse_relocate(val) -> bool | None:
     return None
 
 
+def _send_jd_email(candidate_name: str, candidate_email: str, req_id: str) -> None:
+    """
+    Send the application_received_jd confirmation email.
+    Failure is logged but never raises — must not fail the application.
+    Respects the 'auto_jd_email' system setting toggle.
+    """
+    try:
+        toggle_row = query_one(
+            "SELECT value FROM system_settings WHERE key='auto_jd_email'", []
+        )
+        if toggle_row and (toggle_row.get("value") or "true").lower() not in ("true", "1", "yes"):
+            return
+
+        req = query_one(
+            """SELECT title, hiring_location, min_experience, max_experience,
+                      job_description, key_skills
+               FROM requisition WHERE id=%s""",
+            [req_id],
+        )
+        if not req:
+            return
+
+        about_row = query_one(
+            "SELECT value FROM system_settings WHERE key='about_company_text'", []
+        )
+        about_company = (about_row or {}).get("value") or ""
+
+        # Build human-readable experience string
+        min_exp = req.get("min_experience")
+        max_exp = req.get("max_experience")
+        if min_exp is not None and max_exp is not None:
+            experience = f"{int(min_exp)}–{int(max_exp)} years"
+        elif min_exp is not None:
+            experience = f"{int(min_exp)}+ years"
+        else:
+            experience = "Not specified"
+
+        jd_raw = (req.get("job_description") or "").strip()
+
+        from .services.email_templates import get_template
+        from .services.connectors import send_email
+
+        tmpl = get_template("application_received_jd")
+        subject = tmpl["subject"]
+        body    = tmpl["body"]
+
+        # Substitute placeholders, skipping jd_body gracefully if empty
+        subs = {
+            "candidate_name": candidate_name or "Candidate",
+            "job_title":      req["title"] or "",
+            "location":       req.get("hiring_location") or "India",
+            "experience":     experience,
+            "qualification":  "As per role requirements",
+            "about_company":  about_company,
+        }
+        if jd_raw:
+            subs["jd_body"] = jd_raw
+        else:
+            # Remove the jd_body line from body rather than sending a blank placeholder
+            body = "\n".join(
+                ln for ln in body.splitlines()
+                if "{{jd_body}}" not in ln
+            )
+            subs["jd_body"] = ""  # won't appear after line removal
+
+        for k, v in subs.items():
+            subject = subject.replace("{{" + k + "}}", v)
+            body    = body.replace("{{" + k + "}}", v)
+
+        send_email(candidate_email, subject, body)
+    except Exception as exc:
+        print(f"[jd-email] Failed to send JD confirmation to {candidate_email}: {exc}")
+
+
 def _store_extended_fields(application_id: str, **kwargs):
     """
     Update the informational extended columns on an application row.
@@ -957,6 +1065,7 @@ def apply(payload: ApplyIn):
         notice_period_days=payload.notice_period_days,
         willing_to_relocate=payload.willing_to_relocate,
     )
+    _send_jd_email(payload.full_name, payload.email, payload.requisition_id)
     return {"application_id": app_row["id"], "match_score": app_row["match_score"],
             "breakdown": app_row["score_breakdown"]}
 
@@ -1045,6 +1154,19 @@ async def apply_upload(
         notice_period_days=notice_period_days,
         willing_to_relocate=_parse_relocate(willing_to_relocate),
     )
+    # Feed the resume file into the CV Repository (idempotent hash-dedupe)
+    try:
+        _cv_ingest_and_link(
+            data=file_bytes,
+            filename=file.filename or saved_name,
+            source="application",
+            uploaded_by=None,
+            candidate_id=str(cand_id),
+            req_id=requisition_id,
+        )
+    except Exception as _cv_exc:
+        print(f"[cv-ingest] Failed to link resume for candidate {cand_id}: {_cv_exc}")
+    _send_jd_email(full_name, email, requisition_id)
     return {
         "application_id": app_row["id"],
         "match_score": app_row["match_score"],
