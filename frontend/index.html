@@ -4388,13 +4388,14 @@ function _etRenderList() {
     html += `<div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:10px 2px 4px">Custom</div>`;
     html += custom.map(t => `
       <div class="card" id="et-card-${t.template_key}"
-           style="cursor:pointer;padding:10px 12px;transition:border-color .12s;border:1.5px solid ${_etCurrent===t.template_key?'var(--accent)':'var(--border)'}">
+           style="cursor:pointer;padding:10px 12px;transition:border-color .12s;border:1.5px solid ${_etCurrent===t.template_key?'var(--accent)':'var(--border)'}"
+           onclick="etOpenTemplate('${t.template_key}')">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px">
-          <div style="font-size:13px;font-weight:600;margin-bottom:2px;cursor:pointer" onclick="etOpenTemplate('${t.template_key}')">${t.name}</div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:2px">${t.name}</div>
           <button class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#e8c5c0;padding:1px 7px;font-size:11px;flex-shrink:0"
-                  onclick="etDeleteCustom('${t.template_key}','${(t.name||'').replace(/'/g,"\\'")}')">Delete</button>
+                  onclick="event.stopPropagation();etDeleteCustom('${t.template_key}','${(t.name||'').replace(/'/g,"\\'")}')">Delete</button>
         </div>
-        <div style="font-size:11px;color:var(--muted);cursor:pointer" onclick="etOpenTemplate('${t.template_key}')">
+        <div style="font-size:11px;color:var(--muted)">
           <span style="background:#ede9fe;color:#5b21b6;border-radius:8px;padding:1px 7px;font-size:11px">custom</span>
         </div>
       </div>`).join('');
