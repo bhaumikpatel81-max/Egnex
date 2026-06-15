@@ -480,10 +480,12 @@ select{background-image:none}
       <div class="form-group">
         <label>Source channels</label>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px" id="rf-channels">
-          ${['linkedin','naukri','referral','campus','direct','other'].map(ch=>`
-            <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer">
-              <input type="checkbox" id="rf-ch-${ch}" value="${ch}" style="width:auto"> ${ch}
-            </label>`).join('')}
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer"><input type="checkbox" id="rf-ch-linkedin" value="linkedin" style="width:auto"> LinkedIn</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer"><input type="checkbox" id="rf-ch-naukri" value="naukri" style="width:auto"> Naukri</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer"><input type="checkbox" id="rf-ch-referral" value="referral" style="width:auto"> Referral</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer"><input type="checkbox" id="rf-ch-campus" value="campus" style="width:auto"> Campus</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer"><input type="checkbox" id="rf-ch-direct" value="direct" style="width:auto"> Direct</label>
+          <label style="display:flex;align-items:center;gap:4px;font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;cursor:pointer"><input type="checkbox" id="rf-ch-other" value="other" style="width:auto"> Other</label>
         </div>
       </div>
     </div>
