@@ -636,15 +636,13 @@ async def parse_jd(
             content={"detail": "Provide a JD file or paste JD text."},
         )
 
-    # Call Groq LLM (reuse cv_enricher credentials/model)
+    # Call Groq — reuse the shared async client/model from interviewer_llm
+    # (same singleton, same key source, same env-var validation as NexAI/screening)
     try:
-        import openai as _openai
-        client = _openai.OpenAI(
-            api_key=_os.environ.get("GROQ_API_KEY"),
-            base_url=_os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-        )
-        resp = client.chat.completions.create(
-            model=_os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile"),
+        from ..services.interviewer_llm import _get_client as _groq_client, _model as _groq_model
+        client = _groq_client()
+        resp = await client.chat.completions.create(
+            model=_groq_model(),
             messages=[
                 {"role": "system", "content": _JD_PARSE_SYSTEM},
                 {"role": "user", "content": f"Job description:\n\n{text[:6000]}"},
