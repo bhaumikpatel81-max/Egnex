@@ -12,8 +12,8 @@
 <meta http-equiv="Expires" content="0">
 <meta name="egnex-version" content="3.8">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=41 to bypass stale cache -->
-<script>if(!location.search.includes('v=41')){var u=location.href.split('?')[0];location.replace(u+'?v=41');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=42 to bypass stale cache -->
+<script>if(!location.search.includes('v=42')){var u=location.href.split('?')[0];location.replace(u+'?v=42');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -494,6 +494,18 @@ select{background-image:none}
       <label for="rf-p1" style="text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer">P1 — Priority hire</label>
     </div>
     <div class="form-group"><label>Key skills (comma separated)</label><input id="rf-skills" placeholder="Python, PostgreSQL, GCP"></div>
+    <div style="background:#f8f7f4;border:1px solid var(--border);border-radius:6px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:8px">Fetch from JD (optional — autofills blank fields)</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <input type="file" id="rf-jd-file" accept=".pdf,.docx,.doc" style="font-size:12px;flex:1;min-width:0">
+        <span style="font-size:12px;color:var(--muted);flex-shrink:0">or paste below</span>
+      </div>
+      <textarea id="rf-jd-paste" rows="2" placeholder="Paste JD text here…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:12px;resize:vertical;margin-bottom:8px;outline:none;transition:border-color .12s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor=''"></textarea>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button type="button" class="btn btn-ghost btn-sm" id="rf-jd-parse-btn" onclick="parseJD()">Parse JD</button>
+        <span id="rf-jd-parse-msg" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
     <div class="form-group"><label>Job description</label><textarea id="rf-jd" rows="3"></textarea></div>
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px">Panel levels</div>
@@ -5453,6 +5465,9 @@ async function openReqModal(){
   document.getElementById('rf-risk').value='';
   document.getElementById('rf-priority').value='';
   ['linkedin','naukri','referral','campus','direct','other'].forEach(ch=>{const el=document.getElementById('rf-ch-'+ch);if(el)el.checked=false;});
+  const jdFile=document.getElementById('rf-jd-file');if(jdFile)jdFile.value='';
+  const jdPaste=document.getElementById('rf-jd-paste');if(jdPaste)jdPaste.value='';
+  const jdMsg=document.getElementById('rf-jd-parse-msg');if(jdMsg)jdMsg.textContent='';
   const [bus,bands,users]=await Promise.all([api('/api/business-units'),api('/api/bands'),api('/api/users')]);
   _allBUs=bus||[];
   // Build unique group company list preserving order
@@ -5791,6 +5806,53 @@ function addRound(name='',type='panel',isAuto=false){
     </select>
     <button type="button" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1" onclick="this.parentElement.remove()">×</button>`;
   document.getElementById('rounds-list').appendChild(el);
+}
+
+async function parseJD(){
+  const btn=document.getElementById('rf-jd-parse-btn');
+  const msg=document.getElementById('rf-jd-parse-msg');
+  const fileEl=document.getElementById('rf-jd-file');
+  const pasteEl=document.getElementById('rf-jd-paste');
+  const file=fileEl&&fileEl.files[0];
+  const paste=(pasteEl&&pasteEl.value.trim())||'';
+  if(!file&&!paste){msg.style.color='#c0392b';msg.textContent='Upload a file or paste JD text first.';return;}
+  btn.disabled=true;btn.textContent='Parsing…';msg.style.color='var(--muted)';msg.textContent='';
+  try{
+    const fd=new FormData();
+    if(file)fd.append('file',file);
+    if(paste)fd.append('raw_text',paste);
+    const res=await fetch('/api/requisitions/parse-jd',{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+(localStorage.getItem('token')||sessionStorage.getItem('token')||'')},
+      body:fd
+    });
+    const data=await res.json();
+    if(!res.ok){msg.style.color='#c0392b';msg.textContent=data.detail||'Parse failed.';return;}
+    const labels={
+      'rf-title':'Job Title','rf-skills':'Key Skills','rf-min-exp':'Min Exp',
+      'rf-max-exp':'Max Exp','rf-jd':'Job Description','rf-loc':'Location','rf-grade':'Grade/Level'
+    };
+    const filled=[];
+    const set=(id,val)=>{const el=document.getElementById(id);if(el&&!el.value.trim()&&val){el.value=val;filled.push(labels[id]||id);}};
+    set('rf-title',data.job_title||'');
+    set('rf-skills',(data.key_skills||[]).join(', '));
+    if(data.min_experience!=null)set('rf-min-exp',String(data.min_experience));
+    if(data.max_experience!=null)set('rf-max-exp',String(data.max_experience));
+    set('rf-jd',data.job_description||'');
+    set('rf-loc',data.hiring_location||'');
+    set('rf-grade',data.band_or_grade||'');
+    if(filled.length){
+      msg.style.color='var(--green)';
+      msg.textContent='Autofilled: '+filled.join(', ')+'. Review before submitting.';
+    } else {
+      msg.style.color='var(--muted)';
+      msg.textContent='No blank fields to fill — all already have values.';
+    }
+  } catch(e){
+    msg.style.color='#c0392b';msg.textContent='Network error — check connection.';
+  } finally {
+    btn.disabled=false;btn.textContent='Parse JD';
+  }
 }
 
 async function submitReq(){

@@ -2,8 +2,12 @@
 New pipeline API endpoints: dashboard, requisitions CRUD,
 kanban, candidates, interviews, hiring-manager review.
 """
+import json as _json
+import os as _os
+import re as _re
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..db import query, query_one
@@ -572,6 +576,112 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
             fetch=False,
         )
     return req
+
+
+_JD_PARSE_SYSTEM = """\
+You are a job description parser. Extract structured data from the job description text.
+Return ONLY a valid JSON object — no markdown fences, no prose before or after.
+
+Required fields:
+{
+  "job_title": "<role title, or null>",
+  "key_skills": ["list", "of", "required", "skills"],
+  "min_experience": <minimum years of experience as a number, or null>,
+  "max_experience": <maximum years of experience as a number, or null>,
+  "job_description": "<cleaned 2-3 paragraph summary of the role and responsibilities>",
+  "hiring_location": "<city or location mentioned, or null>",
+  "band_or_grade": "<band, grade, or level if mentioned, or null>"
+}"""
+
+
+def _jd_safe_float(val) -> Optional[float]:
+    try:
+        return float(val) if val is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+@router.post("/requisitions/parse-jd")
+async def parse_jd(
+    file: Optional[UploadFile] = File(None),
+    raw_text: str = Form(""),
+    user: dict = Depends(get_current_user),
+):
+    role = user.get("role", "")
+    if role not in ("recruiter", "ta_manager", "hiring_manager", "admin"):
+        raise HTTPException(403, "Not authorised to use JD parsing")
+
+    # Extract text from file or use pasted text
+    text = ""
+    if file and file.filename:
+        suffix = _os.path.splitext(file.filename or "")[1].lower().lstrip(".")
+        if suffix not in ("pdf", "docx", "doc"):
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "Unsupported file type. Upload a PDF or Word document (.pdf, .docx, .doc)."},
+            )
+        file_bytes = await file.read()
+        from ..services.cv_parser import extract_text as _cv_extract_text
+        text = _cv_extract_text(file_bytes, suffix)
+        if not text.strip():
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "Could not extract text from the uploaded file. Try pasting the JD text instead."},
+            )
+    elif raw_text.strip():
+        text = raw_text.strip()
+    else:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Provide a JD file or paste JD text."},
+        )
+
+    # Call Groq LLM (reuse cv_enricher credentials/model)
+    try:
+        import openai as _openai
+        client = _openai.OpenAI(
+            api_key=_os.environ.get("GROQ_API_KEY"),
+            base_url=_os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+        )
+        resp = client.chat.completions.create(
+            model=_os.environ.get("LLM_MODEL", "llama-3.3-70b-versatile"),
+            messages=[
+                {"role": "system", "content": _JD_PARSE_SYSTEM},
+                {"role": "user", "content": f"Job description:\n\n{text[:6000]}"},
+            ],
+            temperature=0,
+            max_tokens=600,
+        )
+        raw_resp = resp.choices[0].message.content or ""
+        # Strip markdown fences before parsing
+        cleaned = _re.sub(r"^```(?:json)?\s*", "", raw_resp.strip(), flags=_re.IGNORECASE)
+        cleaned = _re.sub(r"\s*```$", "", cleaned.strip())
+        data = _json.loads(cleaned)
+    except _json.JSONDecodeError:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "The AI could not parse this JD into structured data. Try pasting cleaner text."},
+        )
+    except Exception as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": f"JD parsing failed: {str(exc)[:120]}"},
+        )
+
+    # Normalise key_skills — could be a string or a list
+    skills = data.get("key_skills") or []
+    if isinstance(skills, str):
+        skills = [s.strip() for s in skills.split(",") if s.strip()]
+
+    return {
+        "job_title":       data.get("job_title") or None,
+        "key_skills":      skills,
+        "min_experience":  _jd_safe_float(data.get("min_experience")),
+        "max_experience":  _jd_safe_float(data.get("max_experience")),
+        "job_description": data.get("job_description") or None,
+        "hiring_location": data.get("hiring_location") or None,
+        "band_or_grade":   data.get("band_or_grade") or None,
+    }
 
 
 @router.get("/requisitions/{req_id}/detail")
