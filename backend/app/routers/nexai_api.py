@@ -31,98 +31,171 @@ router = APIRouter(prefix="/api/nexai", tags=["nexai"])
 
 def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> str:
     return f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f5f4f1;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f4f1;padding:32px 16px">
-  <tr><td align="center">
-  <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,0.08);max-width:600px;width:100%">
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <!--[if mso]>
+  <xml><o:OfficeDocumentSettings><o:AllowPNG/><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+  <![endif]-->
+  <style>
+    body, table, td {{ margin:0; padding:0; }}
+    @media only screen and (max-width:600px) {{
+      .wrap {{ width:100% !important; }}
+    }}
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#f0ede8;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f0ede8" style="background-color:#f0ede8">
+  <tr><td align="center" style="padding:32px 12px">
 
-    <!-- Header -->
-    <tr><td style="background:#1a1a1a;padding:22px 32px">
-      <span style="font-size:24px;font-weight:800;color:#ffffff;letter-spacing:-0.5px">Egnex</span>
-      <span style="font-size:24px;font-weight:800;color:#f15a22">.</span>
-      <span style="font-size:12px;color:#9b9893;margin-left:12px;vertical-align:middle">One Click Hire</span>
-    </td></tr>
+    <table class="wrap" width="580" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;width:100%">
 
-    <!-- Orange accent bar -->
-    <tr><td style="background:#f15a22;height:4px;font-size:0">&nbsp;</td></tr>
-
-    <!-- Body -->
-    <tr><td style="padding:36px 32px">
-      <p style="font-size:15px;color:#1a1a1a;margin:0 0 6px">Hi <strong>{name}</strong>,</p>
-      <p style="font-size:15px;color:#444444;line-height:1.6;margin:0 0 24px">
-        Congratulations! You have been shortlisted for an <strong>AI Screening Interview</strong>.
-        Please find the details below:
-      </p>
-
-      <!-- Job card -->
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#faf9f6;border:1px solid #e5e3de;border-radius:8px;margin-bottom:28px">
-        <tr><td style="padding:16px 20px">
-          <p style="font-size:18px;font-weight:700;color:#1a1a1a;margin:0 0 4px">{job}</p>
-          <p style="font-size:13px;color:#6b6760;margin:0">{company}</p>
-        </td></tr>
-      </table>
-
-      <!-- What to expect -->
-      <p style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#f15a22;margin:0 0 10px">What to expect</p>
-      <table cellpadding="0" cellspacing="0" style="margin-bottom:28px">
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🎤&nbsp; Up to 8 spoken questions about your experience &amp; skills</td></tr>
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">⏱&nbsp; Takes approximately <strong>25–30 minutes</strong></td></tr>
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">🔇&nbsp; Find a quiet place with a working microphone</td></tr>
-        <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">✅&nbsp; NexAI <strong>never auto-rejects</strong> — all scores reviewed by a human recruiter</td></tr>
-      </table>
-
-      <!-- CTA Button — table-based for Outlook/corporate client compatibility -->
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0">
-        <tr><td align="center">
-          <!--[if mso]>
-          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
-            href="{invite_url}" style="height:52px;v-text-anchor:middle;width:260px;" arcsize="15%"
-            stroke="f" fillcolor="#f15a22">
-            <w:anchorlock/>
-            <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">
-              Start My AI Interview
-            </center>
-          </v:roundrect>
-          <![endif]-->
-          <!--[if !mso]><!-->
-          <table cellpadding="0" cellspacing="0" border="0">
+      <!-- ── HEADER ── -->
+      <tr>
+        <td bgcolor="#1a1a1a" style="background-color:#1a1a1a;border-radius:12px 12px 0 0;padding:22px 36px">
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
-              <td style="background:#f15a22;border-radius:8px;mso-padding-alt:0">
-                <a href="{invite_url}"
-                   style="display:block;background:#f15a22;color:#ffffff;padding:16px 48px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:700;letter-spacing:.3px;font-family:Arial,sans-serif;mso-hide:all">
-                  Start My AI Interview
-                </a>
+              <td valign="middle">
+                <span style="font-size:26px;font-weight:800;color:#ffffff;font-family:Arial,Helvetica,sans-serif;letter-spacing:-0.5px;line-height:1">Egnex</span><span style="font-size:26px;font-weight:800;color:#f15a22;font-family:Arial,Helvetica,sans-serif">.</span>
+                <span style="font-size:11px;color:#9b9893;font-family:Arial,Helvetica,sans-serif;margin-left:10px;vertical-align:middle">One Click Hire</span>
+              </td>
+              <td align="right" valign="middle">
+                <span style="font-size:11px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;background-color:#2d2d2d;padding:4px 10px;border-radius:20px">AI Interview</span>
               </td>
             </tr>
           </table>
-          <!--<![endif]-->
-        </td></tr>
-        <tr><td align="center" style="padding-top:16px">
-          <p style="font-size:12px;color:#9b9893;margin:0 0 6px">Or copy and paste this link in your browser:</p>
-          <a href="{invite_url}" style="font-size:12px;color:#f15a22;word-break:break-all;text-decoration:underline">{invite_url}</a>
-        </td></tr>
-      </table>
+        </td>
+      </tr>
 
-      <hr style="border:none;border-top:1px solid #e5e3de;margin:28px 0">
+      <!-- ── ORANGE STRIPE ── -->
+      <tr><td bgcolor="#f15a22" style="background-color:#f15a22;height:5px;font-size:0;line-height:0">&nbsp;</td></tr>
 
-      <!-- Notice -->
-      <table cellpadding="0" cellspacing="0">
-        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">⏳&nbsp; Once you start, you have <strong>48 hours</strong> to complete — you can close and re-open the link within that window.</td></tr>
-        <tr><td style="padding:3px 0;font-size:12px;color:#9b9893">📧&nbsp; Reply to this email if you have any questions.</td></tr>
-      </table>
-    </td></tr>
+      <!-- ── BODY ── -->
+      <tr>
+        <td bgcolor="#ffffff" style="background-color:#ffffff;padding:36px 36px 28px 36px">
 
-    <!-- Footer -->
-    <tr><td style="background:#f5f4f1;padding:16px 32px;text-align:center;border-top:1px solid #e5e3de">
-      <p style="font-size:11px;color:#9b9893;margin:0">
-        Powered by <strong>Egnex One Click Hire</strong> &nbsp;·&nbsp; {company}<br>
-        This is an automated message — please do not reply directly to this address.
-      </p>
-    </td></tr>
+          <!-- Greeting -->
+          <p style="font-size:15px;color:#1a1a1a;font-family:Arial,Helvetica,sans-serif;margin:0 0 8px 0">Hi <strong>{name}</strong>,</p>
+          <p style="font-size:15px;color:#555555;font-family:Arial,Helvetica,sans-serif;line-height:1.7;margin:0 0 30px 0">
+            Congratulations! You have been shortlisted for an <strong style="color:#1a1a1a">AI Screening Interview</strong>.<br>
+            Please review the details below and click the button to begin.
+          </p>
 
-  </table>
+          <!-- Job card with orange left border -->
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:30px">
+            <tr>
+              <td width="5" bgcolor="#f15a22" style="background-color:#f15a22;border-radius:4px 0 0 4px;font-size:0">&nbsp;</td>
+              <td bgcolor="#faf9f6" style="background-color:#faf9f6;padding:16px 20px;border:1px solid #e8e5e0;border-left:none;border-radius:0 6px 6px 0">
+                <p style="font-size:17px;font-weight:700;color:#1a1a1a;font-family:Arial,Helvetica,sans-serif;margin:0 0 4px 0">{job}</p>
+                <p style="font-size:13px;color:#f15a22;font-weight:600;font-family:Arial,Helvetica,sans-serif;margin:0">{company}</p>
+              </td>
+            </tr>
+          </table>
+
+          <!-- What to expect heading -->
+          <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;margin:0 0 12px 0">What to Expect</p>
+
+          <!-- Checklist rows -->
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:34px">
+            <tr>
+              <td style="padding:9px 0;border-bottom:1px solid #f0ede8">
+                <table cellpadding="0" cellspacing="0" border="0"><tr>
+                  <td width="32" valign="top" style="font-size:15px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
+                  <td style="font-size:14px;color:#444444;font-family:Arial,Helvetica,sans-serif;line-height:1.5">Up to <strong>8 spoken questions</strong> about your experience &amp; skills</td>
+                </tr></table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:9px 0;border-bottom:1px solid #f0ede8">
+                <table cellpadding="0" cellspacing="0" border="0"><tr>
+                  <td width="32" valign="top" style="font-size:15px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
+                  <td style="font-size:14px;color:#444444;font-family:Arial,Helvetica,sans-serif;line-height:1.5">Takes approximately <strong>25&#8211;30 minutes</strong> to complete</td>
+                </tr></table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:9px 0;border-bottom:1px solid #f0ede8">
+                <table cellpadding="0" cellspacing="0" border="0"><tr>
+                  <td width="32" valign="top" style="font-size:15px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
+                  <td style="font-size:14px;color:#444444;font-family:Arial,Helvetica,sans-serif;line-height:1.5">Find a <strong>quiet place</strong> with a working camera and microphone</td>
+                </tr></table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:9px 0">
+                <table cellpadding="0" cellspacing="0" border="0"><tr>
+                  <td width="32" valign="top" style="font-size:15px;color:#2a9d5c;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#10003;</strong></td>
+                  <td style="font-size:14px;color:#444444;font-family:Arial,Helvetica,sans-serif;line-height:1.5">NexAI <strong>never auto-rejects</strong> &#8212; all scores reviewed by a human recruiter</td>
+                </tr></table>
+              </td>
+            </tr>
+          </table>
+
+          <!-- CTA button -->
+          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px">
+            <tr><td align="center">
+              <!--[if mso]>
+              <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                href="{invite_url}" style="height:54px;v-text-anchor:middle;width:290px;" arcsize="12%"
+                stroke="f" fillcolor="#f15a22">
+                <w:anchorlock/>
+                <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:bold;">
+                  Start My AI Interview
+                </center>
+              </v:roundrect>
+              <![endif]-->
+              <!--[if !mso]><!-->
+              <table cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td bgcolor="#f15a22" style="background-color:#f15a22;border-radius:8px">
+                    <a href="{invite_url}" style="display:block;color:#ffffff;padding:16px 52px;text-decoration:none;font-size:17px;font-weight:700;font-family:Arial,Helvetica,sans-serif;letter-spacing:0.3px;text-align:center;border-radius:8px">
+                      Start My AI Interview
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <!--<![endif]-->
+            </td></tr>
+            <tr><td align="center" style="padding-top:14px">
+              <p style="font-size:12px;color:#9b9893;font-family:Arial,Helvetica,sans-serif;margin:0 0 5px 0">Or copy and paste this link in your browser:</p>
+              <a href="{invite_url}" style="font-size:11px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;word-break:break-all;text-decoration:underline">{invite_url}</a>
+            </td></tr>
+          </table>
+
+        </td>
+      </tr>
+
+      <!-- ── INFO BAR ── -->
+      <tr>
+        <td bgcolor="#faf9f6" style="background-color:#faf9f6;padding:18px 36px;border-top:2px solid #f0ede8">
+          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td style="padding:4px 0;font-size:12px;color:#6b6760;font-family:Arial,Helvetica,sans-serif;line-height:1.6">
+                &#9203;&nbsp; Once you start, you have <strong>48 hours</strong> to complete &#8212; you can close and re&#8209;open the link within that window.
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;font-size:12px;color:#6b6760;font-family:Arial,Helvetica,sans-serif;line-height:1.6">
+                &#128231;&nbsp; Reply to this email if you have any questions or need support.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- ── FOOTER ── -->
+      <tr>
+        <td bgcolor="#1a1a1a" style="background-color:#1a1a1a;padding:18px 36px;border-radius:0 0 12px 12px;text-align:center">
+          <p style="font-size:11px;color:#9b9893;font-family:Arial,Helvetica,sans-serif;margin:0;line-height:1.7">
+            Powered by <strong style="color:#f15a22">Egnex</strong> One Click Hire &nbsp;&#183;&nbsp; {company}<br>
+            This is an automated message &#8212; please do not reply directly to this address.
+          </p>
+        </td>
+      </tr>
+
+    </table>
   </td></tr>
 </table>
 </body>
