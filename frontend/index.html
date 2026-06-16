@@ -12,8 +12,8 @@
 <meta http-equiv="Expires" content="0">
 <meta name="egnex-version" content="3.9">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=45 to bypass stale cache -->
-<script>if(!location.search.includes('v=46')){var u=location.href.split('?')[0];location.replace(u+'?v=46');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=46 to bypass stale cache -->
+<script>if(!location.search.includes('v=47')){var u=location.href.split('?')[0];location.replace(u+'?v=47');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -982,7 +982,7 @@ if (!ME) { localStorage.removeItem('egnex_token'); window.location.replace('/log
 
 // ── API ───────────────────────────────────────────────────────────────────────
 async function api(path, opts = {}) {
-  if (opts.body && typeof opts.body === 'object') {
+  if (opts.body && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
     opts.body = JSON.stringify(opts.body);
     opts.headers = { ...opts.headers, 'Content-Type': 'application/json' };
   }
