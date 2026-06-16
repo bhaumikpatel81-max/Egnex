@@ -33,7 +33,8 @@ log = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-AVATAR_IMAGE_NAME = "nexai-male.png"
+AVATAR_IMAGE_MALE = "nexai-male.png"
+AVATAR_IMAGE_FEMALE = "nexai-female.png"
 
 
 # ── Config helpers ────────────────────────────────────────────────────────────
@@ -47,7 +48,9 @@ def _avatar_image_path() -> str:
             )
         ),
     )
-    return os.path.join(base, AVATAR_IMAGE_NAME)
+    gender = os.environ.get("NEXAI_VOICE_GENDER", "male").lower().strip()
+    image_name = AVATAR_IMAGE_FEMALE if gender == "female" else AVATAR_IMAGE_MALE
+    return os.path.join(base, image_name)
 
 
 def _voice_id() -> str:
@@ -260,7 +263,7 @@ async def prerender_interview_videos(session_id: str):
     if not os.path.isfile(avatar_path):
         log.warning(
             "prerender: avatar image not found at %s — "
-            "add nexai-male.png to frontend/assets/avatars/ to enable GPU rendering. "
+            "add the matching avatar PNG to frontend/assets/avatars/ to enable GPU rendering. "
             "Orb will be used for session=%s.",
             avatar_path, session_id,
         )

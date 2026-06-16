@@ -317,13 +317,29 @@ def submit_session(
         fetch=False,
     )
 
-    # Update application bot_score and combined_score
+    # Update application bot_score and combined_score (Improvement 6: use req weights)
     app_row = query_one(
-        "SELECT match_score FROM application WHERE id = %s",
+        """SELECT a.match_score, r.resume_weight, r.interview_weight
+           FROM application a
+           JOIN requisition r ON r.id = a.requisition_id
+           WHERE a.id = %s""",
         [sess["application_id"]],
     )
-    match = float(app_row["match_score"] or 0) if app_row else 0
-    combined = round(0.4 * match + 0.6 * raw_score, 1)
+    match       = float((app_row or {}).get("match_score") or 0)
+    resume_w    = float((app_row or {}).get("resume_weight")   or 0.40)
+    interview_w = float((app_row or {}).get("interview_weight") or 0.60)
+    total_w = resume_w + interview_w
+    if total_w > 0:
+        resume_w /= total_w
+        interview_w /= total_w
+    combined = round(resume_w * match + interview_w * raw_score, 1)
+    # Campus fallback: if candidate skipped resume upload, combined_score = bot_score only
+    _campus_no_resume = query_one(
+        "SELECT id FROM campus_candidate WHERE application_id=%s AND resume_uploaded=FALSE LIMIT 1",
+        [sess["application_id"]],
+    )
+    if _campus_no_resume:
+        combined = raw_score
     query(
         "UPDATE application SET bot_score = %s, combined_score = %s WHERE id = %s",
         [raw_score, combined, sess["application_id"]],
@@ -1008,6 +1024,11 @@ def validate_invite(token: str):
     exp = row["expires_at"]
     if exp and exp.replace(tzinfo=None) < datetime.utcnow():
         return {"valid": False, "reason": "This interview link has expired."}
+    # Detect campus invite so the interview page can show the resume upload widget
+    _campus_c = query_one(
+        "SELECT id FROM campus_candidate WHERE application_id=%s LIMIT 1",
+        [str(row["application_id"])],
+    )
     return {
         "valid": True,
         "candidate_name": row["full_name"],
@@ -1015,6 +1036,7 @@ def validate_invite(token: str):
         "company": row["company"],
         "application_id": str(row["application_id"]),
         "mode": _nexai_mode(),
+        "is_campus": _campus_c is not None,
     }
 
 
@@ -1419,12 +1441,29 @@ async def converse_invite(token: str, body: ConverseIn, background_tasks: Backgr
             fetch=False,
         )
 
+        # Improvement 6: use per-requisition weights for conversational mode
         app_row = query_one(
-            "SELECT match_score FROM application WHERE id = %s",
+            """SELECT a.match_score, r.resume_weight, r.interview_weight
+               FROM application a
+               JOIN requisition r ON r.id = a.requisition_id
+               WHERE a.id = %s""",
             [sess["application_id"]],
         )
-        match    = float((app_row or {}).get("match_score") or 0)
-        combined = round(0.4 * match + 0.6 * raw_score, 1)
+        match       = float((app_row or {}).get("match_score") or 0)
+        resume_w    = float((app_row or {}).get("resume_weight")   or 0.40)
+        interview_w = float((app_row or {}).get("interview_weight") or 0.60)
+        total_w = resume_w + interview_w
+        if total_w > 0:
+            resume_w /= total_w
+            interview_w /= total_w
+        combined = round(resume_w * match + interview_w * raw_score, 1)
+        # Campus fallback: if candidate skipped resume upload, combined_score = bot_score only
+        _campus_no_resume_conv = query_one(
+            "SELECT id FROM campus_candidate WHERE application_id=%s AND resume_uploaded=FALSE LIMIT 1",
+            [sess["application_id"]],
+        )
+        if _campus_no_resume_conv:
+            combined = raw_score
         query(
             "UPDATE application SET bot_score = %s, combined_score = %s, status = 'shortlisted' WHERE id = %s",
             [raw_score, combined, sess["application_id"]],

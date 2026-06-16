@@ -10,10 +10,10 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="egnex-version" content="3.8">
+<meta name="egnex-version" content="3.9">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=43 to bypass stale cache -->
-<script>if(!location.search.includes('v=43')){var u=location.href.split('?')[0];location.replace(u+'?v=43');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=45 to bypass stale cache -->
+<script>if(!location.search.includes('v=46')){var u=location.href.split('?')[0];location.replace(u+'?v=46');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -466,6 +466,25 @@ select{background-image:none}
       <div class="form-group"><label>Min exp (yrs)</label><input id="rf-min-exp" type="number" min="0" step="0.5" placeholder="2"></div>
       <div class="form-group"><label>Max exp (yrs)</label><input id="rf-max-exp" type="number" min="0" step="0.5" placeholder="8"></div>
     </div>
+    <div class="form-row" style="align-items:center">
+      <div class="form-group" style="flex:1">
+        <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13px;cursor:pointer;font-weight:normal">
+          <input type="checkbox" id="rf-fresher" style="width:auto;margin:0" onchange="_toggleFresherWeights()">
+          This is a fresher / campus role (uses education + project scoring model)
+        </label>
+      </div>
+    </div>
+    <div id="rf-weights-row" class="form-row">
+      <div class="form-group">
+        <label>Resume weight (%)</label>
+        <input id="rf-resume-weight" type="number" min="0" max="100" step="5" value="40" oninput="_syncWeights('resume')">
+      </div>
+      <div class="form-group">
+        <label>Interview weight (%)</label>
+        <input id="rf-interview-weight" type="number" min="0" max="100" step="5" value="60" oninput="_syncWeights('interview')">
+      </div>
+    </div>
+    <p id="rf-weights-hint" style="font-size:11px;color:var(--muted);margin:-8px 0 10px">Increase resume weight for senior/specialist roles. Increase interview weight for communication-heavy roles. Must sum to 100%.</p>
     <div class="form-row">
       <div class="form-group">
         <label>Priority</label>
@@ -1018,6 +1037,7 @@ const NAV_DEF = {
     {id:'hiring_plan',        icon:'📑', label:'Hiring Plan'},
     {id:'cv_repository',      icon:'📂', label:'CV Repository'},
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
+    {id:'campus_hiring',      icon:'🎓', label:'Campus Hiring'},
     {id:'team',               icon:'👥', label:'Team'},
     {id:'nexai_tracker',      icon:'🤖', label:'NexAI Tracker'},
     {id:'reports',            icon:'📊', label:'Reports & Analytics'},
@@ -1037,6 +1057,7 @@ const NAV_DEF = {
     {id:'hiring_plan',        icon:'📑', label:'Hiring Plan'},
     {id:'cv_repository',      icon:'📂', label:'CV Repository'},
     {id:'requisitions',       icon:'📋', label:'Requisitions'},
+    {id:'campus_hiring',      icon:'🎓', label:'Campus Hiring'},
     {id:'candidates',         icon:'👤', label:'Candidates'},
     {id:'nexai_tracker',      icon:'🤖', label:'NexAI Tracker'},
     {id:'interviews',         icon:'📅', label:'Interviews'},
@@ -1138,6 +1159,8 @@ const SCREENS = {
   hiring_plan: screenHiringPlan,
   // CV repository (ta_manager + recruiter + admin)
   cv_repository: screenCVRepository,
+  // Campus Hiring (ta_manager + recruiter)
+  campus_hiring: screenCampusHiring,
 };
 
 function navigate(id, param) {
@@ -2656,7 +2679,7 @@ async function screenCandidates() {
       <td style="cursor:pointer;color:var(--accent)" onclick="navigate('kanban','${r.req_id}')">${r.requisition}</td>
       <td style="font-size:12px;color:var(--muted)">${r.recruiter_name||'—'}</td>
       <td>${r.match_score!=null?`<span style="display:inline-flex;align-items:center;gap:5px">${Math.round(r.match_score)}<button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:10px;line-height:1.4;min-height:0;border-color:var(--border)" onclick="event.stopPropagation();openScoreWhy('${r.app_id}','${(r.full_name||'').replace(/'/g,"\\'")}')">why?</button></span>`:'—'}</td>
-      <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}</td>
+      <td>${r.combined_score!=null?Math.round(r.combined_score):'—'}${r.panel_consensus==='advance'?'<br><span style="font-size:10px;color:#1d6e56;white-space:nowrap">🟢 Panel: Advance</span>':r.panel_consensus==='reject'?'<br><span style="font-size:10px;color:#c0392b;white-space:nowrap">🔴 Panel: Reject</span>':r.panel_consensus==='split'?'<br><span style="font-size:10px;color:#7a5c00;white-space:nowrap">🟡 Split</span>':''}</td>
       <td><span class="pill ${r.status}">${r.status.replace(/_/g,' ')}</span></td>
       <td>${actions}</td>
     </tr>`;
@@ -5465,6 +5488,11 @@ async function openReqModal(){
   document.getElementById('rf-risk').value='';
   document.getElementById('rf-priority').value='';
   ['linkedin','naukri','referral','campus','direct','other'].forEach(ch=>{const el=document.getElementById('rf-ch-'+ch);if(el)el.checked=false;});
+  const rfFresher=document.getElementById('rf-fresher');if(rfFresher)rfFresher.checked=false;
+  const rfRW=document.getElementById('rf-resume-weight');if(rfRW)rfRW.value='40';
+  const rfIW=document.getElementById('rf-interview-weight');if(rfIW)rfIW.value='60';
+  const rfWRow=document.getElementById('rf-weights-row');if(rfWRow)rfWRow.style.display='';
+  const rfWHint=document.getElementById('rf-weights-hint');if(rfWHint)rfWHint.style.display='';
   const jdFile=document.getElementById('rf-jd-file');if(jdFile)jdFile.value='';
   const jdPaste=document.getElementById('rf-jd-paste');if(jdPaste)jdPaste.value='';
   const jdMsg=document.getElementById('rf-jd-parse-msg');if(jdMsg)jdMsg.textContent='';
@@ -5855,6 +5883,27 @@ async function parseJD(){
   }
 }
 
+// Improvement 6 — fresher toggle + weight sync helpers
+function _toggleFresherWeights(){
+  const isFresher=document.getElementById('rf-fresher').checked;
+  const row=document.getElementById('rf-weights-row');
+  const hint=document.getElementById('rf-weights-hint');
+  if(row)row.style.display=isFresher?'none':'';
+  if(hint)hint.style.display=isFresher?'none':'';
+}
+function _syncWeights(changed){
+  const r=document.getElementById('rf-resume-weight');
+  const i=document.getElementById('rf-interview-weight');
+  if(!r||!i)return;
+  if(changed==='resume'){
+    const rv=Math.min(100,Math.max(0,parseInt(r.value)||40));
+    i.value=100-rv;
+  }else{
+    const iv=Math.min(100,Math.max(0,parseInt(i.value)||60));
+    r.value=100-iv;
+  }
+}
+
 async function submitReq(){
   const title=document.getElementById('rf-title').value.trim();
   if(!title){flash('Job title is required.',false);return;}
@@ -5884,6 +5933,9 @@ async function submitReq(){
     max_experience:parseFloat(document.getElementById('rf-max-exp').value)||null,
     priority:document.getElementById('rf-priority').value||null,
     source_channels:['linkedin','naukri','referral','campus','direct','other'].filter(ch=>document.getElementById('rf-ch-'+ch)?.checked),
+    is_fresher_role:document.getElementById('rf-fresher')?.checked||false,
+    resume_weight:document.getElementById('rf-fresher')?.checked?0.40:(parseFloat(document.getElementById('rf-resume-weight')?.value||40)/100),
+    interview_weight:document.getElementById('rf-fresher')?.checked?0.60:(parseFloat(document.getElementById('rf-interview-weight')?.value||60)/100),
     rounds,
   };
   const res=await api('/api/requisitions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -6163,14 +6215,20 @@ function _showApplyErr(msg){
 function _screeningDimRows(b) {
   if (!b||!b.weights) return '';
   const w=b.weights;
+  // Improvement 2: include fresher dimensions when present
   const dims=[
+    {label:'Education fit',   score:b.education_score,  weight:w.education,  show: w.education>0},
+    {label:'Project relevance',score:b.project_score,   weight:w.project,    show: w.project>0},
     {label:'Keyword match',   score:b.skills_score,     weight:w.keyword,    show: w.keyword>0},
     {label:'Experience',      score:b.experience_score, weight:w.experience, show: w.experience>0},
     {label:'AI holistic fit', score:b.ai_score,         weight:w.ai,         show: w.ai>0},
     {label:'Stability',       score:b.stability_score,  weight:w.stability,  show: w.stability>0},
   ].filter(d=>d.show && d.score!=null);
   if(!dims.length) return '';
-  return `<thead><tr><th style="font-weight:600;color:var(--muted)">Dimension</th><th>Score</th><th>Weight</th><th>Contrib</th></tr></thead><tbody>`+
+  const fresherBadge = b.is_fresher
+    ? '<span style="margin-left:8px;font-size:10px;background:#e8f4fd;color:#1a5276;padding:1px 6px;border-radius:8px;font-weight:600">FRESHER MODEL</span>'
+    : '';
+  return `<thead><tr><th style="font-weight:600;color:var(--muted)">Dimension${fresherBadge}</th><th>Score</th><th>Weight</th><th>Contrib</th></tr></thead><tbody>`+
     dims.map(d=>{
       const contrib=Math.round(d.score*d.weight);
       const c=_scoreColor(d.score);
@@ -6179,12 +6237,26 @@ function _screeningDimRows(b) {
 }
 
 function _screeningAiHtml(b) {
+  // Improvement 1: surface Groq failure visibly instead of silently using 50
+  if (b && (b.ai_score_status === 'unavailable' || b.ai_score_fallback)) {
+    return `<div style="margin-top:8px;padding:10px 12px;background:#fff8e1;border:1px solid #f6c90e;border-radius:6px;font-size:12px;display:flex;align-items:flex-start;gap:8px">
+      <span style="font-size:16px;flex-shrink:0">⚠️</span>
+      <div>
+        <div style="font-weight:600;color:#7a5c00;margin-bottom:2px">AI score unavailable — Groq API error</div>
+        <div style="color:#7a5c00">Score shown is a fallback (50). Manual review recommended before advancing this candidate.</div>
+      </div>
+    </div>`;
+  }
   if (!b||b.scored_by==='fallback'||(!b.strengths&&!b.concerns&&!b.rationale)) return '';
+  const learningHtml = b.learning_signals
+    ? `<div><span style="font-weight:600;color:#1a5276">Learning signals:</span> ${b.learning_signals}</div>`
+    : '';
   return `<div style="margin-top:8px;padding:10px 12px;background:#faf9f6;border-radius:6px;border:1px solid var(--border);font-size:12px">
     <div style="font-weight:600;margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">AI Assessment</div>
     ${b.strengths?`<div style="margin-bottom:4px"><span style="color:#1d6e56;font-weight:600">Strengths:</span> ${b.strengths}</div>`:''}
     ${b.concerns?`<div style="margin-bottom:4px"><span style="color:#c0392b;font-weight:600">Concerns:</span> ${b.concerns}</div>`:''}
-    ${b.rationale?`<div><span style="font-weight:600;color:var(--muted)">Rationale:</span> ${b.rationale}</div>`:''}
+    ${b.rationale?`<div style="margin-bottom:4px"><span style="font-weight:600;color:var(--muted)">Rationale:</span> ${b.rationale}</div>`:''}
+    ${learningHtml}
   </div>`;
 }
 
@@ -6238,12 +6310,32 @@ async function openScoreWhy(appId, candidateName) {
     </div>`;
   }
 
+  // Improvement 4: parse quality warning banner
+  const parseWarn = b.manual_review_recommended
+    ? `<div style="margin-bottom:10px;padding:10px 12px;background:#fff8e1;border:1px solid #f6c90e;border-radius:6px;font-size:12px;display:flex;align-items:flex-start;gap:8px">
+        <span style="font-size:16px;flex-shrink:0">⚠️</span>
+        <div>
+          <div style="font-weight:600;color:#7a5c00">Resume may be image-based or scanned</div>
+          <div style="color:#7a5c00;margin-top:1px">AI scoring may be inaccurate. Recommend requesting a fresh ATS-friendly copy.</div>
+          ${b.char_count!=null?`<div style="color:var(--muted);font-size:11px;margin-top:2px">Extracted text: ${b.char_count} chars</div>`:''}
+        </div>
+      </div>`
+    : '';
+
+  // Improvement 5: panel consensus badge
+  const panelConsensusMap = {advance:'🟢 Panel: Advance',reject:'🔴 Panel: Reject',split:'🟡 Panel: Split — Review Needed'};
+  const panelBadge = b.panel_consensus
+    ? `<div style="margin-top:6px;font-size:12px">${panelConsensusMap[b.panel_consensus]||''}${b.panel_submitted_count!=null?` <span style="color:var(--muted)">(${b.panel_submitted_count} scorecard${b.panel_submitted_count===1?'':'s'})</span>`:''}</div>`
+    : '';
+
   const scoreColor = _scoreColor(d.match_score);
   document.getElementById('sw-body').innerHTML = `
+    ${parseWarn}
     <div style="margin-bottom:12px">
       <span style="font-size:26px;font-weight:700;color:${scoreColor}">${d.match_score!=null?Math.round(d.match_score):'—'}</span>
       <span style="font-size:12px;color:var(--muted)"> / 100 match score</span>
       ${isPending?'<span style="margin-left:10px;font-size:11px;color:#7a5c00;background:#fffbee;padding:2px 7px;border-radius:8px;border:1px solid #f6d860">stability pending</span>':''}
+      ${panelBadge}
     </div>
     ${dimRows?`<table style="font-size:12px;margin-bottom:10px;width:100%">${dimRows}</table>`:'<p style="font-size:12px;color:var(--muted)">No dimension detail available.</p>'}
     ${stabilityBlock}
@@ -7465,6 +7557,382 @@ async function screenRaiseTicket() {
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
 })();
+
+/* === CAMPUS BULK === */
+
+// ── Campus Hiring state ───────────────────────────────────────────────────────
+let _campusReqId = null, _campusBatchId = null;
+let _campusPage = 1, _campusTotalPages = 1, _campusTotal = 0;
+let _campusSelected = new Set();   // Set of campus_candidate IDs (strings)
+let _campusAllIds   = [];          // all IDs on current page (for select-all)
+let _campusFilterCollege = '', _campusFilterBranch = '';
+let _campusFilterCgpaMin = '', _campusFilterCgpaMax = '';
+let _campusActiveTab = 'upload';
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+async function screenCampusHiring() {
+  setTitle('Campus Hiring');
+  setActive('campus_hiring');
+  const c = document.getElementById('content');
+  c.innerHTML = `
+    <div class="page-header"><h1>🎓 Campus Hiring</h1></div>
+    <div class="tabs" id="campus-tabs">
+      <div class="tab active" id="ctab-upload"   onclick="campusTab('upload')">Upload Excel</div>
+      <div class="tab"        id="ctab-preview"  onclick="campusTab('preview')">Candidate Preview</div>
+      <div class="tab"        id="ctab-batches"  onclick="campusTab('batches')">Batch Summary</div>
+    </div>
+    <div id="campus-tab-body"></div>`;
+  campusTab('upload');
+}
+
+function campusTab(tab) {
+  _campusActiveTab = tab;
+  document.querySelectorAll('#campus-tabs .tab').forEach(t => t.classList.remove('active'));
+  const el = document.getElementById('ctab-' + tab);
+  if (el) el.classList.add('active');
+  if (tab === 'upload')   _campusRenderUpload();
+  else if (tab === 'preview') _campusRenderPreview();
+  else if (tab === 'batches') _campusRenderBatches();
+}
+
+// ── Screen 1: Upload Excel ────────────────────────────────────────────────────
+async function _campusRenderUpload() {
+  const body = document.getElementById('campus-tab-body');
+  // Fetch open requisitions
+  const reqs = await api('/api/requisitions/full') || [];
+  const openReqs = reqs.filter(r => r.status === 'open' || r.approval_status === 'approved');
+
+  body.innerHTML = `
+    <div class="card" style="max-width:640px;margin-top:16px">
+      <div class="card-title">Step 1 — Select Requisition</div>
+      <div class="form-group">
+        <label>Requisition</label>
+        <select id="campus-req-sel" onchange="_campusReqId=this.value">
+          <option value="">— choose a requisition —</option>
+          ${reqs.map(r=>`<option value="${r.id}"${r.id===_campusReqId?' selected':''}>${r.req_code||''} ${r.title}</option>`).join('')}
+        </select>
+      </div>
+      <div class="card-title" style="margin-top:18px">Step 2 — Upload Excel File</div>
+      <div id="campus-drop-zone"
+           style="border:2px dashed var(--border);border-radius:8px;padding:40px 20px;text-align:center;cursor:pointer;background:#faf9f6;transition:border-color .15s;margin-bottom:14px"
+           onclick="document.getElementById('campus-file-inp').click()"
+           ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+           ondragleave="this.style.borderColor=''"
+           ondrop="event.preventDefault();this.style.borderColor='';_campusHandleFile(event.dataTransfer.files[0])">
+        <input type="file" id="campus-file-inp" accept=".xlsx,.xls" style="display:none"
+               onchange="_campusHandleFile(this.files[0])">
+        <p style="font-size:15px;color:var(--muted)">Drag &amp; drop your Excel file here or <strong style="color:var(--accent)">click to browse</strong></p>
+        <p style="font-size:12px;color:var(--muted);margin-top:6px">.xlsx or .xls only &nbsp;|&nbsp; Max 10 MB</p>
+        <p id="campus-file-name" style="font-size:13px;color:var(--text);margin-top:10px"></p>
+      </div>
+      <p id="campus-upload-status" style="font-size:13px;min-height:18px;color:var(--muted)"></p>
+      <div id="campus-preview-wrap" style="display:none;margin-top:16px">
+        <div id="campus-detected-cols" style="font-size:12px;margin-bottom:10px;padding:8px 12px;background:#f0faf5;border-radius:6px;border:1px solid #b7e4ce;color:var(--green)"></div>
+        <div style="font-size:13px;margin-bottom:10px" id="campus-row-summary"></div>
+        <div style="overflow-x:auto">
+          <table id="campus-preview-tbl">
+            <thead><tr>
+              <th>Name</th><th>Email</th><th>College</th><th>Branch</th><th>CGPA</th><th>Grad Year</th>
+            </tr></thead>
+            <tbody id="campus-preview-body"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-primary" style="margin-top:14px" onclick="campusTab('preview')">View All Candidates &amp; Send Invites →</button>
+      </div>
+    </div>`;
+
+  if (_campusReqId) {
+    document.getElementById('campus-req-sel').value = _campusReqId;
+  }
+}
+
+let _campusPendingFile = null;
+
+async function _campusHandleFile(f) {
+  if (!f) return;
+  const reqId = document.getElementById('campus-req-sel').value;
+  if (!reqId) { flash('Please select a requisition first.', false); return; }
+  _campusReqId = reqId;
+  _campusPendingFile = f;
+  document.getElementById('campus-file-name').textContent = '📎 ' + f.name;
+  document.getElementById('campus-upload-status').textContent = 'Uploading and parsing…';
+
+  const fd = new FormData();
+  fd.append('file', f);
+  const res = await api(`/api/campus/upload?requisition_id=${reqId}`, { method:'POST', body:fd });
+  if (!res || res.detail) {
+    document.getElementById('campus-upload-status').textContent = '❌ ' + (res?.detail || 'Upload failed');
+    return;
+  }
+
+  _campusBatchId = res.batch_id;
+  _campusPage = 1;
+  _campusSelected.clear();
+
+  // Column detection display
+  const det = res.detected || {};
+  const checks = Object.entries(det).map(([k,v]) =>
+    `<span style="margin-right:10px">${v?'✅':'⬜'} ${k.replace('_',' ')}</span>`
+  ).join('');
+  document.getElementById('campus-detected-cols').innerHTML =
+    '<strong>Detected columns:</strong> ' + checks;
+
+  document.getElementById('campus-row-summary').innerHTML =
+    `<strong>${res.total_rows}</strong> valid candidates ready &nbsp;|&nbsp; ` +
+    `<span style="color:var(--muted)">${res.skipped_rows} rows skipped (blank/invalid email)</span>`;
+
+  // Preview table (first 10 rows)
+  const tbody = document.getElementById('campus-preview-body');
+  tbody.innerHTML = (res.preview || []).map(c => `
+    <tr>
+      <td>${c.name||'—'}</td><td>${c.email}</td>
+      <td>${c.college||'—'}</td><td>${c.branch||'—'}</td>
+      <td>${c.cgpa!=null?c.cgpa:'—'}</td><td>${c.graduation_year||'—'}</td>
+    </tr>`).join('');
+
+  document.getElementById('campus-preview-wrap').style.display = 'block';
+  document.getElementById('campus-upload-status').textContent = '✅ File parsed successfully.';
+}
+
+// ── Screen 2: Candidate Preview & Selection ───────────────────────────────────
+async function _campusRenderPreview() {
+  const body = document.getElementById('campus-tab-body');
+
+  if (!_campusBatchId) {
+    body.innerHTML = `<div class="empty">Upload an Excel file first to see candidates here.</div>`;
+    return;
+  }
+
+  // Check PROD_BASE_URL status
+  const urlSt = await api('/api/nexai/base-url-status') || {};
+  const isLocalUrl = urlSt.is_localhost !== false;
+
+  const res = await api(`/api/campus/batch/${_campusBatchId}?page=${_campusPage}`);
+  if (!res || res.detail) {
+    body.innerHTML = `<div class="empty">Could not load candidates.</div>`;
+    return;
+  }
+  _campusTotal = res.total;
+  _campusTotalPages = res.pages;
+  _campusAllIds = (res.candidates || []).map(c => c.id);
+
+  const statusBadge = s => {
+    const map = {
+      pending:          'pill',
+      invite_queued:    'pill ai_screening',
+      invited:          'pill nexai_bot',
+      interview_started:'pill screen',
+      completed:        'pill shortlisted',
+    };
+    const labels = {
+      pending:'Pending', invite_queued:'Queued', invited:'Invited',
+      interview_started:'In Progress', completed:'Completed',
+    };
+    return `<span class="${map[s]||'pill'}">${labels[s]||s}</span>`;
+  };
+
+  // Apply client-side filters
+  let visible = res.candidates || [];
+  if (_campusFilterCollege) visible = visible.filter(c => (c.college||'').toLowerCase().includes(_campusFilterCollege.toLowerCase()));
+  if (_campusFilterBranch)  visible = visible.filter(c => (c.branch||'').toLowerCase().includes(_campusFilterBranch.toLowerCase()));
+  if (_campusFilterCgpaMin !== '') visible = visible.filter(c => c.cgpa != null && c.cgpa >= parseFloat(_campusFilterCgpaMin));
+  if (_campusFilterCgpaMax !== '') visible = visible.filter(c => c.cgpa != null && c.cgpa <= parseFloat(_campusFilterCgpaMax));
+
+  const allChecked = visible.length > 0 && visible.every(c => _campusSelected.has(c.id));
+
+  body.innerHTML = `
+    ${isLocalUrl ? `
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 14px;font-size:13px;margin:14px 0;display:flex;align-items:center;gap:8px">
+      <span>⚠️</span>
+      <span><strong>Production URL not configured</strong> — invites will be queued and not emailed until your dev team sets <code>PROD_BASE_URL</code>.
+      You can still select and queue candidates now.</span>
+    </div>` : ''}
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin:14px 0 10px">
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);display:block;margin-bottom:3px">College</label>
+        <input type="text" value="${_campusFilterCollege}" placeholder="Filter by college…"
+          style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px"
+          oninput="_campusFilterCollege=this.value;_campusRenderPreview()">
+      </div>
+      <div style="flex:1;min-width:130px">
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);display:block;margin-bottom:3px">Branch</label>
+        <input type="text" value="${_campusFilterBranch}" placeholder="Filter by branch…"
+          style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px"
+          oninput="_campusFilterBranch=this.value;_campusRenderPreview()">
+      </div>
+      <div style="min-width:90px">
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);display:block;margin-bottom:3px">CGPA Min</label>
+        <input type="number" step="0.01" min="0" max="10" value="${_campusFilterCgpaMin}" placeholder="0"
+          style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px"
+          oninput="_campusFilterCgpaMin=this.value;_campusRenderPreview()">
+      </div>
+      <div style="min-width:90px">
+        <label style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);display:block;margin-bottom:3px">CGPA Max</label>
+        <input type="number" step="0.01" min="0" max="10" value="${_campusFilterCgpaMax}" placeholder="10"
+          style="width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:4px;font-size:13px"
+          oninput="_campusFilterCgpaMax=this.value;_campusRenderPreview()">
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="_campusClearFilters()">Clear filters</button>
+    </div>
+
+    ${_campusSelected.size > 0 ? `
+    <div style="background:#fff8f5;border:1px solid #fcd9c9;border-radius:6px;padding:10px 14px;display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:600;color:var(--accent)">${_campusSelected.size} candidate${_campusSelected.size===1?'':'s'} selected</span>
+      <button class="btn btn-primary btn-sm" onclick="_campusSendInvites()">
+        🚀 Send NexAI Invite to ${_campusSelected.size} selected
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="_campusSelected.clear();_campusRenderPreview()">Deselect All</button>
+    </div>` : ''}
+
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th style="width:36px"><input type="checkbox" ${allChecked?'checked':''} onchange="_campusToggleAll(this.checked)"
+            title="Select/deselect all on this page"></th>
+          <th>Name</th><th>Email</th><th>College</th><th>Branch</th>
+          <th>CGPA</th><th>Grad Year</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          ${visible.map(c => `
+          <tr>
+            <td><input type="checkbox" ${_campusSelected.has(c.id)?'checked':''}
+              onchange="_campusToggleOne('${c.id}',this.checked)"></td>
+            <td>${c.name||'—'}</td>
+            <td>${c.email}</td>
+            <td>${c.college||'—'}</td>
+            <td>${c.branch||'—'}</td>
+            <td>${c.cgpa!=null?c.cgpa:'—'}</td>
+            <td>${c.graduation_year||'—'}</td>
+            <td>${statusBadge(c.invite_status)}
+              ${c.nexai_link&&c.invite_status==='invite_queued'
+                ? `<a href="${c.nexai_link}" target="_blank" style="font-size:11px;margin-left:6px;color:var(--accent)" title="Copy invite link">🔗</a>`
+                : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;margin-top:12px;font-size:13px;flex-wrap:wrap">
+      <span style="color:var(--muted)">Page ${_campusPage} of ${_campusTotalPages} &nbsp;(${_campusTotal} total)</span>
+      <button class="btn btn-ghost btn-sm" onclick="_campusPageNav(-1)" ${_campusPage<=1?'disabled':''}>← Prev</button>
+      <button class="btn btn-ghost btn-sm" onclick="_campusPageNav(1)"  ${_campusPage>=_campusTotalPages?'disabled':''}>Next →</button>
+    </div>`;
+}
+
+function _campusToggleAll(checked) {
+  _campusAllIds.forEach(id => checked ? _campusSelected.add(id) : _campusSelected.delete(id));
+  _campusRenderPreview();
+}
+function _campusToggleOne(id, checked) {
+  checked ? _campusSelected.add(id) : _campusSelected.delete(id);
+  // Re-render just the bulk action bar without full re-render for perf
+  _campusRenderPreview();
+}
+function _campusClearFilters() {
+  _campusFilterCollege = ''; _campusFilterBranch = '';
+  _campusFilterCgpaMin = ''; _campusFilterCgpaMax = '';
+  _campusRenderPreview();
+}
+function _campusPageNav(dir) {
+  const next = _campusPage + dir;
+  if (next < 1 || next > _campusTotalPages) return;
+  _campusPage = next;
+  _campusRenderPreview();
+}
+
+async function _campusSendInvites() {
+  if (!_campusSelected.size || !_campusBatchId || !_campusReqId) return;
+  const ids = Array.from(_campusSelected);
+  flash(`Sending ${ids.length} invite${ids.length===1?'':'s'}…`);
+
+  const res = await api(`/api/campus/batch/${_campusBatchId}/invite`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ candidate_ids: ids, requisition_id: _campusReqId }),
+  });
+  if (!res || res.detail) {
+    flash('Invite failed: ' + (res?.detail || 'Unknown error'), false);
+    return;
+  }
+  const { invited=0, queued=0, failed=[] } = res;
+  const msg = [
+    invited ? `✅ ${invited} email${invited===1?'':'s'} sent` : '',
+    queued  ? `📋 ${queued} queued (email pending PROD_BASE_URL config)` : '',
+    failed.length ? `⚠️ ${failed.length} failed` : '',
+  ].filter(Boolean).join(' | ');
+  flash(msg || 'Done');
+  _campusSelected.clear();
+  _campusRenderPreview();
+}
+
+// ── Screen 3: Batch Summary ───────────────────────────────────────────────────
+async function _campusRenderBatches() {
+  const body = document.getElementById('campus-tab-body');
+
+  if (!_campusReqId) {
+    body.innerHTML = `
+      <div style="margin-top:16px;max-width:420px">
+        <div class="form-group">
+          <label>Select Requisition to view batches</label>
+          <select id="campus-batch-req-sel" onchange="_campusReqId=this.value;_campusRenderBatches()">
+            <option value="">— choose —</option>
+          </select>
+        </div>
+      </div>`;
+    const reqs = await api('/api/requisitions/full') || [];
+    const sel = document.getElementById('campus-batch-req-sel');
+    if (sel) sel.innerHTML = '<option value="">— choose —</option>' +
+      reqs.map(r=>`<option value="${r.id}">${r.req_code||''} ${r.title}</option>`).join('');
+    return;
+  }
+
+  const rows = await api(`/api/campus/batches?requisition_id=${_campusReqId}`);
+  if (!rows || rows.detail) {
+    body.innerHTML = `<div class="empty">Could not load batches.</div>`;
+    return;
+  }
+  if (!rows.length) {
+    body.innerHTML = `<div class="empty" style="margin-top:16px">No batches uploaded for this requisition yet.</div>`;
+    return;
+  }
+
+  const statusPill = s => ({
+    draft:'<span class="pill draft">Draft</span>',
+    invites_sent:'<span class="pill nexai_bot">Invites Sent</span>',
+    completed:'<span class="pill shortlisted">Completed</span>',
+  }[s] || `<span class="pill">${s}</span>`);
+
+  body.innerHTML = `
+    <div style="overflow-x:auto;margin-top:14px">
+      <table>
+        <thead><tr>
+          <th>File</th><th>Uploaded</th><th>Total</th>
+          <th>Selected</th><th>Invited</th><th>Status</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r=>`
+          <tr>
+            <td>📄 ${r.file_name}</td>
+            <td>${r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
+            <td>${r.total_rows}</td>
+            <td>${r.selected_count}</td>
+            <td>${r.invited_count}</td>
+            <td>${statusPill(r.status)}</td>
+            <td>
+              <button class="btn btn-ghost btn-sm"
+                onclick="_campusBatchId='${r.id}';_campusPage=1;_campusSelected.clear();campusTab('preview')">
+                View Candidates
+              </button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+/* === END CAMPUS BULK === */
 
 // ── Offers & Approvals ────────────────────────────────────────────────────────
 

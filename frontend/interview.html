@@ -89,6 +89,12 @@ canvas#orb{border-radius:50%}
 .ct-turn.nexai .ct-bubble{background:#fff5f0;border:1px solid #fde0d4;color:#1a1a1a;border-bottom-left-radius:2px}
 .ct-turn.candidate .ct-bubble{background:#eff6ff;border:1px solid #bfdbfe;color:#1a1a1a;border-bottom-right-radius:2px}
 
+/* ── Campus resume upload step ───────────────────────────────────────── */
+#resume-drop-zone{border:2px dashed #e5e3de;border-radius:8px;padding:32px 20px;text-align:center;cursor:pointer;background:#faf9f6;transition:border-color .15s}
+#resume-drop-zone:hover,#resume-drop-zone.drag-over{border-color:#f15a22;background:#fff8f5}
+#resume-file-name{font-size:13px;color:#1a1a1a;margin-top:10px;display:none;word-break:break-all}
+#resume-status{font-size:13px;min-height:20px;margin:10px 0 0;text-align:center;color:#6b6760}
+
 /* ── Post-interview report (done screen) ─────────────────────────────── */
 #report-transcript{margin-top:20px;text-align:left}
 .rpt-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#9b9490;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #e5e3de}
@@ -173,6 +179,34 @@ canvas#orb{border-radius:50%}
     <button class="btn btn-primary btn-full" id="start-btn" disabled onclick="startInterview()">Start Interview</button>
   </div>
 
+  <!-- Step: Resume Upload (campus candidates only — injected before first question) -->
+  <div class="step" id="step-resume">
+    <div style="text-align:center;margin-bottom:18px">
+      <span style="font-size:36px">📄</span>
+      <h1 style="margin-top:8px;font-size:18px">Upload Your Resume</h1>
+    </div>
+    <p style="font-size:13px;color:#6b6760;line-height:1.6;margin-bottom:18px">
+      Before we begin, please upload your resume to complete your profile.
+      PDF or Word format accepted (max 5 MB). You can skip this and proceed directly to the interview.
+    </p>
+    <div id="resume-drop-zone"
+         onclick="document.getElementById('campus-resume-input').click()"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="event.preventDefault();this.classList.remove('drag-over');handleResumeFile(event.dataTransfer.files[0])">
+      <input type="file" id="campus-resume-input" accept=".pdf,.docx,.doc" style="display:none"
+             onchange="handleResumeFile(this.files[0])">
+      <p style="font-size:14px;color:#6b6760">Drag &amp; drop here or <strong style="color:#f15a22">click to browse</strong></p>
+      <p style="font-size:11px;color:#9b9893;margin-top:6px">PDF · DOCX · DOC &nbsp;|&nbsp; Max 5 MB</p>
+      <p id="resume-file-name"></p>
+    </div>
+    <p id="resume-status"></p>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="resume-upload-btn" onclick="uploadCampusResume()" disabled style="flex:1;min-width:160px">Upload &amp; Continue</button>
+      <button class="btn btn-ghost" onclick="skipCampusResume()" style="flex:1;min-width:140px">Skip — continue without resume</button>
+    </div>
+  </div>
+
   <!-- Step: Interview -->
   <div class="step" id="step-interview">
     <h1>AI Screening Interview</h1>
@@ -182,7 +216,7 @@ canvas#orb{border-radius:50%}
       <video id="nexai-video" playsinline></video>
       <div id="video-play-prompt"><button class="btn btn-ghost" onclick="nxVideoPlay()">&#9654; Click to start</button></div>
       <div id="orb-stage">
-        <img id="nexai-avatar" src="/assets/avatars/nexai-male.png" onerror="this.style.display='none'" alt="NexAI">
+        <img id="nexai-avatar" src="/assets/avatars/nexai-female.png" onerror="this.style.display='none'" alt="NexAI">
         <canvas id="orb" width="48" height="48"></canvas>
       </div>
     </div>
@@ -284,6 +318,8 @@ const STRIKE_COOLDOWN_MS        = 8000; // ms after a strike before same flag ty
 // ── Shared state ──────────────────────────────────────────────────────────
 const _token = new URLSearchParams(location.search).get('token');
 let _sessionId = null, _questions = [], _seq = 0, _transcript = [];
+// Campus bulk state
+let _isCampus = false, _campusResumeHandled = false, _campusResumeFile = null;
 let _synth = window.speechSynthesis, _recog = null;
 let _orbRaf = null, _orbPhase = 0, _orbState = 'idle';
 let _questionVideos = {};
@@ -369,6 +405,9 @@ async function apiPublic(path, opts={}) {
   document.getElementById('consent-sub').textContent  =
     `Hi ${res.candidate_name || 'there'} — you have been invited to an AI screening interview.`;
 
+  // Campus bulk flag — drives resume upload step before first question
+  _isCampus = res.is_campus === true;
+
   // Store and apply mode
   _mode = (res.mode || 'scripted').toLowerCase();
   if (_mode === 'conversational') {
@@ -390,8 +429,70 @@ function showErr(reason, title) {
   showStep('step-error');
 }
 
+// ── Campus resume upload helpers ─────────────────────────────────────────────
+function handleResumeFile(f) {
+  if (!f) return;
+  const maxMB = 5 * 1024 * 1024;
+  if (f.size > maxMB) {
+    document.getElementById('resume-status').textContent = 'File too large — maximum 5 MB.';
+    return;
+  }
+  if (!/\.(pdf|docx|doc)$/i.test(f.name)) {
+    document.getElementById('resume-status').textContent = 'Only PDF or Word files are accepted.';
+    return;
+  }
+  _campusResumeFile = f;
+  const nameEl = document.getElementById('resume-file-name');
+  nameEl.textContent = '📎 ' + f.name;
+  nameEl.style.display = 'block';
+  document.getElementById('resume-status').textContent = '';
+  document.getElementById('resume-upload-btn').disabled = false;
+}
+
+async function uploadCampusResume() {
+  if (!_campusResumeFile) return;
+  const btn = document.getElementById('resume-upload-btn');
+  btn.disabled = true;
+  btn.textContent = 'Uploading…';
+  document.getElementById('resume-status').textContent = 'Uploading your resume…';
+  const fd = new FormData();
+  fd.append('file', _campusResumeFile);
+  try {
+    const r = await fetch(`/api/campus/session/${encodeURIComponent(_token)}/resume`, {
+      method: 'POST', body: fd,
+    });
+    if (r.ok) {
+      document.getElementById('resume-status').textContent = '✅ Resume uploaded successfully.';
+    } else {
+      const j = await r.json().catch(() => ({}));
+      document.getElementById('resume-status').textContent =
+        '⚠️ Upload failed: ' + (j.detail || r.status) + '. You can still continue.';
+    }
+  } catch (e) {
+    document.getElementById('resume-status').textContent =
+      '⚠️ Upload failed: ' + e.message + '. You can still continue.';
+  }
+  // Always proceed to interview regardless of upload success/failure
+  _campusResumeHandled = true;
+  await _doStartInterview();
+}
+
+async function skipCampusResume() {
+  _campusResumeHandled = true;
+  await _doStartInterview();
+}
+
 // ── Start interview — proctoring setup then interview (both modes) ───────────
 async function startInterview() {
+  // Campus candidates see resume upload step first (before proctoring setup)
+  if (_isCampus && !_campusResumeHandled) {
+    showStep('step-resume');
+    return;
+  }
+  await _doStartInterview();
+}
+
+async function _doStartInterview() {
   const btn = document.getElementById('start-btn');
   btn.disabled = true;
 

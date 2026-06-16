@@ -38,10 +38,18 @@ def _extract_ai_detail(breakdown: dict) -> dict:
     }
 
 
-def intake_and_screen(requisition_id, candidate_id, resume_text, candidate_years):
+def intake_and_screen(
+    requisition_id,
+    candidate_id,
+    resume_text,
+    candidate_years,
+    file_size_bytes: int = 0,
+):
     """
     AUTOMATED. Runs when an application arrives: scores it, stores all screening
     columns, and parks it in the Gate-1 review queue. Returns the application row.
+    file_size_bytes: raw byte count of the uploaded file (0 if unavailable),
+    used by the parse-quality assessment to flag image-based resumes.
     """
     req = query_one(
         """SELECT r.*, b.code AS band_code
@@ -53,7 +61,9 @@ def intake_and_screen(requisition_id, candidate_id, resume_text, candidate_years
     if not req:
         raise ValueError("requisition not found")
 
-    score, breakdown = screening.score_application(resume_text, candidate_years, req)
+    score, breakdown = screening.score_application(
+        resume_text, candidate_years, req, file_size_bytes
+    )
 
     ai_fit_score      = breakdown.get("ai_fit_score")
     ai_screen_detail  = json.dumps(_extract_ai_detail(breakdown), default=_json_safe)
@@ -97,9 +107,17 @@ def run_bot_round(application_id):
     req = query_one("SELECT * FROM requisition WHERE id = %s", [app["requisition_id"]])
     result = connectors.run_bot_interview(app["candidate_id"], req.get("job_description") or "")
 
+    # Improvement 6: use per-requisition weights (default 0.40/0.60)
+    resume_w   = float(req.get("resume_weight")   or 0.40)
+    interview_w = float(req.get("interview_weight") or 0.60)
+    total_w = resume_w + interview_w
+    if total_w > 0:                          # normalise in case weights don't sum to 1
+        resume_w /= total_w
+        interview_w /= total_w
+
     match    = float(app["match_score"] or 0)
     bot      = result["bot_score"]
-    combined = round(0.4 * match + 0.6 * bot, 1)  # tunable blend
+    combined = round(resume_w * match + interview_w * bot, 1)
 
     query(
         """UPDATE application
@@ -130,7 +148,7 @@ def top_chart(requisition_id, limit=50):
     to decide who advances past the bot round."""
     return query(
         """SELECT a.id, c.full_name, c.gender, a.match_score, a.bot_score,
-                  a.combined_score, a.status
+                  a.combined_score, a.status, a.panel_consensus
            FROM application a JOIN candidate c ON c.id = a.candidate_id
            WHERE a.requisition_id = %s
            ORDER BY a.combined_score DESC NULLS LAST

@@ -161,6 +161,40 @@ def extract_text(data: bytes, ext: str) -> str:
     return ""
 
 
+# ── Parse quality assessment (Improvement 4) ─────────────────────────────────
+
+def assess_parse_quality(text: str, file_size_bytes: int = 0) -> dict:
+    """
+    Detect whether extracted text represents a parseable (text-based) resume
+    or is likely image-based / scanned (low character yield per KB).
+
+    Returns a dict ready to merge into score_breakdown JSONB.
+    Does NOT reject candidates — flags only.
+    """
+    char_count = len((text or "").strip())
+
+    if file_size_bytes > 0:
+        file_size_kb = file_size_bytes / 1024
+    else:
+        # Estimate: plain-text resumes typically run ~2 KB per 1000 chars
+        file_size_kb = max(char_count / 1000, 1)
+
+    parseability_ratio = char_count / max(file_size_kb, 1)
+
+    if parseability_ratio < 10 or char_count < 100:
+        parse_quality = "low"
+    elif char_count < 500:
+        parse_quality = "medium"
+    else:
+        parse_quality = "good"
+
+    return {
+        "parse_quality":             parse_quality,
+        "char_count":                char_count,
+        "manual_review_recommended": parse_quality == "low",
+    }
+
+
 # ── Tier-1 skill extraction ───────────────────────────────────────────────────
 
 def extract_tier1_skills(raw_text: str) -> list[str]:

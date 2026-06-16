@@ -48,6 +48,7 @@ from .routers.kpi_api import router as _kpi_router
 from .routers.hiring_plan_api import router as _hiring_plan_router
 from .routers.cv_api import router as _cv_router
 from .routers.hm_api import router as _hm_router
+from .routers.campus_bulk_api import router as _campus_router
 from .routers.cv_api import ingest_and_link as _cv_ingest_and_link
 from .auth_utils import _decode
 
@@ -71,6 +72,7 @@ app.include_router(_kpi_router)
 app.include_router(_hiring_plan_router)
 app.include_router(_cv_router)
 app.include_router(_hm_router)
+app.include_router(_campus_router)
 
 
 @app.on_event("startup")
@@ -631,6 +633,67 @@ BEGIN
             'documentation','offered','hired','rejected','on_hold'
         ));
 END $$""",
+
+        # ── Migration 39: per-requisition scoring weights + fresher role flag ───
+        # resume_weight + interview_weight control the combined-score blend.
+        # is_fresher_role forces the fresher scoring model for campus roles.
+        # panel_consensus stores the computed verdict badge directly on application
+        # so list queries can surface it without parsing score_breakdown JSONB.
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS resume_weight    NUMERIC(4,2) DEFAULT 0.40",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS interview_weight NUMERIC(4,2) DEFAULT 0.60",
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS is_fresher_role  BOOLEAN      DEFAULT FALSE",
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS panel_consensus  TEXT",
+        """DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'application'::regclass
+          AND conname  = 'application_panel_consensus_check'
+    ) THEN
+        EXECUTE $sql$
+            ALTER TABLE application ADD CONSTRAINT application_panel_consensus_check
+            CHECK (panel_consensus IS NULL OR panel_consensus IN ('advance','reject','split'))
+        $sql$;
+    END IF;
+END $$""",
+
+        # ── Migration 40: Campus Bulk Upload — batch invite for freshers / campus drives ──
+        """CREATE TABLE IF NOT EXISTS campus_upload_batch (
+            id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            requisition_id  UUID        REFERENCES requisition(id),
+            uploaded_by     UUID        REFERENCES app_user(id),
+            file_name       TEXT,
+            total_rows      INTEGER,
+            selected_count  INTEGER     NOT NULL DEFAULT 0,
+            invited_count   INTEGER     NOT NULL DEFAULT 0,
+            status          TEXT        NOT NULL DEFAULT 'draft'
+                            CHECK (status IN ('draft','invites_sent','completed')),
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_campus_batch_req ON campus_upload_batch(requisition_id)",
+        """CREATE TABLE IF NOT EXISTS campus_candidate (
+            id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            batch_id         UUID        REFERENCES campus_upload_batch(id),
+            requisition_id   UUID        REFERENCES requisition(id),
+            name             TEXT,
+            email            TEXT,
+            phone            TEXT,
+            college          TEXT,
+            branch           TEXT,
+            cgpa             NUMERIC(4,2),
+            graduation_year  INTEGER,
+            extra_data       JSONB       NOT NULL DEFAULT '{}'::jsonb,
+            invite_status    TEXT        NOT NULL DEFAULT 'pending'
+                             CHECK (invite_status IN ('pending','invite_queued','invited','interview_started','completed')),
+            invite_sent_at   TIMESTAMPTZ,
+            nexai_session_id TEXT,
+            application_id   UUID        REFERENCES application(id),
+            resume_uploaded  BOOLEAN     NOT NULL DEFAULT FALSE,
+            resume_url       TEXT,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_campus_cand_batch ON campus_candidate(batch_id)",
+        "CREATE INDEX IF NOT EXISTS idx_campus_cand_app   ON campus_candidate(application_id)",
     ]
     for sql in migrations:
         try:
@@ -715,6 +778,7 @@ _PUBLIC_PREFIXES = (
     "/assets/",
     "/api/nexai/invite/submit/",       # /api/nexai/invite/submit/{session_id}
     "/api/proctoring/candidate/",      # candidate token-auth proctoring endpoints
+    "/api/campus/session/",            # campus resume upload + is-campus check (token-auth, no JWT)
 )
 
 
@@ -1185,7 +1249,7 @@ async def apply_upload(
         requisition_id=requisition_id,
     )
     app_row = pipeline.intake_and_screen(
-        requisition_id, cand_id, resume_text, years_experience
+        requisition_id, cand_id, resume_text, years_experience, len(file_bytes)
     )
     _store_extended_fields(
         app_row["id"],

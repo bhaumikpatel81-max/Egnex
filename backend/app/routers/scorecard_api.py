@@ -178,6 +178,95 @@ def _overall_score(schema: list, form_data: dict) -> Optional[float]:
     return round(sum(vals) / len(vals), 2) if vals else None
 
 
+# ── Panel consensus → combined score update (Improvement 5) ──────────────────
+
+def _recompute_panel_combined(application_id: str) -> None:
+    """
+    Called after each scorecard submission.
+
+    Consensus rule (configurable later; currently hardcoded):
+      ≥ 60 % 'Strong Hire' or 'Hire'        → panel_consensus = 'advance'
+      ≥ 60 % 'No Hire' or 'Strong No Hire'  → panel_consensus = 'reject'
+      otherwise                              → panel_consensus = 'split'
+
+    Updated combined score (when ≥ 1 scorecard AND bot_score exists):
+      0.35 × match_score + 0.50 × bot_score + 0.15 × panel_numeric
+
+    Both panel_consensus and panel_numeric are written into score_breakdown
+    JSONB and panel_consensus is also stored as a dedicated column so list
+    queries can surface the badge without parsing JSONB.
+    """
+    app_row = query_one(
+        "SELECT match_score, bot_score, score_breakdown FROM application WHERE id = %s",
+        [application_id],
+    )
+    if not app_row:
+        return
+
+    scs = query(
+        """SELECT s.overall_score, s.verdict
+           FROM scorecard s
+           JOIN interview i ON i.id = s.interview_id
+           WHERE i.application_id = %s AND s.status = 'submitted'""",
+        [application_id],
+    )
+    if not scs:
+        return
+
+    scores = [float(sc["overall_score"]) for sc in scs if sc.get("overall_score") is not None]
+    if not scores:
+        return
+
+    # Convert avg 1–5 → 0–100
+    panel_numeric = round(sum(scores) / len(scores) / 5.0 * 100.0, 1)
+
+    advance_verdicts = {"strong_yes", "yes"}
+    reject_verdicts  = {"strong_no",  "no"}
+    total  = len(scs)
+    adv_ct = sum(1 for sc in scs if sc.get("verdict") in advance_verdicts)
+    rej_ct = sum(1 for sc in scs if sc.get("verdict") in reject_verdicts)
+
+    if total > 0 and adv_ct / total >= 0.60:
+        panel_consensus = "advance"
+    elif total > 0 and rej_ct / total >= 0.60:
+        panel_consensus = "reject"
+    else:
+        panel_consensus = "split"
+
+    # Update score_breakdown
+    bd = app_row.get("score_breakdown") or {}
+    if isinstance(bd, str):
+        bd = json.loads(bd)
+    bd["panel_numeric"]        = panel_numeric
+    bd["panel_consensus"]      = panel_consensus
+    bd["panel_submitted_count"] = total
+
+    # Recompute combined_score only when bot_score is available
+    match = float(app_row.get("match_score") or 0)
+    bot   = app_row.get("bot_score")
+    if bot is not None:
+        combined = round(0.35 * match + 0.50 * float(bot) + 0.15 * panel_numeric, 1)
+        query(
+            """UPDATE application
+               SET combined_score  = %s,
+                   score_breakdown = %s::jsonb,
+                   panel_consensus = %s
+               WHERE id = %s""",
+            [combined, json.dumps(bd), panel_consensus, application_id],
+            fetch=False,
+        )
+    else:
+        # Bot interview not done yet — persist panel info but don't touch combined_score
+        query(
+            """UPDATE application
+               SET score_breakdown = %s::jsonb,
+                   panel_consensus = %s
+               WHERE id = %s""",
+            [json.dumps(bd), panel_consensus, application_id],
+            fetch=False,
+        )
+
+
 # ── GET scorecard form + caller's existing scorecard ─────────────────────────
 
 @router.get("/interviews/{interview_id}/scorecard-form")
@@ -316,6 +405,18 @@ def save_scorecard(
            WHERE interview_id = %s AND interviewer_id = %s""",
         [interview_id, uid],
     )
+
+    # Improvement 5: recompute panel consensus + combined score on every submit
+    if action == "submit":
+        iv_row = query_one(
+            "SELECT application_id FROM interview WHERE id = %s", [interview_id]
+        )
+        if iv_row and iv_row.get("application_id"):
+            try:
+                _recompute_panel_combined(str(iv_row["application_id"]))
+            except Exception as _pc_exc:
+                print(f"[scorecard] panel combined recompute failed: {_pc_exc}")
+
     return {
         "ok": True,
         "scorecard": {
@@ -326,6 +427,19 @@ def save_scorecard(
             "submitted_at": updated["submitted_at"].isoformat() if updated.get("submitted_at") else None,
         },
     }
+
+
+def _derive_consensus(verdict_counts: dict, total: int) -> Optional[str]:
+    """Return panel_consensus label from verdict histogram, or None if no scorecards."""
+    if total == 0:
+        return None
+    adv = sum(v for k, v in verdict_counts.items() if k in ("Strong Hire", "Hire"))
+    rej = sum(v for k, v in verdict_counts.items() if k in ("No Hire", "Strong No Hire"))
+    if adv / total >= 0.60:
+        return "advance"
+    if rej / total >= 0.60:
+        return "reject"
+    return "split"
 
 
 # ── GET aggregated panel feedback for an interview ───────────────────────────
@@ -418,11 +532,12 @@ def get_panel_feedback(interview_id: str, user: dict = Depends(get_current_user)
         ],
         "scorecards": entries,
         "rollup": {
-            "total_submitted":  len(entries),
-            "verdict_counts":   verdict_counts,
+            "total_submitted":   len(entries),
+            "verdict_counts":    verdict_counts,
             "avg_overall_score": avg_all,
-            "avg_ratings":      avg_ratings,
-            "rating_labels":    rating_labels,
+            "avg_ratings":       avg_ratings,
+            "rating_labels":     rating_labels,
+            "panel_consensus":   _derive_consensus(verdict_counts, len(entries)),
         },
     }
 
