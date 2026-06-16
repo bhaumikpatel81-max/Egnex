@@ -292,20 +292,14 @@ class BulkCampusInviteIn(BaseModel):
 def _campus_base_url() -> tuple[str, bool]:
     """
     Return (base_url, is_localhost).
-    Delegates to connectors._load_email_cfg() so campus invites always use
-    the same URL source as the nexai base-url-status endpoint.
+    Uses connectors._load_email_cfg() which already applies the correct
+    priority: DB (Settings UI) → APP_BASE_URL env var → default localhost.
+    DB always wins, so the Settings UI value is never shadowed by .env.prod.
     """
-    for env_key in ("PROD_BASE_URL", "APP_BASE_URL"):
-        v = os.environ.get(env_key, "").strip()
-        if v:
-            is_local = any(x in v for x in ("localhost", "127.0.0.1", "0.0.0.0"))
-            return v.rstrip("/"), is_local
     from ..services.connectors import _load_email_cfg
-    cfg_url = (_load_email_cfg().get("base_url") or "").strip()
-    if cfg_url:
-        is_local = any(x in cfg_url for x in ("localhost", "127.0.0.1", "0.0.0.0"))
-        return cfg_url.rstrip("/"), is_local
-    return "http://localhost:8000", True
+    url = (_load_email_cfg().get("base_url") or "http://localhost:8000").strip().rstrip("/")
+    is_local = any(x in url for x in ("localhost", "127.0.0.1", "0.0.0.0"))
+    return url, is_local
 
 
 @router.post("/batch/{batch_id}/invite")

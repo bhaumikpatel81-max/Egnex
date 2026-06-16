@@ -15,9 +15,9 @@ if exist "venv\Scripts\activate.bat" (
     call .venv\Scripts\activate.bat
 )
 
-echo Server: http://localhost:8000
+echo Server: http://localhost:8000  (also accessible via network IP)
 echo Press Ctrl+C to stop.
 echo.
 
-py -m uvicorn backend.app.main:app --port 8000 --reload
+py -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 pause
