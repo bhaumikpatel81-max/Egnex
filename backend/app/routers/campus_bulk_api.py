@@ -292,18 +292,19 @@ class BulkCampusInviteIn(BaseModel):
 def _campus_base_url() -> tuple[str, bool]:
     """
     Return (base_url, is_localhost).
-    Checks PROD_BASE_URL → APP_BASE_URL → system_settings.base_url.
+    Delegates to connectors._load_email_cfg() so campus invites always use
+    the same URL source as the nexai base-url-status endpoint.
     """
     for env_key in ("PROD_BASE_URL", "APP_BASE_URL"):
         v = os.environ.get(env_key, "").strip()
         if v:
             is_local = any(x in v for x in ("localhost", "127.0.0.1", "0.0.0.0"))
             return v.rstrip("/"), is_local
-    row = query_one("SELECT value FROM system_settings WHERE key='app_base_url'", [])
-    if row and row.get("value", "").strip():
-        v = row["value"].strip().rstrip("/")
-        is_local = any(x in v for x in ("localhost", "127.0.0.1", "0.0.0.0"))
-        return v, is_local
+    from ..services.connectors import _load_email_cfg
+    cfg_url = (_load_email_cfg().get("base_url") or "").strip()
+    if cfg_url:
+        is_local = any(x in cfg_url for x in ("localhost", "127.0.0.1", "0.0.0.0"))
+        return cfg_url.rstrip("/"), is_local
     return "http://localhost:8000", True
 
 
@@ -568,9 +569,12 @@ def resend_queued_invites(
     if not queued:
         return {"sent": 0, "failed": []}
 
-    from ..routers.nexai_api import _build_invite_html
-    from ..services.connectors import send_email, resolve_global_placeholders as _rgp
-    from ..services.email_templates import render_template as _render_email_tmpl
+    try:
+        from ..routers.nexai_api import _build_invite_html
+        from ..services.connectors import send_email, resolve_global_placeholders as _rgp
+        from ..services.email_templates import render_template as _render_email_tmpl
+    except Exception as imp_exc:
+        raise HTTPException(500, f"Import error: {imp_exc}")
 
     sent = 0
     failed: list[dict] = []

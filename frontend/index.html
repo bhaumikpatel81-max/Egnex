@@ -12,8 +12,8 @@
 <meta http-equiv="Expires" content="0">
 <meta name="egnex-version" content="3.9">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=47 to bypass stale cache -->
-<script>if(!location.search.includes('v=48')){var u=location.href.split('?')[0];location.replace(u+'?v=48');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=48 to bypass stale cache -->
+<script>if(!location.search.includes('v=49')){var u=location.href.split('?')[0];location.replace(u+'?v=49');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -7699,7 +7699,11 @@ async function _campusRenderPreview() {
   const body = document.getElementById('campus-tab-body');
 
   if (!_campusBatchId) {
-    body.innerHTML = `<div class="empty">Upload an Excel file first to see candidates here.</div>`;
+    body.innerHTML = `
+      <div class="empty" style="margin-top:24px">
+        No batch loaded yet.
+        <button class="btn btn-primary btn-sm" style="margin-left:12px" onclick="campusTab('upload')">← Upload Excel</button>
+      </div>`;
     return;
   }
 
@@ -7742,13 +7746,19 @@ async function _campusRenderPreview() {
   const allChecked = visible.length > 0 && visible.every(c => _campusSelected.has(c.id));
 
   body.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin:12px 0 4px;flex-wrap:wrap">
+      <span style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Requisition:</span>
+      <span style="font-size:13px;font-weight:600">${res.batch?.requisition_id ? (document.querySelector('#campus-req-sel option[value="'+res.batch.requisition_id+'"]')?.textContent || 'Selected') : 'Selected'}</span>
+      <button class="btn btn-ghost btn-sm" onclick="campusTab('upload')" title="Go back and pick a different requisition">← Change Requisition</button>
+    </div>
+
     ${isLocalUrl ? `
-    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 14px;font-size:13px;margin:14px 0;display:flex;align-items:center;gap:8px">
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:10px 14px;font-size:13px;margin:10px 0;display:flex;align-items:center;gap:8px">
       <span>⚠️</span>
       <span><strong>Production URL not configured</strong> — invites will be queued and not emailed until you set the base URL in Settings.
       You can still select and queue candidates now.</span>
     </div>` : (_queuedCount > 0 ? `
-    <div style="background:#f0faf5;border:1px solid #6ee7b7;border-radius:6px;padding:10px 14px;font-size:13px;margin:14px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <div style="background:#f0faf5;border:1px solid #6ee7b7;border-radius:6px;padding:10px 14px;font-size:13px;margin:10px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <span>✅</span>
       <span><strong>${_queuedCount} queued invite${_queuedCount===1?'':'s'} ready to send</strong> — Production URL is now configured.</span>
       <button class="btn btn-primary btn-sm" onclick="_campusSendQueued()">📧 Send ${_queuedCount} Queued Invite${_queuedCount===1?'':'s'} Now</button>
@@ -7876,15 +7886,26 @@ async function _campusSendInvites() {
 async function _campusSendQueued() {
   if (!_campusBatchId) return;
   flash('Sending queued invites…');
-  const res = await api(`/api/campus/batch/${_campusBatchId}/resend-queued`, { method: 'POST' });
-  if (!res || res.detail) {
-    flash('Failed: ' + (res?.detail || 'Unknown error'), false);
+  let r;
+  try {
+    r = await fetch(`/api/campus/batch/${_campusBatchId}/resend-queued`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${_tok}` },
+    });
+  } catch (e) {
+    flash('Network error — could not reach server.', false);
     return;
   }
-  const { sent = 0, failed = [] } = res;
+  let data;
+  try { data = await r.json(); } catch { data = {}; }
+  if (!r.ok) {
+    flash('Failed: ' + (data?.detail || `HTTP ${r.status}`), false);
+    return;
+  }
+  const { sent = 0, failed = [] } = data;
   flash(
-    sent ? `✅ ${sent} invite email${sent === 1 ? '' : 's'} sent successfully!` +
-           (failed.length ? ` ⚠️ ${failed.length} failed` : '') : '⚠️ No invites sent',
+    sent ? `✅ ${sent} invite email${sent === 1 ? '' : 's'} sent!` +
+           (failed.length ? ` ⚠️ ${failed.length} failed` : '') : '⚠️ No invites sent — check server logs',
     sent > 0,
   );
   _campusRenderPreview();
