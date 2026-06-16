@@ -529,6 +529,110 @@ def bulk_invite(
     return {"invited": invited, "queued": queued, "failed": failed}
 
 
+# ── Resend queued invites ─────────────────────────────────────────────────────
+
+@router.post("/batch/{batch_id}/resend-queued")
+def resend_queued_invites(
+    batch_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Email all invite_queued candidates in a batch using their existing tokens."""
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised")
+
+    base_url, is_local = _campus_base_url()
+    if is_local:
+        raise HTTPException(400, "Production URL is still localhost. Set the base URL in Settings first.")
+
+    batch = query_one("SELECT * FROM campus_upload_batch WHERE id=%s", [batch_id])
+    if not batch:
+        raise HTTPException(404, "Batch not found")
+
+    req = query_one(
+        """SELECT r.id, r.title, gc.name AS company
+           FROM requisition r
+           JOIN business_unit bu ON bu.id = r.bu_id
+           JOIN group_company gc ON gc.id = bu.company_id
+           WHERE r.id=%s""",
+        [str(batch["requisition_id"])],
+    )
+    if not req:
+        raise HTTPException(404, "Requisition not found")
+
+    queued = query(
+        """SELECT cc.id, cc.name, cc.email, cc.application_id
+           FROM campus_candidate cc
+           WHERE cc.batch_id=%s AND cc.invite_status='invite_queued'""",
+        [batch_id],
+    )
+    if not queued:
+        return {"sent": 0, "failed": []}
+
+    from ..routers.nexai_api import _build_invite_html
+    from ..services.connectors import send_email, resolve_global_placeholders as _rgp
+    from ..services.email_templates import render_template as _render_email_tmpl
+
+    sent = 0
+    failed: list[dict] = []
+
+    for c in queued:
+        if not c["application_id"]:
+            failed.append({"id": str(c["id"]), "reason": "no_application"})
+            continue
+
+        invite_row = query_one(
+            """SELECT token FROM nexai_invite
+               WHERE application_id=%s AND used_at IS NULL AND expires_at > now()
+               ORDER BY invited_at DESC LIMIT 1""",
+            [str(c["application_id"])],
+        )
+        if not invite_row:
+            failed.append({"id": str(c["id"]), "reason": "no_valid_token"})
+            continue
+
+        token = invite_row["token"]
+        invite_url = f"{base_url}/nexai-interview?token={token}"
+
+        try:
+            _globals = _rgp(req_id=str(req["id"]), actor=user)
+            _reply_to = _globals.get("recruiter_email") or None
+
+            email_subject, plain = _render_email_tmpl("nexai_invite", {
+                "candidate_name": c["name"] or "Candidate",
+                "job_title":      req["title"],
+                "company_name":   req["company"],
+                "interview_link": invite_url,
+            }, req_id=str(req["id"]), actor=user)
+
+            html_body = _build_invite_html(
+                name=c["name"] or "Candidate",
+                job=req["title"],
+                company=req["company"],
+                invite_url=invite_url,
+            )
+            send_email(c["email"], email_subject, plain, html=html_body, reply_to=_reply_to)
+
+            query(
+                """UPDATE campus_candidate
+                   SET invite_status='invited', nexai_session_id=%s, invite_sent_at=now()
+                   WHERE id=%s""",
+                [token, str(c["id"])],
+                fetch=False,
+            )
+            sent += 1
+        except Exception as exc:
+            failed.append({"id": str(c["id"]), "reason": str(exc)})
+
+    if sent > 0:
+        query(
+            "UPDATE campus_upload_batch SET invited_count = invited_count + %s WHERE id=%s",
+            [sent, batch_id],
+            fetch=False,
+        )
+
+    return {"sent": sent, "failed": failed}
+
+
 # ── Batch list ────────────────────────────────────────────────────────────────
 
 @router.get("/batches")
