@@ -299,12 +299,12 @@ def _campus_base_url() -> tuple[str, bool]:
         if v:
             is_local = any(x in v for x in ("localhost", "127.0.0.1", "0.0.0.0"))
             return v.rstrip("/"), is_local
-    row = query_one("SELECT value FROM system_settings WHERE key='base_url'", [])
+    row = query_one("SELECT value FROM system_settings WHERE key='app_base_url'", [])
     if row and row.get("value", "").strip():
         v = row["value"].strip().rstrip("/")
         is_local = any(x in v for x in ("localhost", "127.0.0.1", "0.0.0.0"))
         return v, is_local
-    return "http://localhost:8080", True
+    return "http://localhost:8000", True
 
 
 @router.post("/batch/{batch_id}/invite")
