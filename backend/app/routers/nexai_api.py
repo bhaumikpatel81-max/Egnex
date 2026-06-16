@@ -73,17 +73,35 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
         <tr><td style="padding:4px 0;font-size:14px;color:#444;line-height:1.5">✅&nbsp; NexAI <strong>never auto-rejects</strong> — all scores reviewed by a human recruiter</td></tr>
       </table>
 
-      <!-- CTA Button -->
+      <!-- CTA Button — table-based for Outlook/corporate client compatibility -->
       <table width="100%" cellpadding="0" cellspacing="0" style="margin:32px 0">
         <tr><td align="center">
-          <a href="{invite_url}"
-             style="display:inline-block;background:#f15a22;color:#ffffff;padding:16px 48px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:700;letter-spacing:.3px">
-            Start My AI Interview
-          </a>
+          <!--[if mso]>
+          <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+            href="{invite_url}" style="height:52px;v-text-anchor:middle;width:260px;" arcsize="15%"
+            stroke="f" fillcolor="#f15a22">
+            <w:anchorlock/>
+            <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;">
+              Start My AI Interview
+            </center>
+          </v:roundrect>
+          <![endif]-->
+          <!--[if !mso]><!-->
+          <table cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td style="background:#f15a22;border-radius:8px;mso-padding-alt:0">
+                <a href="{invite_url}"
+                   style="display:block;background:#f15a22;color:#ffffff;padding:16px 48px;border-radius:8px;text-decoration:none;font-size:16px;font-weight:700;letter-spacing:.3px;font-family:Arial,sans-serif;mso-hide:all">
+                  Start My AI Interview
+                </a>
+              </td>
+            </tr>
+          </table>
+          <!--<![endif]-->
         </td></tr>
-        <tr><td align="center" style="padding-top:14px">
-          <span style="font-size:12px;color:#9b9893">Or paste this link in your browser:</span><br>
-          <a href="{invite_url}" style="font-size:12px;color:#f15a22;word-break:break-all">{invite_url}</a>
+        <tr><td align="center" style="padding-top:16px">
+          <p style="font-size:12px;color:#9b9893;margin:0 0 6px">Or copy and paste this link in your browser:</p>
+          <a href="{invite_url}" style="font-size:12px;color:#f15a22;word-break:break-all;text-decoration:underline">{invite_url}</a>
         </td></tr>
       </table>
 

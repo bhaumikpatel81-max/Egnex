@@ -619,6 +619,7 @@ def resend_queued_invites(
             )
             sent += 1
         except Exception as exc:
+            print(f"[campus-resend] email failed for {c['email']}: {exc}")
             failed.append({"id": str(c["id"]), "reason": str(exc)})
 
     if sent > 0:

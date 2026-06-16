@@ -12,8 +12,8 @@
 <meta http-equiv="Expires" content="0">
 <meta name="egnex-version" content="3.9">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=48 to bypass stale cache -->
-<script>if(!location.search.includes('v=49')){var u=location.href.split('?')[0];location.replace(u+'?v=49');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=50 to bypass stale cache -->
+<script>if(!location.search.includes('v=50')){var u=location.href.split('?')[0];location.replace(u+'?v=50');}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 :root{--accent:#f15a22;--sidebar:#0c0d10;--page:#faf9f6;--card:#fff;--green:#1d6e56;--border:#e5e3df;--text:#1a1d24;--muted:#6b6760;--gold:#b08423;}
@@ -7903,11 +7903,17 @@ async function _campusSendQueued() {
     return;
   }
   const { sent = 0, failed = [] } = data;
-  flash(
-    sent ? `✅ ${sent} invite email${sent === 1 ? '' : 's'} sent!` +
-           (failed.length ? ` ⚠️ ${failed.length} failed` : '') : '⚠️ No invites sent — check server logs',
-    sent > 0,
-  );
+  let _msg;
+  if (sent > 0) {
+    _msg = `✅ ${sent} invite email${sent === 1 ? '' : 's'} sent!` +
+           (failed.length ? ` ⚠️ ${failed.length} failed` : '');
+  } else if (failed.length > 0) {
+    const _reasons = [...new Set(failed.map(f => f.reason || 'unknown'))].join(' | ');
+    _msg = `⚠️ All ${failed.length} failed — ${_reasons}`;
+  } else {
+    _msg = '⚠️ No queued invites found — refresh the page and try again';
+  }
+  flash(_msg, sent > 0);
   _campusRenderPreview();
 }
 
