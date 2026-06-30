@@ -29,7 +29,6 @@ import psycopg2
 from .db import query, query_one
 from .services import pipeline, connectors
 from .services.resume_parser import extract_text as _parse_resume
-from .routers.google_oauth import router as _google_oauth_router
 from .routers.auth import router as _auth_router
 from .routers.admin_users import router as _admin_router
 from .routers.pipeline_api import router as _pipeline_router
@@ -40,7 +39,6 @@ from .routers.tickets_api import router as _tickets_router
 from .routers.scorecard_api import router as _scorecard_router
 from .routers.email_template_api import router as _email_template_router
 from .routers.offers_api import router as _offers_router
-from .routers.transcript_api import router as _transcript_router
 from .routers.sla_api import router as _sla_router
 from .routers.chain_templates_api import router as _chain_templates_router
 from .routers.documentation_api import router as _documentation_router
@@ -49,13 +47,14 @@ from .routers.hiring_plan_api import router as _hiring_plan_router
 from .routers.cv_api import router as _cv_router
 from .routers.hm_api import router as _hm_router
 from .routers.campus_bulk_api import router as _campus_router
+from .routers.password_api import router as _password_router
 from .routers.cv_api import ingest_and_link as _cv_ingest_and_link
 from .auth_utils import _decode
 
 app = FastAPI(title="Egnex API", version="0.1.0")
 app.include_router(_auth_router)
 app.include_router(_admin_router)
-app.include_router(_google_oauth_router)
+app.include_router(_password_router)
 app.include_router(_pipeline_router)
 app.include_router(_reports2_router)
 app.include_router(_nexai_router)
@@ -64,7 +63,6 @@ app.include_router(_tickets_router)
 app.include_router(_scorecard_router)
 app.include_router(_email_template_router)
 app.include_router(_offers_router)
-app.include_router(_transcript_router)
 app.include_router(_sla_router)
 app.include_router(_chain_templates_router)
 app.include_router(_documentation_router)
@@ -694,6 +692,20 @@ END $$""",
         )""",
         "CREATE INDEX IF NOT EXISTS idx_campus_cand_batch ON campus_candidate(batch_id)",
         "CREATE INDEX IF NOT EXISTS idx_campus_cand_app   ON campus_candidate(application_id)",
+
+        # ── Password reset / first-time set-password tokens ─────────────
+        """CREATE TABLE IF NOT EXISTS password_reset_token (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id     UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+            token_hash  TEXT NOT NULL UNIQUE,
+            purpose     TEXT NOT NULL DEFAULT 'reset'
+                        CHECK (purpose IN ('reset','invite')),
+            expires_at  TIMESTAMPTZ NOT NULL,
+            used_at     TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_token(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_token(token_hash)",
     ]
     for sql in migrations:
         try:
@@ -769,6 +781,10 @@ _RESUME_MIME = {
 # Paths that do NOT require a JWT
 _PUBLIC = {
     "/", "/login", "/api/health", "/api/auth/login",
+    "/set-password",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password",
+    "/api/auth/reset-token/validate",
     "/nexai-interview",
     # Candidate-facing NexAI interview endpoints — token-based, no JWT
     "/api/nexai/invite/validate",
@@ -1359,10 +1375,10 @@ def chart(requisition_id: str):
 # ---------------- scheduling ----------------
 class ScheduleIn(BaseModel):
     application_id: str
-    recruiter_id: str
     panel_emails: list[str] = []
     start_in_hours: int = 24
     duration_min: int = 45
+    meet_link: str = ""
 
 
 @app.post("/api/schedule")
@@ -1380,13 +1396,17 @@ def schedule(payload: ScheduleIn, request: Request):
     if not app_row:
         raise HTTPException(404, "application not found")
     start = datetime.utcnow() + timedelta(hours=payload.start_in_hours)
-    try:
-        meeting = connectors.schedule_meeting(
-            payload.recruiter_id, app_row["email"], payload.panel_emails,
-            start, payload.duration_min,
-        )
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
+    organizer_email = request.state.user.get("email") or ""
+    meeting = connectors.schedule_meeting(
+        organizer_email=organizer_email,
+        candidate_email=app_row["email"],
+        panel_emails=payload.panel_emails,
+        start_time=start,
+        duration_min=payload.duration_min,
+        meet_link=payload.meet_link,
+        candidate_name=app_row.get("full_name") or "Candidate",
+        job_title=app_row.get("job_title") or "the role",
+    )
     rc = query_one(
         """SELECT id FROM round_config
            WHERE requisition_id = (SELECT requisition_id FROM application WHERE id=%s)
@@ -1564,6 +1584,11 @@ if os.path.isdir(_FRONTEND_DIR):
     def nexai_interview_page():
         """Public candidate-facing AI interview page — accessed via invite token."""
         with open(os.path.join(_FRONTEND_DIR, "interview.html"), encoding="utf-8") as f:
+            return HTMLResponse(content=f.read(), headers=_NO_CACHE)
+
+    @app.get("/set-password", response_class=HTMLResponse)
+    def set_password_page():
+        with open(os.path.join(_FRONTEND_DIR, "set-password.html"), encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers=_NO_CACHE)
 
     @app.get("/", response_class=HTMLResponse)

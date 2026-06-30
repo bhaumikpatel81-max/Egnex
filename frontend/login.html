@@ -86,6 +86,7 @@
     <label for="pw">Password</label>
     <input id="pw" type="password" autocomplete="current-password" placeholder="••••••••">
     <button class="btn" id="btn" onclick="doLogin()">Sign in</button>
+    <p class="hint"><a href="#" onclick="doForgot(event)" style="color:var(--accent);text-decoration:none">Forgot password?</a></p>
   </div>
 </div>
 
@@ -99,6 +100,25 @@ document.getElementById('email').addEventListener('keydown', e => {
 document.getElementById('pw').addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
+
+async function doForgot(e) {
+  e.preventDefault();
+  const email = prompt('Enter your work email to receive a password reset link:');
+  if (!email) return;
+  const err = document.getElementById('err');
+  err.style.display = 'none';
+  try {
+    await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.trim() }),
+    });
+  } catch {}
+  // Always show the same message — don't leak which emails exist
+  err.style.background = '#e4f7ea'; err.style.borderColor = '#a8dbb5'; err.style.color = '#1a5c2a';
+  err.textContent = 'If that account exists, a reset link has been sent.';
+  err.style.display = 'block';
+}
 
 async function doLogin() {
   const email = document.getElementById('email').value.trim();

@@ -12,7 +12,15 @@ from jose import JWTError, jwt
 
 _bearer = HTTPBearer(auto_error=False)
 
-SECRET_KEY = os.environ.get("JWT_SECRET", "egnex-dev-secret-change-in-prod")
+SECRET_KEY = os.environ.get("JWT_SECRET", "").strip()
+if not SECRET_KEY:
+    # Allow a dev default ONLY when not in production.
+    if os.environ.get("ENV", "").lower() in ("prod", "production"):
+        raise RuntimeError(
+            "JWT_SECRET is not set. Add a long random JWT_SECRET to .env.prod "
+            "before starting in production."
+        )
+    SECRET_KEY = "egnex-dev-secret-change-in-prod"
 ALGORITHM = "HS256"
 TOKEN_HOURS = 8
 

@@ -103,12 +103,14 @@ _client: Optional[openai.AsyncOpenAI] = None
 def _get_client() -> openai.AsyncOpenAI:
     global _client
     if _client is None:
-        api_key = os.environ.get("GROQ_API_KEY", "")
+        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("GROQ_API_KEY", "")
         if not api_key:
             raise RuntimeError(
-                "GROQ_API_KEY is not set. Add it to the backend .env file."
+                "OPENAI_API_KEY is not set. Add it to .env.prod."
             )
-        base_url = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+        base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get(
+            "GROQ_BASE_URL", "https://api.openai.com/v1"
+        )
         _client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
     return _client
 

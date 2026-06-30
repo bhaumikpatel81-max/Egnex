@@ -33,9 +33,6 @@ body{font-family:system-ui,-apple-system,sans-serif;background:var(--page);color
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 #topbar{height:56px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 28px;gap:16px;flex-shrink:0}
 #topbar .screen-title{font-weight:600;font-size:16px;flex:1}
-#gcal-indicator{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
-.gcal-dot{width:7px;height:7px;border-radius:50%;background:#ccc;flex-shrink:0}
-.gcal-dot.on{background:var(--green)}
 .user-chip{display:flex;align-items:center;gap:8px}
 .user-chip .uname{font-size:13px;color:var(--muted)}
 .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;cursor:pointer}
@@ -225,7 +222,6 @@ select{background-image:none}
   /* Topbar */
   #topbar{padding:0 10px 0 6px;gap:8px}
   #topbar .screen-title{font-size:14px}
-  #gcal-indicator{display:none} /* hide GCal indicator on mobile */
   .user-chip .uname{display:none} /* hide name, keep avatar only */
 
   /* Stage grid: horizontal pill scroll */
@@ -396,7 +392,6 @@ select{background-image:none}
   <div id="topbar">
     <button id="menu-btn" aria-label="Open navigation menu" aria-expanded="false">&#9776;</button>
     <div class="screen-title" id="topbar-title">Dashboard</div>
-    <div id="gcal-indicator"><span class="gcal-dot" id="gcal-dot"></span><span id="gcal-text">Calendar</span></div>
     <div class="user-chip">
       <span class="uname" id="topbar-name"></span>
       <div class="avatar" id="topbar-avatar" onclick="logout()" title="Click to sign out"></div>
@@ -606,18 +601,6 @@ select{background-image:none}
   </div>
 </div>
 
-<!-- ── Meeting Transcript Modal (Feature 7 — Google Meet notetaker) ── -->
-<div class="modal-bg" id="meet-transcript-modal" onclick="if(event.target===this)closeTranscriptModal()">
-  <div class="modal" style="max-width:680px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h2 style="margin:0">Interview Transcript</h2>
-      <button class="btn btn-ghost btn-sm" onclick="closeTranscriptModal()">✕ Close</button>
-    </div>
-    <div id="tx-modal-body" style="font-size:13px;max-height:70vh;overflow-y:auto">
-      <p class="empty">Loading…</p>
-    </div>
-  </div>
-</div>
 
 <!-- ── Apply Modal ── -->
 <div class="modal-bg" id="apply-modal" onclick="if(event.target===this)closeApplyModal()">
@@ -1234,14 +1217,6 @@ window.addEventListener('popstate', () => {
   runRoute(p[1] || 'dashboard', p[2]);
 });
 
-// ── GCal status ───────────────────────────────────────────────────────────────
-async function refreshGCal() {
-  const uid = ME.sub;
-  const d = await api(`/api/google/status?recruiter_id=${uid}`);
-  if (!d) return;
-  document.getElementById('gcal-dot').className = `gcal-dot${d.linked?' on':''}`;
-  document.getElementById('gcal-text').textContent = d.linked ? `📅 ${d.google_email}` : 'Calendar: not linked';
-}
 
 // ── Chart.js helpers ──────────────────────────────────────────────────────────
 const _charts = {};
@@ -2772,20 +2747,8 @@ async function confirmSendEmail() {
 // ── SCREEN: Interviews ────────────────────────────────────────────────────────
 async function screenInterviews() {
   setTitle('Interviews');
-  const [rows, gcal] = await Promise.all([
-    api('/api/interviews'),
-    api(`/api/google/status?recruiter_id=${ME.sub}`),
-  ]);
+  const rows = await api('/api/interviews');
   const canViewFeedback = ['admin','ta_manager','recruiter','hiring_manager'].includes(ME.role);
-  const canFetchTranscript = ['admin','ta_manager','recruiter'].includes(ME.role);
-
-  // Drive scope banner — shown to recruiters who haven't reconnected yet
-  const driveBanner = (canFetchTranscript && gcal?.linked && gcal?.has_drive_scope === false)
-    ? `<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#856404">
-        <strong>⚠ Google Drive access not yet granted.</strong>
-        The "Fetch Transcript" feature requires Drive read access.
-        <button class="btn btn-primary btn-sm" style="margin-left:10px" onclick="connectGCal()">Reconnect Google (one click)</button>
-       </div>` : '';
 
   const tRows = (rows||[]).map(r=>{
     const dt = r.scheduled_at
@@ -2812,27 +2775,6 @@ async function screenInterviews() {
     const actions = scBtn||pfBtn
       ? `<div style="display:flex;gap:4px;flex-wrap:wrap">${scBtn}${pfBtn}</div>`
       : '—';
-    // Transcript action
-    let txBtn = '';
-    if(canFetchTranscript && r.meet_link){
-      const ts = r.transcript_status || 'none';
-      if(ts==='done'){
-        txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--green)" onclick="openTranscriptModal('${r.id}')">📝 Summary</button>`;
-      } else if(ts==='summary_failed'){
-        txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--gold)" onclick="openTranscriptModal('${r.id}')">⚠ Transcript (no summary)</button>`;
-      } else if(ts==='fetch_failed'){
-        txBtn=`<button class="btn btn-ghost btn-sm" style="color:#c0392b" onclick="openTranscriptModal('${r.id}')">✕ Failed</button>`;
-      } else if(ts==='fetching'||ts==='summarizing'){
-        txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--muted);cursor:default" disabled>⏳ ${ts==='summarizing'?'Summarizing…':'Fetching…'}</button>`;
-      } else {
-        // none — show fetch button only if Drive is linked
-        if(gcal?.linked && gcal?.has_drive_scope!==false){
-          txBtn=`<button class="btn btn-ghost btn-sm" onclick="fetchTranscript('${r.id}',this)">📄 Fetch Transcript</button>`;
-        } else if(gcal?.linked){
-          txBtn=`<button class="btn btn-ghost btn-sm" style="color:var(--muted)" onclick="connectGCal()" title="Reconnect Google to grant Drive access">🔗 Grant Drive access</button>`;
-        }
-      }
-    }
     return `<tr>
       <td>${r.candidate_name}</td>
       <td>${r.requisition}</td>
@@ -2841,132 +2783,17 @@ async function screenInterviews() {
       <td><span class="pill ${r.status}">${r.status}</span></td>
       <td>${r.meet_link?`<a href="${r.meet_link}" target="_blank" style="color:var(--accent)">Join</a>`:'—'}</td>
       <td>${actions}</td>
-      <td>${txBtn}</td>
     </tr>`;
   }).join('');
   document.getElementById('content').innerHTML = `
     <div class="page-header"><h1>Interviews</h1></div>
-    ${driveBanner}
-    <div class="card" style="margin-bottom:20px;max-width:460px">
-      <div class="card-title">Google Calendar &amp; Drive</div>
-      ${gcal?.linked
-        ?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span class="gcal-dot on"></span><span style="font-size:13px">Connected as <strong>${gcal.google_email}</strong></span></div>
-           <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Drive access: ${gcal.has_drive_scope?'<span style="color:var(--green)">Granted ✓</span>':'<span style="color:#c0392b">Not yet granted — reconnect to enable transcript fetching</span>'}</div>
-           <div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="connectGCal()">Reconnect (update permissions)</button><button class="btn btn-danger btn-sm" onclick="disconnectGCal()">Disconnect</button></div>`
-        :`<p style="font-size:13px;color:var(--muted);margin-bottom:10px">Not connected — scheduling and transcript fetch require Google.</p>
-          <button class="btn btn-primary btn-sm" onclick="connectGCal()">Connect Google Calendar &amp; Drive</button>`}
-    </div>
     <div class="card" style="padding:0;overflow:hidden">
       ${tRows
-        ?`<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th><th>Scorecard / Feedback</th><th>Transcript</th></tr></thead><tbody>${tRows}</tbody></table>`
+        ?`<table><thead><tr><th>Candidate</th><th>Requisition</th><th>Round</th><th>Scheduled</th><th>Status</th><th>Link</th><th>Scorecard / Feedback</th></tr></thead><tbody>${tRows}</tbody></table>`
         :'<p class="empty">No interviews scheduled yet.</p>'}
     </div>`;
 }
-function connectGCal(){window.location.href=`/api/google/connect?recruiter_id=${ME.sub}`;}
-async function disconnectGCal(){await api(`/api/google/disconnect?recruiter_id=${ME.sub}`,{method:'POST'});flash('Disconnected');screenInterviews();}
 
-// ── Transcript fetch + modal ───────────────────────────────────────────────────
-let _txPollTimer=null;
-let _txModalInterviewId=null;
-
-async function fetchTranscript(interviewId, btn){
-  if(btn){btn.disabled=true;btn.textContent='Starting…';}
-  const res=await api(`/api/interviews/${interviewId}/fetch-transcript`,{method:'POST'});
-  if(!res||res.detail){
-    const detail=res?.detail;
-    if(typeof detail==='object'&&detail?.drive_scope_missing){
-      flash('Drive access not granted. Click "Reconnect Google" to enable transcript fetching.',false);
-    } else {
-      flash(typeof detail==='string'?detail:'Failed to start transcript fetch.',false);
-    }
-    if(btn){btn.disabled=false;btn.textContent='📄 Fetch Transcript';}
-    return;
-  }
-  flash('Transcript fetch started. This may take a minute…');
-  // Start polling until done or failed
-  _startTxPoll(interviewId);
-}
-
-function _startTxPoll(interviewId){
-  clearInterval(_txPollTimer);
-  let attempts=0;
-  _txPollTimer=setInterval(async()=>{
-    attempts++;
-    if(attempts>60){clearInterval(_txPollTimer);return;} // 5 min max
-    const data=await api(`/api/interviews/${interviewId}/transcript`).catch(()=>null);
-    if(!data) return;
-    const done=['done','fetch_failed','summary_failed'].includes(data.fetch_status);
-    if(done){
-      clearInterval(_txPollTimer);
-      screenInterviews(); // refresh table to show new status
-      if(data.fetch_status==='done') flash('Transcript summary ready!');
-      else if(data.fetch_status==='fetch_failed') flash('Transcript not found. Check the error in the Transcript panel.',false);
-      else flash('Transcript saved — summarization failed. Raw transcript is available.',false);
-    }
-  },5000);
-}
-
-async function openTranscriptModal(interviewId){
-  _txModalInterviewId=interviewId;
-  const modal=document.getElementById('meet-transcript-modal');
-  modal.classList.add('open');
-  document.getElementById('tx-modal-body').innerHTML='<p class="empty">Loading…</p>';
-  const data=await api(`/api/interviews/${interviewId}/transcript`);
-  if(!data){document.getElementById('tx-modal-body').innerHTML='<p class="empty">Could not load transcript.</p>';return;}
-  _renderTranscriptModal(data);
-}
-function closeTranscriptModal(){document.getElementById('meet-transcript-modal').classList.remove('open');}
-
-function _renderTranscriptModal(data){
-  let html='';
-  const st=data.fetch_status;
-
-  if(st==='fetch_failed'){
-    html=`<div style="background:#fde8e4;border:1px solid #e8c5c0;border-radius:6px;padding:12px 14px;font-size:13px;color:#8b2a1a">
-      <strong>No transcript found.</strong><br>${data.fetch_error||'Unknown error.'}
-    </div>
-    <p style="margin-top:14px;font-size:12px;color:var(--muted)">
-      To retry: click "Fetch Transcript" again on the interviews list after ensuring<br>
-      Google Meet transcripts are enabled in your Workspace admin console.
-    </p>`;
-  } else if(st==='summarizing'||st==='fetching'){
-    html=`<p class="empty">⏳ ${st==='summarizing'?'Groq is summarizing the transcript…':'Searching Google Drive for the transcript…'}</p>
-    <p style="font-size:12px;color:var(--muted);text-align:center">This page will update automatically.</p>`;
-    // Keep polling while modal is open
-    setTimeout(()=>{if(_txModalInterviewId)openTranscriptModal(_txModalInterviewId);},5000);
-  } else if(st==='done'||st==='summary_failed'){
-    const s=data.summary||{};
-    const disc=(s.discussion_points||[]).map(p=>`<li>${p}</li>`).join('');
-    html=`
-      ${st==='summary_failed'?`<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#856404">
-        <strong>Summarization failed:</strong> ${data.fetch_error||'Unknown Groq error.'} Raw transcript is available below.
-      </div>`:''}
-      ${s.discussion_points?.length?`<div style="margin-bottom:14px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:6px">Discussion Points</div>
-        <ul style="margin:0;padding-left:18px;font-size:13px">${disc}</ul>
-      </div>`:''}
-      ${s.strengths&&s.strengths!=='—'?`<div style="margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px">Strengths</div>
-        <div style="font-size:13px">${s.strengths}</div>
-      </div>`:''}
-      ${s.concerns&&s.concerns!=='—'?`<div style="margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px">Concerns / Gaps</div>
-        <div style="font-size:13px">${s.concerns}</div>
-      </div>`:''}
-      ${s.overall_note&&s.overall_note!=='—'?`<div style="margin-bottom:14px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:4px">Overall Note</div>
-        <div style="font-size:13px;font-style:italic">${s.overall_note}</div>
-      </div>`:''}
-      ${data.drive_file_name?`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Source: ${data.drive_file_name}</div>`:''}
-      ${data.transcript_text?`<details style="margin-top:8px">
-        <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)">Show full transcript ▸</summary>
-        <pre style="font-size:11px;white-space:pre-wrap;word-break:break-word;background:var(--bg-alt,#f8f8f8);padding:12px;border-radius:4px;margin-top:8px;max-height:400px;overflow-y:auto">${data.transcript_text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
-      </details>`:''}`;
-  } else {
-    html=`<p class="empty">No transcript data.</p>`;
-  }
-  document.getElementById('tx-modal-body').innerHTML=html;
-}
 
 // ── Scorecard modal ───────────────────────────────────────────────────────────
 let _scInterviewId = null;
@@ -8601,10 +8428,6 @@ async function screenSLADashboard(){
          <p style="font-size:12px;color:var(--muted);margin-top:10px">Sorted by severity (red first), then by days elapsed. Adjust targets in <a href="#sla_settings" onclick="navigate('sla_settings');return false" style="color:var(--accent)">SLA Settings</a>.</p>`}`;
 }
 
-// ── Post-OAuth redirect ───────────────────────────────────────────────────────
-const _qs=new URLSearchParams(window.location.search);
-if(_qs.get('connected')==='1'){history.replaceState({},'','/');flash('Google Calendar connected.');}
-if(_qs.get('gcal_error')){history.replaceState({},'','/');flash('GCal error: '+_qs.get('gcal_error'),false);}
 
 // ── SCREEN: CV Repository ────────────────────────────────────────────────────
 
@@ -9221,7 +9044,6 @@ _resetIdle();
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (function boot(){
   try { buildNav(); } catch(e){ console.error('buildNav:',e); }
-  refreshGCal().catch(()=>{});
   const hp=(location.hash||'').split(/[#\/]/);
   const defaultScreen = ME.role==='admin' ? 'sys_health'
     : ME.role==='hiring_manager' ? 'hm_dashboard'

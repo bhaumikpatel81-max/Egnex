@@ -13,7 +13,7 @@ import secrets
 import tempfile
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -1892,6 +1892,24 @@ async def submit_invited_session(session_id: str, body: SubmitSessionIn, backgro
     background_tasks.add_task(_fire_completion_email, session_id)
 
     return {"session_id": session_id, "raw_score": raw_score, "score_detail": detail}
+
+
+@router.post("/invite/transcribe")
+async def transcribe_candidate_audio(file: UploadFile = File(...)):
+    """
+    Public — transcribe one candidate audio blob via Whisper.
+    Returns {"text": "..."}. The frontend sends this text to /invite/converse.
+    """
+    from ..services.stt import transcribe_audio
+    audio = await file.read()
+    if not audio:
+        raise HTTPException(400, "Empty audio")
+    try:
+        text = transcribe_audio(audio, file.filename or "audio.webm")
+    except Exception as exc:
+        print(f"[stt] transcription failed: {exc}")
+        raise HTTPException(502, "Transcription failed")
+    return {"text": text}
 
 
 @router.get("/health")

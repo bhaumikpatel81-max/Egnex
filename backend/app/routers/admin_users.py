@@ -21,7 +21,8 @@ class CreateUserIn(BaseModel):
     full_name: str
     email: str
     role: str
-    password: str
+    password: Optional[str] = None       # if omitted, user sets it via emailed link
+    send_setup_email: bool = True
 
 
 class UpdateUserIn(BaseModel):
@@ -45,15 +46,24 @@ def list_users(admin=Depends(require_admin)):
 def create_user(body: CreateUserIn, admin=Depends(require_admin)):
     if body.role not in _VALID_ROLES:
         raise HTTPException(400, f"Invalid role. Choose from: {sorted(_VALID_ROLES)}")
-    if len(body.password) < 6:
+    if body.password and len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
     if query_one("SELECT id FROM app_user WHERE email = %s", [body.email.lower()]):
         raise HTTPException(400, "A user with that email already exists")
+    pwd_hash = hash_password(body.password) if body.password else None
     row = query_one(
         f"""INSERT INTO app_user (full_name, email, role, password_hash)
             VALUES (%s, %s, %s, %s) RETURNING {_USER_COLS}""",
-        [body.full_name, body.email.lower(), body.role, hash_password(body.password)],
+        [body.full_name, body.email.lower(), body.role, pwd_hash],
     )
+    # Auto-send first-time set-password email for self-service roles
+    if body.send_setup_email and body.role in {"admin", "ta_manager", "recruiter"}:
+        try:
+            from .password_api import _issue_token, _send_link_email
+            raw = _issue_token(str(row["id"]), "invite")
+            _send_link_email(row["email"], row["full_name"], raw, "invite")
+        except Exception as exc:
+            print(f"[create_user] setup email failed: {exc}")
     return row
 
 
@@ -252,7 +262,6 @@ async def test_email(user: dict = Depends(_require_admin_settings)):
     rows = query("SELECT key, value FROM system_settings")
     cfg  = {r["key"]: (r["value"] or "").strip() for r in (rows or [])}
 
-    sg_key    = cfg.get("sendgrid_api_key", "")
     smtp_user = cfg.get("smtp_user", "")
     smtp_pass = cfg.get("smtp_password", "").replace(" ", "")
     smtp_host = cfg.get("smtp_host", "smtp.gmail.com") or "smtp.gmail.com"
@@ -260,10 +269,10 @@ async def test_email(user: dict = Depends(_require_admin_settings)):
     from_name = cfg.get("smtp_from_name", "Egnex Hiring") or "Egnex Hiring"
     from_email = smtp_user or "noreply@egnex.io"
 
-    if not sg_key and not smtp_user:
+    if not smtp_user:
         raise HTTPException(400,
             "No email method configured. "
-            "Add a SendGrid API key (recommended) or Gmail SMTP credentials."
+            "Add Gmail SMTP credentials in Settings."
         )
 
     subject   = "Egnex — Email configuration test"
@@ -273,46 +282,7 @@ async def test_email(user: dict = Depends(_require_admin_settings)):
     )
     to_addr   = from_email
 
-    # ── SendGrid (preferred — uses HTTPS, works on all networks) ─────────────
-    if sg_key:
-        import requests as _req
-        payload = {
-            "personalizations": [{"to": [{"email": to_addr}]}],
-            "from": {"email": from_email, "name": from_name},
-            "subject": subject,
-            "content": [{"type": "text/plain", "value": body_text}],
-        }
-        loop = asyncio.get_event_loop()
-        try:
-            resp = await asyncio.wait_for(
-                loop.run_in_executor(
-                    None,
-                    lambda: _req.post(
-                        "https://api.sendgrid.com/v3/mail/send",
-                        json=payload,
-                        headers={"Authorization": f"Bearer {sg_key}"},
-                        timeout=10,
-                    )
-                ),
-                timeout=12,
-            )
-        except asyncio.TimeoutError:
-            raise HTTPException(400, "SendGrid request timed out. Check your internet connection.")
-        if resp.status_code in (200, 202):
-            return {"ok": True, "sent_to": to_addr, "method": "SendGrid"}
-        if resp.status_code == 401:
-            raise HTTPException(400,
-                "SendGrid API key rejected (401). "
-                "Generate a new key at app.sendgrid.com → Settings → API Keys."
-            )
-        if resp.status_code == 403:
-            raise HTTPException(400,
-                "SendGrid key doesn't have Mail Send permission (403). "
-                "Create a new key with 'Mail Send' access enabled."
-            )
-        raise HTTPException(400, f"SendGrid error {resp.status_code}: {resp.text[:300]}")
-
-    # ── SMTP fallback ─────────────────────────────────────────────────────────
+    # ── SMTP ─────────────────────────────────────────────────────────────────
     if not smtp_pass:
         raise HTTPException(400, "SMTP password is empty — enter your App Password and save.")
 
@@ -350,8 +320,7 @@ async def test_email(user: dict = Depends(_require_admin_settings)):
         )
     except asyncio.TimeoutError:
         raise HTTPException(400,
-            "SMTP timed out — your network is blocking outbound email ports. "
-            "Use SendGrid instead (works via HTTPS on all networks)."
+            "SMTP timed out — your network is blocking outbound email ports."
         )
 
     if status == "ok":
@@ -366,5 +335,5 @@ async def test_email(user: dict = Depends(_require_admin_settings)):
         )
     raise HTTPException(400,
         f"Cannot connect via SMTP ({detail}). "
-        "Your network blocks SMTP. Use SendGrid instead."
+        "Your network is blocking outbound email ports."
     )
