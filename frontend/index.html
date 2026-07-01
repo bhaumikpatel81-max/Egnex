@@ -4805,7 +4805,12 @@ async function screenHMDashboard(){
   _hmDashData = d;
 
   const kpi = d.kpi_strip || {};
-  const queue = d.action_queue || [];
+  const _aq = d.action_queue || {};
+  const queue = [
+    ...(_aq.pending_scorecards || []),
+    ...(_aq.pending_approvals  || []),
+    ...(_aq.awaiting_decision  || []),
+  ];
   const reqs  = d.my_reqs || [];
 
   const ragDot = (r) => {
