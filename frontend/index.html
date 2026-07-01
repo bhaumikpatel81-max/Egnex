@@ -292,6 +292,9 @@ select{background-image:none}
   .stage-card{min-width:70px}
   .stat-box .sv{font-size:22px}
 }
+/* Change-requisition dropdown */
+.rcm-item{padding:8px 14px;font-size:13px;cursor:pointer;white-space:nowrap;color:var(--text)}
+.rcm-item:hover{background:var(--page)}
 /* NexAI */
 .nexai-orb-wrap{display:flex;flex-direction:column;align-items:center;margin:8px 0 4px}
 #nexai-orb{display:block;border-radius:50%;background:transparent}
@@ -450,10 +453,10 @@ select{background-image:none}
   </div>
 </div>
 
-<!-- ── New Requisition Modal ── -->
+<!-- ── New / Edit Requisition Modal ── -->
 <div class="modal-bg" id="req-modal" onclick="if(event.target===this)closeReqModal()">
   <div class="modal">
-    <h2>New requisition</h2>
+    <h2 id="req-modal-title">New requisition</h2>
     <div class="form-row">
       <div class="form-group"><label>Job title</label><input id="rf-title" placeholder="Backend Engineer"></div>
       <div class="form-group"><label>Fiscal year</label><input id="rf-fy" placeholder="FY25-26"></div>
@@ -547,6 +550,15 @@ select{background-image:none}
       </div>
     </div>
     <div class="form-group"><label>Job description</label><textarea id="rf-jd" rows="3"></textarea></div>
+
+    <!-- ── Screening Questions ── -->
+    <div style="background:#f0f4ff;border:1px solid #c7d9ff;border-radius:6px;padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);margin-bottom:4px">Screening questions (for NexAI)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Type or paste questions you want NexAI to ask every candidate. NexAI will ask these first, then add its own based on skills &amp; JD.</div>
+      <div id="rf-sq-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="_addSQ()">+ Add question</button>
+    </div>
+
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px">Panel levels</div>
       <div id="rounds-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px"></div>
@@ -571,7 +583,7 @@ select{background-image:none}
     </div>
     <div class="modal-btns">
       <button class="btn btn-ghost" onclick="closeReqModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitReq()">Create requisition</button>
+      <button class="btn btn-primary" id="req-modal-submit-btn" onclick="submitReq()">Create requisition</button>
     </div>
   </div>
 </div>
@@ -2153,12 +2165,14 @@ async function screenRequisitions() {
       <button class="btn btn-ghost btn-sm" onclick="screenRequisitions()">✕ Clear filter</button>
     </div>` : '';
 
+  const canChange = ['recruiter','ta_manager','admin'].includes(ME.role);
   const tRows = rows.map(r=>{
     const rag=_reqRag[r.id];
     const ragHtml=rag&&rag.status!=='green'
       ?` <span class="rag-badge ${rag.status}" title="${rag.elapsed_days}d open / SLA ${rag.target_days}d">${rag.status==='red'?'🔴':'🟡'} ${rag.elapsed_days}d</span>`
       :'';
     const priBadge=r.priority?`<span class="rag-badge ${r.priority==='critical'?'red':r.priority==='high'?'amber':'green'}" style="font-size:10px;margin-left:4px">${r.priority}</span>`:' ';
+    const changeMenu=canChange?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();_toggleReqMenu(this)" data-req-id="${r.id}" data-req-status="${r.status}" data-req-title="${(r.title||'').replace(/"/g,'&quot;')}" style="white-space:nowrap">Change ▾</button>`:'';
     return `<tr>
       <td>
         ${r.req_code?`<span style="font-size:10px;color:var(--muted);font-weight:600">${r.req_code}</span> `:''}
@@ -2172,6 +2186,7 @@ async function screenRequisitions() {
       <td style="white-space:nowrap">
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();navigate('pipeline','${r.id}')">Pipeline</button>
         <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();navigate('kanban','${r.id}')">Kanban</button>
+        ${changeMenu}
       </td>
     </tr>`;
   }).join('');
@@ -2297,7 +2312,8 @@ async function screenPipeline(reqId){
         <h1>${data.req_code?`<span style="font-size:14px;color:var(--muted);font-weight:500">${data.req_code} · </span>`:''}${data.title}</h1>
         <div style="font-size:13px;color:var(--muted)">${total} active · ${termTotal} closed</div>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${['recruiter','ta_manager','admin'].includes(ME.role)?`<button class="btn btn-ghost btn-sm" onclick="openEditReq('${reqId}')">✏️ Edit requisition</button>`:''}
         <button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${reqId}')">Kanban view</button>
         <button class="btn btn-ghost btn-sm" onclick="screenRequisitions()">← Back</button>
       </div>
@@ -5566,11 +5582,15 @@ function _moveApprover(idx,dir){
 }
 function _removeApprover(idx){_approverChain.splice(idx,1);_renderApproverChain();}
 
-async function openReqModal(){
+let _editReqId = null; // null = create mode, string = edit mode
+
+function _clearReqModal(){
+  _editReqId=null;
   _roundCount=0;
   _approverChain=[];
   document.getElementById('rounds-list').innerHTML='';
   document.getElementById('approver-chain-list').innerHTML='';
+  document.getElementById('rf-sq-list').innerHTML='';
   ['rf-title','rf-fy','rf-skills','rf-jd','rf-loc','rf-project','rf-grade','rf-min-exp','rf-max-exp'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('rf-openings').value='1';
   ['rf-exp','rf-ctc-fixed','rf-ctc-variable','rf-ctc-total'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -5586,30 +5606,129 @@ async function openReqModal(){
   const jdFile=document.getElementById('rf-jd-file');if(jdFile)jdFile.value='';
   const jdPaste=document.getElementById('rf-jd-paste');if(jdPaste)jdPaste.value='';
   const jdMsg=document.getElementById('rf-jd-parse-msg');if(jdMsg)jdMsg.textContent='';
+}
+
+async function _loadReqModalDropdowns(){
   const [bus,bands,users]=await Promise.all([api('/api/business-units'),api('/api/bands'),api('/api/users')]);
   _allBUs=bus||[];
-  // Build unique group company list preserving order
-  const seen=new Set();
-  const companies=[];
+  const seen=new Set();const companies=[];
   _allBUs.forEach(b=>{if(!seen.has(b.company)){seen.add(b.company);companies.push(b.company);}});
   document.getElementById('rf-gc').innerHTML=companies.map(c=>`<option value="${c}">${c}</option>`).join('');
   _filterBU();
   document.getElementById('rf-band').innerHTML=(bands||[]).filter(b=>b.is_active).map(b=>`<option value="${b.id}">${b.code}</option>`).join('');
-  // Populate approver picker — all active staff can be approvers
   const approverRoles=['ta_manager','recruiter','hiring_manager','bu_head','director','admin'];
   document.getElementById('rf-approver-pick').innerHTML=
     '<option value="">— select approver to add —</option>'+
     (users||[]).filter(u=>approverRoles.includes(u.role))
       .map(u=>`<option value="${u.id}">${u.full_name} (${u.role.replace(/_/g,' ')})</option>`).join('');
-  // Load chain templates into the "use template" picker
   const templates=await _loadTemplates(false).catch(()=>[]);
   const tpick=document.getElementById('rf-template-pick');
   if(tpick){
     tpick.innerHTML='<option value="">— or pick a template —</option>'+
       (templates||[]).map(t=>`<option value="${t.id}">${t.name}${t.description?' — '+t.description:''}</option>`).join('');
   }
+  return {bus:bus||[],bands:bands||[],users:users||[]};
+}
+
+// ── Screening question helpers ────────────────────────────────────────────────
+function _addSQ(text){
+  const list=document.getElementById('rf-sq-list');
+  const idx=list.children.length+1;
+  const row=document.createElement('div');
+  row.style.cssText='display:flex;gap:6px;align-items:flex-start';
+  row.innerHTML=`<span style="font-size:11px;font-weight:700;color:var(--accent);min-width:22px;padding-top:10px">${idx}.</span>
+    <textarea class="sq-input" rows="2" placeholder="Type your screening question here…" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:13px;resize:vertical;outline:none;transition:border-color .12s" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor=''">${text||''}</textarea>
+    <button type="button" onclick="this.closest('div').remove();_renumberSQ()" style="background:none;border:none;cursor:pointer;font-size:16px;color:#c0392b;padding:6px 4px;line-height:1;margin-top:4px" title="Remove">✕</button>`;
+  list.appendChild(row);
+}
+function _renumberSQ(){
+  document.querySelectorAll('#rf-sq-list > div').forEach((row,i)=>{
+    const span=row.querySelector('span');if(span)span.textContent=(i+1)+'.';
+  });
+}
+function _getSQs(){
+  return Array.from(document.querySelectorAll('#rf-sq-list .sq-input')).map(t=>t.value.trim()).filter(Boolean);
+}
+
+async function openReqModal(){
+  _clearReqModal();
+  document.getElementById('req-modal-title').textContent='New requisition';
+  document.getElementById('req-modal-submit-btn').textContent='Create requisition';
+  await _loadReqModalDropdowns();
   addRound('AI screening interview','bot_interview',true);
   addRound('Technical panel','panel',false);
+  document.getElementById('req-modal').classList.add('open');
+}
+
+// ── Open in EDIT mode ─────────────────────────────────────────────────────────
+async function openEditReq(reqId){
+  _clearReqModal();
+  document.getElementById('req-modal-title').textContent='Edit requisition';
+  document.getElementById('req-modal-submit-btn').textContent='Save changes';
+  _editReqId=reqId;
+  const [detail]=await Promise.all([api(`/api/requisitions/${reqId}/detail`),_loadReqModalDropdowns()]);
+  if(!detail){flash('Could not load requisition details.',false);return;}
+
+  // Populate fields
+  document.getElementById('rf-title').value=detail.title||'';
+  document.getElementById('rf-fy').value=detail.fiscal_year||'';
+  document.getElementById('rf-openings').value=detail.openings||1;
+  document.getElementById('rf-exp').value=detail.min_experience||'';
+  document.getElementById('rf-min-exp').value=detail.min_experience||'';
+  document.getElementById('rf-max-exp').value=detail.max_experience||'';
+  document.getElementById('rf-ctc-fixed').value=detail.budgeted_fixed||'';
+  document.getElementById('rf-ctc-variable').value=detail.budgeted_variable||'';
+  document.getElementById('rf-ctc-total').value=detail.budgeted_ctc||'';
+  document.getElementById('rf-risk').value=detail.risk||'';
+  document.getElementById('rf-loc').value=detail.hiring_location||'';
+  document.getElementById('rf-project').value=detail.project||'';
+  document.getElementById('rf-grade').value=detail.grade_level||'';
+  document.getElementById('rf-priority').value=detail.priority||'';
+  document.getElementById('rf-p1').checked=!!detail.is_p1;
+  document.getElementById('rf-skills').value=(detail.key_skills||[]).join(', ');
+  document.getElementById('rf-jd').value=detail.job_description||'';
+
+  // Roll type
+  const rollEl=document.getElementById('rf-roll');if(rollEl&&detail.roll_type)rollEl.value=detail.roll_type;
+
+  // Source channels
+  (detail.source_channels||[]).forEach(ch=>{const el=document.getElementById('rf-ch-'+ch);if(el)el.checked=true;});
+
+  // Fresher + weights
+  const rfFresher=document.getElementById('rf-fresher');
+  if(rfFresher){rfFresher.checked=!!detail.is_fresher_role;_toggleFresherWeights();}
+  const rfRW=document.getElementById('rf-resume-weight');
+  if(rfRW)rfRW.value=Math.round((detail.resume_weight||0.40)*100);
+  const rfIW=document.getElementById('rf-interview-weight');
+  if(rfIW)rfIW.value=Math.round((detail.interview_weight||0.60)*100);
+
+  // Set BU dropdown (need to match by BU id)
+  const buSel=document.getElementById('rf-bu');
+  if(buSel&&detail.bu_id){
+    // _filterBU was already called; find and select the right option
+    Array.from(buSel.options).forEach(o=>{if(o.dataset.id===detail.bu_id||o.value===detail.bu_id)buSel.value=o.value;});
+    // Also set group company to match
+    const buEntry=(_allBUs||[]).find(b=>b.id===detail.bu_id);
+    const gcSel=document.getElementById('rf-gc');
+    if(buEntry&&gcSel){gcSel.value=buEntry.company;_filterBU();}
+    // Re-select after filter refresh
+    Array.from(buSel.options).forEach(o=>{if(o.dataset&&o.dataset.id===detail.bu_id)o.selected=true;});
+    // Try direct value set
+    buSel.value=detail.bu_id;
+  }
+
+  // Band
+  const bandSel=document.getElementById('rf-band');
+  if(bandSel&&detail.band_id)bandSel.value=detail.band_id;
+
+  // Screening questions
+  (detail.screening_questions||[]).forEach(q=>{if(q&&q.trim())_addSQ(q);});
+
+  // Rounds
+  document.getElementById('rounds-list').innerHTML='';
+  _roundCount=0;
+  (detail.rounds||[]).forEach(r=>addRound(r.name,r.round_type,r.is_auto));
+
   document.getElementById('req-modal').classList.add('open');
 }
 
@@ -5629,7 +5748,53 @@ async function _applyChainTemplate(){
   sel.value=''; // reset picker
   flash(`Template "${t.name}" applied — ${_approverChain.length} step${_approverChain.length!==1?'s':''}.`);
 }
-function closeReqModal(){document.getElementById('req-modal').classList.remove('open');}
+function closeReqModal(){document.getElementById('req-modal').classList.remove('open');_editReqId=null;}
+
+// ── Change-requisition dropdown helpers (singleton fixed-position) ─────────────
+function _toggleReqMenu(btn){
+  const dd=document.getElementById('req-change-dropdown');
+  if(dd.style.display!=='none'&&dd._srcBtn===btn){_closeReqMenus();return;}
+  const reqId=btn.dataset.reqId, status=btn.dataset.reqStatus, title=btn.dataset.reqTitle;
+  dd._reqId=reqId; dd._reqTitle=title; dd._srcBtn=btn;
+  const items=['<div class="rcm-item" onclick="_ddAction(\'edit\')">✏️ Edit</div>'];
+  if(status==='open')items.push('<div class="rcm-item" onclick="_ddAction(\'on_hold\')">⏸ Hold</div>');
+  if(status==='on_hold'||status==='closed')items.push('<div class="rcm-item" onclick="_ddAction(\'reopen\')">▶️ Reopen</div>');
+  if(status!=='cancelled')items.push('<div class="rcm-item" style="color:#c0392b" onclick="_ddAction(\'cancelled\')">✕ Cancel</div>');
+  if(status==='cancelled')items.push('<div class="rcm-item" onclick="_ddAction(\'reopen\')">🔄 Reopen</div>');
+  dd.innerHTML=items.join('');
+  const r=btn.getBoundingClientRect();
+  dd.style.display='block';
+  const w=dd.offsetWidth||140;
+  let left=r.right-w; if(left<4)left=4;
+  let top=r.bottom+4;
+  if(top+dd.offsetHeight>window.innerHeight-8)top=r.top-dd.offsetHeight-4;
+  dd.style.left=left+'px'; dd.style.top=top+'px';
+}
+function _closeReqMenus(){
+  const dd=document.getElementById('req-change-dropdown');
+  if(dd){dd.style.display='none';dd._srcBtn=null;}
+}
+function _ddAction(action){
+  const dd=document.getElementById('req-change-dropdown');
+  const reqId=dd._reqId, title=dd._reqTitle;
+  _closeReqMenus();
+  if(action==='edit')openEditReq(reqId);
+  else if(action==='on_hold')changeReqStatus(reqId,'on_hold',title);
+  else if(action==='reopen')changeReqStatus(reqId,'open',title);
+  else if(action==='cancelled')changeReqStatus(reqId,'cancelled',title);
+}
+document.addEventListener('click',function(e){
+  const dd=document.getElementById('req-change-dropdown');
+  if(dd&&dd.style.display!=='none'&&!dd.contains(e.target)&&e.target!==dd._srcBtn)_closeReqMenus();
+});
+
+async function changeReqStatus(reqId,status,title){
+  const label={on_hold:'put on hold',cancelled:'cancelled',open:'reopened'}[status]||status;
+  if(!confirm(`${status==='cancelled'?'Cancel':'Change status of'} "${title}" to ${status.replace(/_/g,' ')}?`))return;
+  const res=await api(`/api/requisitions/${reqId}/status`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
+  if(res?.ok){flash(`"${title}" ${label}.`);screenRequisitions();}
+  else flash(res?.detail||'Error changing status.',false);
+}
 
 // ── Base-URL status (cached, loaded lazily) ──────────────────────────────────
 let _baseUrlStatus = null;
@@ -6007,6 +6172,7 @@ async function submitReq(){
   });
   const fixed=parseFloat(document.getElementById('rf-ctc-fixed').value)||null;
   const variable=parseFloat(document.getElementById('rf-ctc-variable').value)||null;
+  const isFresher=document.getElementById('rf-fresher')?.checked||false;
   const body={
     title,bu_id:document.getElementById('rf-bu').value,band_id:document.getElementById('rf-band').value,
     roll_type:document.getElementById('rf-roll').value,openings:parseInt(document.getElementById('rf-openings').value)||1,
@@ -6023,11 +6189,22 @@ async function submitReq(){
     max_experience:parseFloat(document.getElementById('rf-max-exp').value)||null,
     priority:document.getElementById('rf-priority').value||null,
     source_channels:['linkedin','naukri','referral','campus','direct','other'].filter(ch=>document.getElementById('rf-ch-'+ch)?.checked),
-    is_fresher_role:document.getElementById('rf-fresher')?.checked||false,
-    resume_weight:document.getElementById('rf-fresher')?.checked?0.40:(parseFloat(document.getElementById('rf-resume-weight')?.value||40)/100),
-    interview_weight:document.getElementById('rf-fresher')?.checked?0.60:(parseFloat(document.getElementById('rf-interview-weight')?.value||60)/100),
+    screening_questions:_getSQs(),
+    is_fresher_role:isFresher,
+    resume_weight:isFresher?0.40:(parseFloat(document.getElementById('rf-resume-weight')?.value||40)/100),
+    interview_weight:isFresher?0.60:(parseFloat(document.getElementById('rf-interview-weight')?.value||60)/100),
     rounds,
   };
+
+  if(_editReqId){
+    // EDIT mode — PATCH
+    const res=await api(`/api/requisitions/${_editReqId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!res||res.detail){flash(res?.detail||'Error saving requisition',false);return;}
+    flash(`Requisition "${title}" updated.`);closeReqModal();screenRequisitions();
+    return;
+  }
+
+  // CREATE mode — POST
   const res=await api('/api/requisitions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!res||res.detail){flash(res?.detail||'Error creating requisition',false);return;}
   // Save the offer approval chain if any approvers were added
@@ -6040,7 +6217,6 @@ async function submitReq(){
   if(res.approval_status==='pending_ta_approval'){
     flash('Requisition submitted — sent to TA for approval.');
     closeReqModal();
-    // Refresh TA badge and stay on current screen
     _updateReqApprovalBadge();
   } else {
     flash(`Requisition "${title}" created.`);closeReqModal();screenRequisitions();
@@ -9332,5 +9508,7 @@ _resetIdle();
   if(ME.role==='ta_manager') _updateReqApprovalBadge();
 })();
 </script>
+<!-- Singleton fixed-position dropdown for Change requisition — lives outside all overflow:hidden containers -->
+<div id="req-change-dropdown" style="display:none;position:fixed;background:#fff;border:1px solid var(--border);border-radius:4px;box-shadow:0 4px 16px rgba(0,0,0,.16);z-index:9999;min-width:130px;padding:4px 0"></div>
 </body>
 </html>

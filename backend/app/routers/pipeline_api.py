@@ -480,6 +480,10 @@ class RequisitionIn(BaseModel):
     grade_level: Optional[str] = None
     priority: Optional[str] = None
     source_channels: list[str] = []
+    screening_questions: list[str] = []
+    is_fresher_role: bool = False
+    resume_weight: Optional[float] = None
+    interview_weight: Optional[float] = None
     rounds: list[RoundIn] = []
 
 
@@ -506,6 +510,9 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
     )
     req_code = f"REQ-{int((seq_row or {}).get('n') or 1):04d}"
 
+    rw = body.resume_weight if body.resume_weight is not None else (0.40 if not body.is_fresher_role else 0.40)
+    iw = body.interview_weight if body.interview_weight is not None else (0.60 if not body.is_fresher_role else 0.60)
+
     req = query_one(
         """
         INSERT INTO requisition
@@ -514,9 +521,10 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
            openings, fiscal_year, job_description,
            is_p1, risk, hiring_location,
            project, grade_level, priority, source_channels,
+           screening_questions, is_fresher_role, resume_weight, interview_weight,
            req_code, status, opened_at, created_by,
            approval_status, created_by_role)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s,%s,%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',now(),%s,%s,%s)
         RETURNING id, title, status, req_code, approval_status
         """,
         [
@@ -526,6 +534,7 @@ def create_requisition(body: RequisitionIn, user: dict = Depends(get_current_use
             body.openings, body.fiscal_year, body.job_description,
             body.is_p1, body.risk, body.hiring_location,
             body.project, body.grade_level, body.priority, body.source_channels,
+            body.screening_questions, body.is_fresher_role, rw, iw,
             req_code, user["sub"], approval_status, role,
         ],
     )
@@ -702,6 +711,138 @@ def get_requisition_detail(req_id: str, _user: dict = Depends(get_current_user))
         [req_id],
     )
     return {**dict(req), "rounds": rounds}
+
+
+# ─── Edit requisition ─────────────────────────────────────────────────────────
+
+class RequisitionEditIn(BaseModel):
+    title: Optional[str] = None
+    bu_id: Optional[str] = None
+    band_id: Optional[str] = None
+    roll_type: Optional[str] = None
+    key_skills: Optional[list[str]] = None
+    min_experience: Optional[float] = None
+    max_experience: Optional[float] = None
+    budgeted_fixed: Optional[float] = None
+    budgeted_variable: Optional[float] = None
+    openings: Optional[int] = None
+    fiscal_year: Optional[str] = None
+    job_description: Optional[str] = None
+    is_p1: Optional[bool] = None
+    risk: Optional[str] = None
+    hiring_location: Optional[str] = None
+    project: Optional[str] = None
+    grade_level: Optional[str] = None
+    priority: Optional[str] = None
+    source_channels: Optional[list[str]] = None
+    screening_questions: Optional[list[str]] = None
+    is_fresher_role: Optional[bool] = None
+    resume_weight: Optional[float] = None
+    interview_weight: Optional[float] = None
+    rounds: Optional[list[RoundIn]] = None
+
+
+@router.patch("/requisitions/{req_id}")
+def edit_requisition(req_id: str, body: RequisitionEditIn, user: dict = Depends(get_current_user)):
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised to edit requisitions")
+
+    existing = query_one("SELECT id, status FROM requisition WHERE id = %s", [req_id])
+    if not existing:
+        raise HTTPException(404, "Requisition not found")
+
+    sets, vals = [], []
+
+    def _add(col, val):
+        sets.append(f"{col} = %s")
+        vals.append(val)
+
+    if body.title is not None:           _add("title", body.title)
+    if body.bu_id is not None:           _add("bu_id", body.bu_id)
+    if body.band_id is not None:         _add("band_id", body.band_id)
+    if body.roll_type is not None:       _add("roll_type", body.roll_type)
+    if body.key_skills is not None:      _add("key_skills", body.key_skills)
+    if body.min_experience is not None:  _add("min_experience", body.min_experience)
+    if body.max_experience is not None:  _add("max_experience", body.max_experience)
+    if body.openings is not None:        _add("openings", body.openings)
+    if body.fiscal_year is not None:     _add("fiscal_year", body.fiscal_year)
+    if body.job_description is not None: _add("job_description", body.job_description)
+    if body.is_p1 is not None:           _add("is_p1", body.is_p1)
+    if body.risk is not None:            _add("risk", body.risk or None)
+    if body.hiring_location is not None: _add("hiring_location", body.hiring_location or None)
+    if body.project is not None:         _add("project", body.project or None)
+    if body.grade_level is not None:     _add("grade_level", body.grade_level or None)
+    if body.priority is not None:        _add("priority", body.priority or None)
+    if body.source_channels is not None: _add("source_channels", body.source_channels)
+    if body.screening_questions is not None: _add("screening_questions", body.screening_questions)
+    if body.is_fresher_role is not None: _add("is_fresher_role", body.is_fresher_role)
+    if body.resume_weight is not None:   _add("resume_weight", body.resume_weight)
+    if body.interview_weight is not None: _add("interview_weight", body.interview_weight)
+
+    if body.budgeted_fixed is not None or body.budgeted_variable is not None:
+        fixed = body.budgeted_fixed
+        variable = body.budgeted_variable
+        if fixed is not None:    _add("budgeted_fixed", fixed)
+        if variable is not None: _add("budgeted_variable", variable)
+        # Recalculate total only when both sides known
+        existing_row = query_one(
+            "SELECT budgeted_fixed, budgeted_variable FROM requisition WHERE id=%s", [req_id]
+        )
+        f = fixed if fixed is not None else (existing_row or {}).get("budgeted_fixed") or 0
+        v = variable if variable is not None else (existing_row or {}).get("budgeted_variable") or 0
+        _add("budgeted_ctc", f + v)
+
+    if sets:
+        vals.append(req_id)
+        query(f"UPDATE requisition SET {', '.join(sets)} WHERE id = %s", vals, fetch=False)
+
+    # Replace round_config if rounds provided
+    if body.rounds is not None:
+        query("DELETE FROM round_config WHERE requisition_id = %s", [req_id], fetch=False)
+        for r in body.rounds:
+            query(
+                """INSERT INTO round_config (requisition_id, sequence, name, round_type, is_auto)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                [req_id, r.sequence, r.name, r.round_type, r.is_auto],
+                fetch=False,
+            )
+
+    return {"ok": True}
+
+
+# ─── Status change (hold / cancel / reopen) ───────────────────────────────────
+
+class ReqStatusIn(BaseModel):
+    status: str
+
+
+@router.patch("/requisitions/{req_id}/status")
+def change_req_status(req_id: str, body: ReqStatusIn, user: dict = Depends(get_current_user)):
+    if user["role"] not in ("recruiter", "ta_manager", "admin"):
+        raise HTTPException(403, "Not authorised to change requisition status")
+    allowed = {"open", "on_hold", "closed", "cancelled"}
+    if body.status not in allowed:
+        raise HTTPException(400, f"Status must be one of: {', '.join(allowed)}")
+    existing = query_one("SELECT id, status FROM requisition WHERE id = %s", [req_id])
+    if not existing:
+        raise HTTPException(404, "Requisition not found")
+
+    extra = {}
+    if body.status == "open" and existing["status"] != "open":
+        extra["opened_at"] = "now()"
+    if body.status in ("closed", "cancelled"):
+        extra["closed_at"] = "now()"
+
+    set_clause = "status = %s"
+    vals = [body.status]
+    if "opened_at" in extra:
+        set_clause += ", opened_at = now()"
+    if "closed_at" in extra:
+        set_clause += ", closed_at = now()"
+    vals.append(req_id)
+
+    query(f"UPDATE requisition SET {set_clause} WHERE id = %s", vals, fetch=False)
+    return {"ok": True, "status": body.status}
 
 
 @router.get("/requisitions/{req_id}/kanban")

@@ -220,44 +220,69 @@ _GENERIC_Q = [
 ]
 
 
-def _generate_questions(key_skills: list, job_description: str) -> list:
+def _generate_questions(key_skills: list, job_description: str, screening_questions: list = None) -> list:
     questions = []
 
-    # Opening generic question
-    questions.append({
-        "seq": 1,
-        "text": _GENERIC_Q[0],
-        "expected_keywords": ["experience", "background", "role", "work", "team"],
-    })
+    # Recruiter-defined screening questions come first (highest priority)
+    for sq in (screening_questions or []):
+        sq = sq.strip()
+        if not sq:
+            continue
+        questions.append({
+            "seq": len(questions) + 1,
+            "text": sq,
+            "expected_keywords": [],
+            "source": "recruiter",
+        })
 
-    # Skill-based questions (up to 4)
-    for i, skill in enumerate(key_skills[:4]):
+    # Opening generic question (only if no recruiter questions yet)
+    if not questions:
+        questions.append({
+            "seq": 1,
+            "text": _GENERIC_Q[0],
+            "expected_keywords": ["experience", "background", "role", "work", "team"],
+            "source": "auto",
+        })
+
+    # Skill-based questions — fill remaining slots up to a total cap of 10
+    cap = 10
+    auto_skill_slots = max(0, cap - len(questions) - 2)  # reserve 2 for generic closing
+    for i, skill in enumerate(key_skills[:auto_skill_slots]):
         tmpl = _SKILL_Q[i % len(_SKILL_Q)]
         questions.append({
             "seq": len(questions) + 1,
             "text": tmpl.format(skill=skill),
             "expected_keywords": [w.lower() for w in skill.split()] + ["project", "used", "built", "implemented"],
+            "source": "auto",
         })
 
     # JD-derived context question
-    if job_description:
+    if job_description and len(questions) < cap - 1:
         jd_words = [w for w in job_description.split() if len(w) > 5][:6]
         if jd_words:
             questions.append({
                 "seq": len(questions) + 1,
                 "text": f"Tell me about your experience relevant to: {', '.join(jd_words[:4])}.",
                 "expected_keywords": [w.lower() for w in jd_words],
+                "source": "auto",
             })
 
-    # Closing generic questions
+    # Closing generic questions (at most 2, if space remains)
     for gq in _GENERIC_Q[1:3]:
+        if len(questions) >= cap:
+            break
         questions.append({
             "seq": len(questions) + 1,
             "text": gq,
             "expected_keywords": ["deadline", "priority", "achievement", "result", "impact", "career"],
+            "source": "auto",
         })
 
-    return questions[:8]  # cap at 8 questions
+    # Re-number sequences in order
+    for i, q in enumerate(questions):
+        q["seq"] = i + 1
+
+    return questions[:cap]
 
 
 # ── Scoring ───────────────────────────────────────────────────────────────────
@@ -341,7 +366,8 @@ def _nexai_mode() -> str:
 @router.post("/sessions", status_code=201)
 def start_session(body: StartSessionIn, _user: dict = Depends(get_current_user)):
     app_row = query_one(
-        """SELECT a.id, a.requisition_id, r.key_skills, r.job_description
+        """SELECT a.id, a.requisition_id, r.key_skills, r.job_description,
+                  COALESCE(r.screening_questions, '{}') AS screening_questions
            FROM application a JOIN requisition r ON r.id = a.requisition_id
            WHERE a.id = %s""",
         [body.application_id],
@@ -351,7 +377,8 @@ def start_session(body: StartSessionIn, _user: dict = Depends(get_current_user))
 
     key_skills = app_row["key_skills"] or []
     jd = app_row["job_description"] or ""
-    questions = _generate_questions(key_skills, jd)
+    sq = [q for q in (app_row["screening_questions"] or []) if q and q.strip()]
+    questions = _generate_questions(key_skills, jd, sq)
 
     # Upsert session (one per application)
     existing = query_one(

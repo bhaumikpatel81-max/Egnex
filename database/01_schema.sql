@@ -68,28 +68,47 @@ CREATE TABLE app_user (
 -- REQUISITIONS  (an open position)
 -- ------------------------------------------------------------
 CREATE TABLE requisition (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    external_ref    TEXT,                   -- maps to Darwin REQ_ID later
-    title           TEXT NOT NULL,
-    bu_id           UUID NOT NULL REFERENCES business_unit(id),
-    band_id         UUID NOT NULL REFERENCES band(id),
-    roll_type       TEXT NOT NULL DEFAULT 'on_roll'
-                    CHECK (roll_type IN ('on_roll','off_roll')),
-    -- on_roll  = Amnex payroll
-    -- off_roll = third-party vendor payroll (field/blue-collar)
-    job_description TEXT,
-    key_skills      TEXT[],                 -- array of required skills
-    min_experience  NUMERIC,                -- years
-    budgeted_ctc    NUMERIC,                -- for budget vs actual reporting
-    openings        INT NOT NULL DEFAULT 1, -- how many seats this req fills
-    fiscal_year     TEXT,                   -- e.g. "FY25-26"
-    status          TEXT NOT NULL DEFAULT 'draft'
-                    CHECK (status IN ('draft','open','on_hold','closed','cancelled')),
-    hiring_manager_id UUID REFERENCES app_user(id),
-    created_by      UUID REFERENCES app_user(id),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    opened_at       TIMESTAMPTZ,            -- when status -> open (TAT clock start)
-    closed_at       TIMESTAMPTZ
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    external_ref        TEXT,
+    req_code            TEXT UNIQUE,                    -- auto-generated REQ-0001
+    title               TEXT NOT NULL,
+    bu_id               UUID NOT NULL REFERENCES business_unit(id),
+    band_id             UUID NOT NULL REFERENCES band(id),
+    roll_type           TEXT NOT NULL DEFAULT 'on_roll'
+                        CHECK (roll_type IN ('on_roll','off_roll')),
+    job_description     TEXT,
+    key_skills          TEXT[],
+    min_experience      NUMERIC,
+    max_experience      NUMERIC,
+    budgeted_ctc        NUMERIC,
+    budgeted_fixed      NUMERIC,
+    budgeted_variable   NUMERIC,
+    openings            INT NOT NULL DEFAULT 1,
+    fiscal_year         TEXT,
+    status              TEXT NOT NULL DEFAULT 'draft'
+                        CHECK (status IN ('draft','open','on_hold','closed','cancelled')),
+    approval_status     TEXT DEFAULT 'approved'
+                        CHECK (approval_status IN ('approved','pending_ta_approval','rejected')),
+    created_by_role     TEXT,
+    hiring_manager_id   UUID REFERENCES app_user(id),
+    created_by          UUID REFERENCES app_user(id),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    opened_at           TIMESTAMPTZ,
+    closed_at           TIMESTAMPTZ,
+    -- extended fields
+    is_p1               BOOLEAN NOT NULL DEFAULT FALSE,
+    risk                TEXT CHECK (risk IN ('low','medium','high','critical')),
+    hiring_location     TEXT,
+    project             TEXT,
+    grade_level         TEXT,
+    priority            TEXT CHECK (priority IN ('critical','high','medium','low')),
+    source_channels     TEXT[],
+    is_fresher_role     BOOLEAN DEFAULT FALSE,
+    resume_weight       NUMERIC(4,2) DEFAULT 0.40,
+    interview_weight    NUMERIC(4,2) DEFAULT 0.60,
+    criticality         TEXT NOT NULL DEFAULT 'Medium',
+    screening_questions TEXT[] DEFAULT '{}',            -- recruiter-set questions for NexAI
+    is_internal_movement BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Many recruiters can share a requisition. A TA manager can assign

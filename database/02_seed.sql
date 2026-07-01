@@ -1,8 +1,8 @@
 -- ============================================================
--- ONE CLICK HIRE  -  Seed data (Phase 1)
+-- ONE CLICK HIRE  -  Seed data
 -- Real Amnex structure: group companies, business units, bands,
 -- plus starter config (approval chains, email templates, a
--- feedback form, and a sample requisition with rounds).
+-- default feedback form).
 -- Run AFTER 01_schema.sql.
 -- ============================================================
 
@@ -41,16 +41,15 @@ INSERT INTO band (code, rank, description) VALUES
   ('1B', 12, 'GM / VP'),
   ('1A', 13, 'Senior leadership');
 
--- ---------- USERS (sample; replace with real team) ----------
+-- ---------- USERS ----------
+-- Only the TA Admin seed account. Password is NOT set here.
+-- Admin must use "Forgot password" on first login to set their password.
 INSERT INTO app_user (full_name, email, role) VALUES
-  ('TA Admin',        'ta.admin@amnex.com',     'admin'),
-  ('TA Manager',      'ta.manager@amnex.com',   'ta_manager'),
-  ('Recruiter One',   'recruiter1@amnex.com',   'recruiter'),
-  ('Recruiter Two',   'recruiter2@amnex.com',   'recruiter');
+  ('TA Admin', 'hr@amnex.com', 'admin')
+ON CONFLICT (email) DO NOTHING;
 
--- ---------- APPROVAL CHAINS (per band band group) ----------
+-- ---------- APPROVAL CHAINS (per band group) ----------
 -- Junior bands: BU head only. Senior bands: BU head + director.
--- Edit approver_steps any time to change who signs off.
 INSERT INTO approval_chain (band_id, name, approver_steps)
 SELECT b.id,
        'Junior chain (' || b.code || ')',
@@ -73,7 +72,7 @@ SELECT 'Default panel scorecard',
          {"key":"comments","label":"Comments","type":"text"}
        ]'::jsonb,
        u.id
-FROM app_user u WHERE u.email = 'ta.admin@amnex.com';
+FROM app_user u WHERE u.email = 'hr@amnex.com';
 
 -- ---------- EMAIL TEMPLATES (customizable) ----------
 INSERT INTO email_template (name, subject, body, category, created_by)
@@ -96,27 +95,4 @@ Amnex Talent Acquisition', 'candidate'),
 You are scheduled to interview {{candidate_name}} for {{job_title}} on {{interview_time}}.
 Link: {{meet_link}}', 'panel')
 ) AS t(name, subject, body, category)
-WHERE u.email = 'ta.admin@amnex.com';
-
--- ---------- SAMPLE REQUISITION + ROUNDS (demonstration) ----------
-WITH req AS (
-  INSERT INTO requisition
-    (title, bu_id, band_id, roll_type, key_skills, min_experience,
-     budgeted_ctc, openings, fiscal_year, status, opened_at)
-  SELECT 'Backend Engineer',
-         bu.id, b.id, 'on_roll',
-         ARRAY['Python','PostgreSQL','REST API','GCP'],
-         3, 1800000, 1, 'FY25-26', 'open', now()
-  FROM business_unit bu, band b
-  WHERE bu.name = 'Datafabrics' AND b.code = '3B'
-  LIMIT 1
-  RETURNING id
-)
-INSERT INTO round_config (requisition_id, sequence, name, round_type, is_auto)
-SELECT req.id, r.seq, r.name, r.rtype, r.auto
-FROM req
-CROSS JOIN (VALUES
-  (1, 'AI screening interview', 'bot_interview', TRUE),
-  (2, 'Technical round',        'panel',         FALSE),
-  (3, 'HR discussion',          'hr',            FALSE)
-) AS r(seq, name, rtype, auto);
+WHERE u.email = 'hr@amnex.com';
