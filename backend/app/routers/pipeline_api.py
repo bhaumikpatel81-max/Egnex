@@ -86,7 +86,7 @@ def dashboard(user: dict = Depends(get_current_user)):
         ) AS avg_days
         FROM stage_event e1
         JOIN stage_event e2 ON e2.application_id = e1.application_id
-        WHERE e1.to_status = 'applied' AND e2.to_status = 'joined'
+        WHERE e1.to_status = 'applied' AND e2.to_status = 'hired'
         """,
         [],
     )
@@ -1018,7 +1018,7 @@ def cv_database(user: dict = Depends(get_current_user)):
             (WHERE c.resume_url IS NOT NULL AND c.resume_url <> '')         AS resumes_on_file,
           ROUND(AVG(a.combined_score)
             FILTER (WHERE a.combined_score IS NOT NULL)::numeric, 1)        AS avg_score,
-          COUNT(DISTINCT LOWER(c.email)) FILTER (WHERE a.status = 'joined') AS total_joined
+          COUNT(DISTINCT LOWER(c.email)) FILTER (WHERE a.status = 'hired') AS total_joined
         FROM candidate c
         LEFT JOIN application a ON a.candidate_id = c.id
         WHERE 1=1 {scope_where}

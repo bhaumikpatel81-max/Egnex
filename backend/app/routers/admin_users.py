@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ..db import query, query_one
-from ..auth_utils import hash_password, require_admin, get_current_user
+from ..auth_utils import hash_password, require_admin, require_admin_or_manager, get_current_user
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -36,14 +36,14 @@ class ResetPasswordIn(BaseModel):
 
 
 @router.get("/users")
-def list_users(admin=Depends(require_admin)):
+def list_users(admin=Depends(require_admin_or_manager)):
     return query(
         f"SELECT {_USER_COLS} FROM app_user ORDER BY created_at DESC"
     )
 
 
 @router.post("/users", status_code=201)
-def create_user(body: CreateUserIn, admin=Depends(require_admin)):
+def create_user(body: CreateUserIn, admin=Depends(require_admin_or_manager)):
     if body.role not in _VALID_ROLES:
         raise HTTPException(400, f"Invalid role. Choose from: {sorted(_VALID_ROLES)}")
     if body.password and len(body.password) < 6:
@@ -68,7 +68,7 @@ def create_user(body: CreateUserIn, admin=Depends(require_admin)):
 
 
 @router.patch("/users/{user_id}")
-def update_user(user_id: str, body: UpdateUserIn, admin=Depends(require_admin)):
+def update_user(user_id: str, body: UpdateUserIn, admin=Depends(require_admin_or_manager)):
     if body.role and body.role not in _VALID_ROLES:
         raise HTTPException(400, f"Invalid role. Choose from: {sorted(_VALID_ROLES)}")
     sets, params = [], []
@@ -91,7 +91,7 @@ def update_user(user_id: str, body: UpdateUserIn, admin=Depends(require_admin)):
 
 
 @router.delete("/users/{user_id}")
-def deactivate_user(user_id: str, admin=Depends(require_admin)):
+def deactivate_user(user_id: str, admin=Depends(require_admin_or_manager)):
     row = query_one(
         "UPDATE app_user SET is_active = false WHERE id = %s RETURNING id", [user_id]
     )
@@ -101,7 +101,7 @@ def deactivate_user(user_id: str, admin=Depends(require_admin)):
 
 
 @router.post("/users/{user_id}/reset-password")
-def reset_password(user_id: str, body: ResetPasswordIn, admin=Depends(require_admin)):
+def reset_password(user_id: str, body: ResetPasswordIn, admin=Depends(require_admin_or_manager)):
     if len(body.new_password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
     row = query_one(

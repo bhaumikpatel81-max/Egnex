@@ -701,6 +701,21 @@ END $$""",
         "CREATE INDEX IF NOT EXISTS idx_campus_cand_batch ON campus_candidate(batch_id)",
         "CREATE INDEX IF NOT EXISTS idx_campus_cand_app   ON campus_candidate(application_id)",
 
+        # ── Password reset / first-time set-password tokens ─────────────────────
+        # Must be created BEFORE Migration 41 which ALTERs this table.
+        """CREATE TABLE IF NOT EXISTS password_reset_token (
+            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id     UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+            token_hash  TEXT NOT NULL UNIQUE,
+            purpose     TEXT NOT NULL DEFAULT 'reset'
+                        CHECK (purpose IN ('reset','invite')),
+            expires_at  TIMESTAMPTZ NOT NULL,
+            used_at     TIMESTAMPTZ,
+            created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_token(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_token(token_hash)",
+
         # ── Migration 41: Vendor Management ──────────────────────────────────────────
         # Extend password_reset_token with account_type so one token table serves
         # staff, vendor, and candidate logins.  The FK on user_id is dropped so
@@ -785,21 +800,7 @@ END $$""",
         "CREATE INDEX IF NOT EXISTS idx_cfb_candidate   ON candidate_feedback(candidate_id)",
         "CREATE INDEX IF NOT EXISTS idx_cfb_application ON candidate_feedback(application_id)",
 
-        # ── Password reset / first-time set-password tokens ─────────────
-        """CREATE TABLE IF NOT EXISTS password_reset_token (
-            id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id     UUID NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
-            token_hash  TEXT NOT NULL UNIQUE,
-            purpose     TEXT NOT NULL DEFAULT 'reset'
-                        CHECK (purpose IN ('reset','invite')),
-            expires_at  TIMESTAMPTZ NOT NULL,
-            used_at     TIMESTAMPTZ,
-            created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-        )""",
-        "CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_token(user_id)",
-        "CREATE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_token(token_hash)",
-
-        # ── Migration 33: Gamification — criticality flag + ledger + config ──
+        # ── Migration 43: Gamification — criticality flag + ledger + config ──
         # Criticality on requisition (multiplies gamification points)
         "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS criticality TEXT NOT NULL DEFAULT 'Medium' CHECK (criticality IN ('Low','Medium','High','Critical'))",
         # Append-only gamification ledger
@@ -1680,7 +1681,7 @@ def cv_database(request: Request):
             (WHERE c.resume_url IS NOT NULL AND c.resume_url <> '')         AS resumes_on_file,
           ROUND(AVG(a.combined_score)
             FILTER (WHERE a.combined_score IS NOT NULL)::numeric, 1)        AS avg_score,
-          COUNT(DISTINCT LOWER(c.email)) FILTER (WHERE a.status = 'joined') AS total_joined
+          COUNT(DISTINCT LOWER(c.email)) FILTER (WHERE a.status = 'hired') AS total_joined
         FROM candidate c
         LEFT JOIN application a ON a.candidate_id = c.id
         """,

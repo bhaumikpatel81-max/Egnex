@@ -70,3 +70,9 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin access required")
     return user
+
+
+def require_admin_or_manager(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") not in ("admin", "ta_manager"):
+        raise HTTPException(403, "Admin or TA Manager access required")
+    return user
