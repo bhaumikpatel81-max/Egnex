@@ -14,7 +14,7 @@ _VALID_ROLES = {
     "hiring_manager", "bu_head", "director", "interviewer",
 }
 
-_USER_COLS = "id, full_name, email, role, is_active, created_at"
+_USER_COLS = "id, full_name, email, role, is_active, created_at, gmail_address"
 
 
 class CreateUserIn(BaseModel):
@@ -90,6 +90,104 @@ def update_user(user_id: str, body: UpdateUserIn, admin=Depends(require_admin_or
     return row
 
 
+class UpdateUserFullIn(BaseModel):
+    full_name:  Optional[str] = None
+    email:      Optional[str] = None
+    role:       Optional[str] = None
+    is_active:  Optional[bool] = None
+
+
+@router.patch("/users/{user_id}/full")
+def update_user_full(user_id: str, body: UpdateUserFullIn, admin=Depends(require_admin_or_manager)):
+    """Extended PATCH that also allows updating email and resetting the user's login email."""
+    if body.role and body.role not in _VALID_ROLES:
+        raise HTTPException(400, f"Invalid role. Choose from: {sorted(_VALID_ROLES)}")
+    if body.email:
+        conflict = query_one(
+            "SELECT id FROM app_user WHERE LOWER(email)=LOWER(%s) AND id != %s",
+            [body.email, user_id],
+        )
+        if conflict:
+            raise HTTPException(400, "That email is already used by another user.")
+    sets, params = [], []
+    if body.full_name is not None:
+        sets.append("full_name = %s"); params.append(body.full_name)
+    if body.email is not None:
+        sets.append("email = %s"); params.append(body.email.lower().strip())
+    if body.role is not None:
+        sets.append("role = %s"); params.append(body.role)
+    if body.is_active is not None:
+        sets.append("is_active = %s"); params.append(body.is_active)
+    if not sets:
+        raise HTTPException(400, "Nothing to update")
+    params.append(user_id)
+    row = query_one(
+        f"UPDATE app_user SET {', '.join(sets)} WHERE id = %s RETURNING {_USER_COLS}",
+        params,
+    )
+    if not row:
+        raise HTTPException(404, "User not found")
+    return row
+
+
+# ── Per-user Gmail / App Password (for individual email scanning) ─────────────
+
+class UserEmailConfigIn(BaseModel):
+    gmail_address:      Optional[str] = None
+    gmail_app_password: Optional[str] = None   # 16-char Gmail App Password; None = keep current
+
+
+@router.get("/users/{user_id}/email-config")
+def get_user_email_config(user_id: str, admin=Depends(require_admin_or_manager)):
+    row = query_one(
+        "SELECT gmail_address, gmail_app_password FROM app_user WHERE id = %s",
+        [user_id],
+    )
+    if not row:
+        raise HTTPException(404, "User not found")
+    has_pw = bool(row.get("gmail_app_password"))
+    return {
+        "gmail_address":      row.get("gmail_address") or "",
+        "app_password_set":   has_pw,
+        "app_password_hint":  "••••••••" if has_pw else "",
+    }
+
+
+@router.put("/users/{user_id}/email-config")
+def set_user_email_config(user_id: str, body: UserEmailConfigIn, admin=Depends(require_admin_or_manager)):
+    sets, params = [], []
+    if body.gmail_address is not None:
+        sets.append("gmail_address = %s")
+        params.append(body.gmail_address.lower().strip() if body.gmail_address else None)
+    if body.gmail_app_password and body.gmail_app_password not in ("", "••••••••"):
+        cleaned = body.gmail_app_password.replace(" ", "")
+        if len(cleaned) not in (16, 19):
+            raise HTTPException(400, "App Password must be 16 characters (spaces ignored).")
+        sets.append("gmail_app_password = %s")
+        params.append(cleaned)
+    if not sets:
+        raise HTTPException(400, "Nothing to update")
+    params.append(user_id)
+    row = query_one(
+        f"UPDATE app_user SET {', '.join(sets)} WHERE id = %s RETURNING id, gmail_address",
+        params,
+    )
+    if not row:
+        raise HTTPException(404, "User not found")
+    return {"ok": True, "gmail_address": row.get("gmail_address") or ""}
+
+
+@router.delete("/users/{user_id}/email-config")
+def clear_user_email_config(user_id: str, admin=Depends(require_admin_or_manager)):
+    row = query_one(
+        "UPDATE app_user SET gmail_address=NULL, gmail_app_password=NULL WHERE id=%s RETURNING id",
+        [user_id],
+    )
+    if not row:
+        raise HTTPException(404, "User not found")
+    return {"ok": True}
+
+
 @router.delete("/users/{user_id}")
 def deactivate_user(user_id: str, admin=Depends(require_admin_or_manager)):
     row = query_one(
@@ -98,6 +196,34 @@ def deactivate_user(user_id: str, admin=Depends(require_admin_or_manager)):
     if not row:
         raise HTTPException(404, "User not found")
     return {"deactivated": True}
+
+
+@router.delete("/users/{user_id}/permanent")
+def delete_user_permanent(user_id: str, admin=Depends(require_admin_or_manager)):
+    """
+    Permanently remove a user record.
+    Fails with 409 if the user owns records (requisitions, scorecards, etc.)
+    that cannot be orphaned — deactivate instead of deleting in that case.
+    Self-delete is blocked.
+    """
+    if str(admin.get("sub")) == str(user_id):
+        raise HTTPException(400, "You cannot delete your own account.")
+    row = query_one("SELECT id, full_name FROM app_user WHERE id = %s", [user_id])
+    if not row:
+        raise HTTPException(404, "User not found")
+    import psycopg2
+    try:
+        query("DELETE FROM app_user WHERE id = %s", [user_id], fetch=False)
+    except psycopg2.errors.ForeignKeyViolation:
+        raise HTTPException(
+            409,
+            f"Cannot delete '{row['full_name']}' — they have associated records "
+            "(requisitions, interviews, scorecards, etc.). "
+            "Deactivate the account instead to preserve history."
+        )
+    except Exception as exc:
+        raise HTTPException(500, f"Delete failed: {exc}")
+    return {"deleted": True, "full_name": row["full_name"]}
 
 
 @router.post("/users/{user_id}/reset-password")

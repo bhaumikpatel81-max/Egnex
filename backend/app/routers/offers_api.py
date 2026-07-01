@@ -293,7 +293,7 @@ def set_offer_approvers(
 def create_offer(body: CreateOfferIn, user: dict = Depends(get_current_user)):
     """
     Create an offer for a selected candidate and kick off the approval chain.
-    Application must be at status='selected'.
+    Application must be at status='documentation' (or 'interview' for direct offers).
     Requisition must have at least one approver in its chain.
     """
     if user["role"] not in ("recruiter", "ta_manager", "admin"):

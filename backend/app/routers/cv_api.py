@@ -483,21 +483,145 @@ def get_job(job_id: str, user: dict = Depends(_cv_auth)):
     }
 
 
-# ── Gmail status ──────────────────────────────────────────────────────────────
+# ── Gmail status (per-user App Password) ────────────────────────────────────
 
 @router.get("/email-status")
 def email_status(user: dict = Depends(_cv_auth)):
-    creds_path = os.environ.get("GOOGLE_OAUTH_CREDENTIALS")
-    configured = bool(creds_path and os.path.exists(creds_path))
-    setting = query_one(
-        "SELECT value FROM system_settings WHERE key='email_ingest_accounts'", []
+    row = query_one(
+        "SELECT gmail_address, gmail_app_password FROM app_user WHERE id = %s",
+        [user["sub"]],
     )
-    accounts = (setting or {}).get("value") or ""
+    gmail_addr = (row or {}).get("gmail_address") or ""
+    has_pw     = bool((row or {}).get("gmail_app_password"))
+    configured = bool(gmail_addr and has_pw)
     return {
-        "configured": configured,
-        "accounts":   [a.strip() for a in accounts.split(",") if a.strip()],
-        "env_var":    "GOOGLE_OAUTH_CREDENTIALS",
+        "configured":    configured,
+        "gmail_address": gmail_addr,
+        "accounts":      [gmail_addr] if configured else [],
     }
+
+
+# ── IMAP email scan (per-user Gmail + App Password) ──────────────────────────
+
+@router.post("/scan-email")
+def scan_email(background_tasks: BackgroundTasks, user: dict = Depends(_cv_auth)):
+    """
+    Scan the calling user's Gmail inbox via IMAP for CV attachments
+    (PDF / DOCX / DOC).  Returns a job_id to poll via /api/cv/jobs/{id}.
+    """
+    row = query_one(
+        "SELECT gmail_address, gmail_app_password FROM app_user WHERE id = %s",
+        [user["sub"]],
+    )
+    if not row or not row.get("gmail_address") or not row.get("gmail_app_password"):
+        raise HTTPException(400, "No Gmail App Password configured for your account. Ask your admin to set it.")
+
+    job_id = str(uuid.uuid4())
+    query(
+        """INSERT INTO cv_ingest_jobs (id, status, total, processed, mapped,
+                pooled, duplicates, errors, uploaded_by)
+           VALUES (%s, 'running', 0, 0, 0, 0, 0, '[]', %s)""",
+        [job_id, user["sub"]],
+        fetch=False,
+    )
+    background_tasks.add_task(
+        _run_imap_ingest, job_id,
+        row["gmail_address"], row["gmail_app_password"],
+        user["sub"],
+    )
+    return {"job_id": job_id}
+
+
+def _run_imap_ingest(job_id: str, gmail: str, app_password: str, uploaded_by: str):
+    """Background task: IMAP scan + ingest CV attachments from Gmail inbox."""
+    import imaplib
+    import email as _email_lib
+    from email import policy as _ep
+
+    IMAP_HOST = "imap.gmail.com"
+    IMAP_PORT = 993
+    CV_EXTS   = {".pdf", ".docx", ".doc"}
+
+    processed = mapped = pooled = duplicates = 0
+    errors: list = []
+
+    def _set_job(**kw):
+        sets = ", ".join(f"{k}=%s" for k in kw)
+        query(
+            f"UPDATE cv_ingest_jobs SET {sets} WHERE id=%s",
+            list(kw.values()) + [job_id],
+            fetch=False,
+        )
+
+    try:
+        mail = imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT)
+        mail.login(gmail, app_password)
+    except imaplib.IMAP4.error as exc:
+        import json
+        errors.append({"file": "IMAP login", "error": str(exc)})
+        _set_job(status="done", errors=json.dumps(errors))
+        return
+
+    try:
+        mail.select("INBOX")
+        # Search for unseen messages with attachments
+        _, msg_ids = mail.search(None, "UNSEEN")
+        ids = msg_ids[0].split() if msg_ids[0] else []
+
+        total = len(ids)
+        _set_job(total=total)
+
+        for uid in ids:
+            _, data = mail.fetch(uid, "(RFC822)")
+            raw = data[0][1]
+            msg = _email_lib.message_from_bytes(raw, policy=_ep.default)
+
+            found_attachment = False
+            for part in msg.walk():
+                ct = part.get_content_type()
+                cd = str(part.get("Content-Disposition", ""))
+                filename = part.get_filename()
+                if not filename:
+                    continue
+                ext = Path(filename).suffix.lower()
+                if ext not in CV_EXTS:
+                    continue
+                found_attachment = True
+                try:
+                    file_data = part.get_payload(decode=True)
+                    if not file_data:
+                        continue
+                    result = _ingest_one(file_data, filename, "email_ingest", uploaded_by)
+                    if result["status"] == "ok":
+                        processed += 1
+                        if result.get("mapped"):
+                            mapped += 1
+                        else:
+                            pooled += 1
+                    elif result["status"] == "duplicate":
+                        duplicates += 1
+                    else:
+                        errors.append({"file": filename, "error": result.get("error", "unknown")})
+                except Exception as exc:
+                    errors.append({"file": filename, "error": str(exc)})
+
+            # Mark email as seen regardless of whether we found a CV
+            mail.store(uid, "+FLAGS", "\\Seen")
+
+    finally:
+        try:
+            mail.logout()
+        except Exception:
+            pass
+        import json
+        _set_job(
+            status="done",
+            processed=processed,
+            mapped=mapped,
+            pooled=pooled,
+            duplicates=duplicates,
+            errors=json.dumps(errors),
+        )
 
 
 # ── File serve ────────────────────────────────────────────────────────────────

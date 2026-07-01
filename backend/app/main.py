@@ -859,6 +859,9 @@ END $$""",
             UNIQUE (subject_type, subject_id, badge_key)
         )""",
         "CREATE INDEX IF NOT EXISTS idx_gbadge_subject ON gamification_badge(subject_type, subject_id)",
+        # Migration 37: per-user Gmail App Password for individual email scanning (2026-07)
+        "ALTER TABLE app_user ADD COLUMN IF NOT EXISTS gmail_address      TEXT",
+        "ALTER TABLE app_user ADD COLUMN IF NOT EXISTS gmail_app_password TEXT",
     ]
     for sql in migrations:
         try:

@@ -81,7 +81,7 @@ def _pivot2(year, ps: date, rjoin: str, rp: list):
         JOIN group_company gc ON gc.id = bu.company_id
         {rjoin}
         WHERE a.applied_at >= %s
-          AND a.status IN ('joined','selected','offered','offer_stage')
+          AND a.status IN ('hired','documentation','offered')
         GROUP BY gc.name, c.gender
         ORDER BY gc.name, c.gender
     """
@@ -112,9 +112,9 @@ def _pivot4(year, ps: date, rjoin: str, rp: list):
         SELECT
           CASE
             WHEN a.status = 'applied'  THEN 'Sourcing'
-            WHEN a.status IN ('screening','screen_passed') THEN 'Screening'
-            WHEN a.status IN ('interviewing') THEN 'Interview'
-            WHEN a.status IN ('selected','offer_stage','offered','joined') THEN 'Selected'
+            WHEN a.status IN ('screen','nexai_bot','shortlisted') THEN 'Screening'
+            WHEN a.status = 'interview' THEN 'Interview'
+            WHEN a.status IN ('documentation','offered','hired') THEN 'Selected'
             ELSE 'Other'
           END AS stage,
           COUNT(*) AS n
@@ -176,7 +176,7 @@ def _pivot7(year, ps: date, rjoin2: str, rp2: list):
     sql = f"""
         SELECT u.full_name AS recruiter,
                COUNT(DISTINCT a.id) AS total_handled,
-               COUNT(DISTINCT a.id) FILTER (WHERE a.status IN ('selected','offered','joined')) AS converted
+               COUNT(DISTINCT a.id) FILTER (WHERE a.status IN ('documentation','offered','hired')) AS converted
         FROM app_user u
         JOIN requisition_recruiter rr ON rr.recruiter_id = u.id
         JOIN requisition r ON r.id = rr.requisition_id
@@ -194,9 +194,9 @@ def _pivot7(year, ps: date, rjoin2: str, rp2: list):
 def _pivot8(year, ps: date, rjoin: str, rp: list):
     sql = f"""
         SELECT
-          COUNT(*) FILTER (WHERE a.status = 'selected') AS selected,
-          COUNT(*) FILTER (WHERE a.status IN ('offered','offer_stage')) AS offered,
-          COUNT(*) FILTER (WHERE a.status = 'joined') AS joined
+          COUNT(*) FILTER (WHERE a.status = 'documentation') AS selected,
+          COUNT(*) FILTER (WHERE a.status = 'offered') AS offered,
+          COUNT(*) FILTER (WHERE a.status = 'hired') AS joined
         FROM application a
         JOIN requisition r ON r.id = a.requisition_id
         {rjoin}
@@ -303,7 +303,7 @@ def hm_summary(user: dict = Depends(get_current_user)):
         """SELECT COUNT(*) AS n FROM application a
            JOIN requisition r ON r.id = a.requisition_id
            WHERE r.hiring_manager_id = %s
-             AND a.status IN ('selected','interviewing')
+             AND a.status IN ('documentation','interview')
              AND (a.hm_feedback IS NULL OR a.hm_feedback = '')""",
         [uid],
     )

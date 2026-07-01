@@ -123,7 +123,7 @@ def system_health(user: dict = Depends(get_current_user)):
         """SELECT
              (SELECT COUNT(*) FROM requisition  WHERE status='open') AS open_reqs,
              (SELECT COUNT(*) FROM application)                       AS total_apps,
-             (SELECT COUNT(*) FROM application WHERE status='joined') AS total_joined,
+             (SELECT COUNT(*) FROM application WHERE status='hired') AS total_joined,
              (SELECT COUNT(*) FROM candidate)                         AS total_candidates""",
         [],
     )

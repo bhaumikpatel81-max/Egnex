@@ -978,6 +978,59 @@ select{background-image:none}
   </div>
 </div>
 
+<!-- ── Edit User Modal ── -->
+<div class="modal-bg" id="edit-user-modal" onclick="if(event.target===this)closeEditUserModal()">
+  <div class="modal" style="max-width:440px">
+    <h2>Edit user — <span id="edit-user-title"></span></h2>
+    <div class="form-group"><label>Full name</label><input id="eu-name" placeholder="Full name"></div>
+    <div class="form-group"><label>Login email (user ID)</label><input id="eu-email" type="email" placeholder="user@amnex.com"></div>
+    <div class="form-group"><label>Role</label>
+      <select id="eu-role">
+        <option value="admin">admin</option>
+        <option value="ta_manager">ta manager</option>
+        <option value="recruiter">recruiter</option>
+        <option value="hiring_manager">hiring manager</option>
+        <option value="bu_head">bu head</option>
+        <option value="director">director</option>
+        <option value="interviewer">interviewer</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeEditUserModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="doEditUser()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── User Email Config Modal ── -->
+<div class="modal-bg" id="email-cfg-modal" onclick="if(event.target===this)closeEmailCfgModal()">
+  <div class="modal" style="max-width:480px">
+    <h2>Gmail Config — <span id="ecfg-user-title"></span></h2>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+      Set this user's personal Gmail so they can scan their inbox for CVs.<br>
+      The main system email (<strong>hr@amnex.com</strong>) handles sending invites —
+      this configures <em>incoming CV scanning</em> for each individual user.
+    </p>
+    <div class="form-group">
+      <label>Gmail address</label>
+      <input id="ecfg-gmail" type="email" placeholder="recruiter@gmail.com">
+    </div>
+    <div class="form-group">
+      <label>Gmail App Password <span style="font-size:11px;color:var(--muted)">(16 chars — not your login password)</span></label>
+      <input id="ecfg-apppass" type="password" placeholder="(saved)" autocomplete="new-password">
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">
+        Get it: myaccount.google.com → Security → 2-Step Verification → App passwords → create one named "Egnex"
+      </div>
+    </div>
+    <div id="ecfg-status" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+    <div class="modal-btns">
+      <button class="btn btn-ghost" onclick="closeEmailCfgModal()">Cancel</button>
+      <button class="btn btn-ghost" style="color:#ef4444" onclick="clearEmailCfg()">Clear</button>
+      <button class="btn btn-primary" onclick="saveEmailCfg()">Save</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
 const _tok = localStorage.getItem('egnex_token');
@@ -3267,7 +3320,8 @@ async function hmFeedback(id,approved){
 
 // ── SCREEN: Admin — Users & Access ────────────────────────────────────────────
 const ALL_ROLES=['admin','ta_manager','recruiter','hiring_manager','bu_head','director','interviewer'];
-let _resetUid=null;
+let _resetUid=null, _emailCfgUid=null, _editUserUid=null;
+
 async function screenUsers(){
   setTitle('Users & Access');
   const users=await api('/api/admin/users');
@@ -3277,13 +3331,23 @@ async function screenUsers(){
     const sel=`<select style="padding:4px 8px;border:1px solid var(--border);border-radius:3px;font-size:12px" onchange="changeRole('${u.id}',this.value)">${ALL_ROLES.map(r=>'<option value="'+r+'"'+(r===u.role?' selected':'')+'>'+r.split('_').join(' ')+'</option>').join('')}</select>`;
     const deact=u.is_active&&!isSelf?`<button class="btn btn-danger btn-sm" onclick="deactivateUser('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Deactivate</button>`:'';
     const act=!u.is_active?`<button class="btn btn-ghost btn-sm" onclick="activateUser('${u.id}')">Activate</button>`:'';
+    const del=!u.is_active&&!isSelf?`<button class="btn btn-danger btn-sm" onclick="deleteUserPermanent('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Delete</button>`:'';
+    const gmailBadge = u.gmail_address
+      ? `<span class="pill" style="background:#d1fae5;color:#065f46;font-size:10px" title="${u.gmail_address}">Gmail</span>`
+      : `<span class="pill" style="background:#f3f4f6;color:#9ca3af;font-size:10px">No Gmail</span>`;
     return `<tr>
-      <td>${u.full_name}${isSelf?' <span style="font-size:11px;color:var(--muted)">(you)</span>':''}</td>
-      <td style="font-size:12px">${u.email}</td><td>${sel}</td>
+      <td>
+        <strong>${u.full_name}</strong>${isSelf?' <span style="font-size:11px;color:var(--muted)">(you)</span>':''}
+        <br><span style="font-size:11px;color:var(--muted)">${u.email}</span>
+      </td>
+      <td>${sel}</td>
       <td><span class="pill ${u.is_active?'open':'closed'}">${u.is_active?'Active':'Inactive'}</span></td>
+      <td>${gmailBadge}</td>
       <td><div class="inline-btns">
+        <button class="btn btn-ghost btn-sm" onclick="openEditUserModal('${u.id}','${u.full_name.replace(/'/g,"\\'")}','${u.email}','${u.role}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="openEmailCfgModal('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Email Config</button>
         <button class="btn btn-ghost btn-sm" onclick="openResetModal('${u.id}','${u.full_name.replace(/'/g,"\\'")}')">Reset pwd</button>
-        ${deact}${act}</div></td></tr>`;
+        ${deact}${act}${del}</div></td></tr>`;
   }).join('');
   document.getElementById('content').innerHTML=`
     <div class="page-header"><h1>Users &amp; Access</h1><button class="btn btn-primary" onclick="openAddUser()">+ Add user</button></div>
@@ -3291,7 +3355,7 @@ async function screenUsers(){
       <div style="font-weight:600;margin-bottom:12px">New user</div>
       <div class="form-row">
         <div class="form-group"><label>Full name</label><input id="nu-name" placeholder="Priya Sharma"></div>
-        <div class="form-group"><label>Work email</label><input id="nu-email" type="email" placeholder="priya@amnex.com"></div>
+        <div class="form-group"><label>Work email (login ID)</label><input id="nu-email" type="email" placeholder="priya@amnex.com"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label>Role</label><select id="nu-role">${ALL_ROLES.map(r=>'<option value="'+r+'">'+r.split('_').join(' ')+'</option>').join('')}</select></div>
@@ -3303,10 +3367,11 @@ async function screenUsers(){
       </div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
-      <table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+      <table><thead><tr><th>Name / Login Email</th><th>Role</th><th>Status</th><th>Email Scan</th><th>Actions</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>`;
 }
+
 function openAddUser(){document.getElementById('add-user-card').style.display='block';['nu-name','nu-email','nu-pw'].forEach(id=>document.getElementById(id).value='');}
 async function createUser(){
   const name=document.getElementById('nu-name').value.trim(),email=document.getElementById('nu-email').value.trim();
@@ -3319,6 +3384,13 @@ async function createUser(){
 async function changeRole(uid,role){await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});flash('Role updated.');}
 async function deactivateUser(uid,name){if(!confirm(`Deactivate ${name}?`))return;await api(`/api/admin/users/${uid}`,{method:'DELETE'});flash(`${name} deactivated.`);screenUsers();}
 async function activateUser(uid){await api(`/api/admin/users/${uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:true})});flash('Reactivated.');screenUsers();}
+async function deleteUserPermanent(uid,name){
+  if(!confirm(`Permanently delete "${name}"?\n\nThis CANNOT be undone. All login access will be removed.\nIf the user has history (interviews, scorecards, etc.) the delete will be blocked and you will see an error.`))return;
+  const res=await api(`/api/admin/users/${uid}/permanent`,{method:'DELETE'});
+  if(!res||res.detail){flash(res?.detail||'Delete failed',false);return;}
+  flash(`${res.full_name} permanently deleted.`);
+  screenUsers();
+}
 function openResetModal(uid,name){_resetUid=uid;document.getElementById('reset-for').textContent=name;document.getElementById('reset-pw').value='';document.getElementById('reset-modal').classList.add('open');}
 function closeResetModal(){document.getElementById('reset-modal').classList.remove('open');}
 async function doReset(){
@@ -3326,6 +3398,79 @@ async function doReset(){
   if(!pw||pw.length<6){flash('Minimum 6 characters.',false);return;}
   const res=await api(`/api/admin/users/${_resetUid}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_password:pw})});
   if(res?.ok){flash('Password reset.');closeResetModal();}else flash(res?.detail||'Error',false);
+}
+
+// ── Edit user (name + email/login ID + role) ──────────────────────────────────
+function openEditUserModal(uid, name, email, role) {
+  _editUserUid = uid;
+  document.getElementById('edit-user-title').textContent = name;
+  document.getElementById('eu-name').value  = name;
+  document.getElementById('eu-email').value = email;
+  if (role) document.getElementById('eu-role').value = role;
+  document.getElementById('edit-user-modal').classList.add('open');
+}
+function closeEditUserModal() {
+  document.getElementById('edit-user-modal').classList.remove('open');
+}
+async function doEditUser() {
+  const name  = document.getElementById('eu-name').value.trim();
+  const email = document.getElementById('eu-email').value.trim();
+  const role  = document.getElementById('eu-role').value;
+  if (!name || !email) { flash('Name and email are required.', false); return; }
+  const res = await api(`/api/admin/users/${_editUserUid}/full`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({full_name: name, email, role}),
+  });
+  if (!res || res.detail) { flash(res?.detail || 'Error', false); return; }
+  flash('User updated.');
+  closeEditUserModal();
+  screenUsers();
+}
+
+// ── Per-user Gmail / App Password (email config modal) ───────────────────────
+async function openEmailCfgModal(uid, name) {
+  _emailCfgUid = uid;
+  document.getElementById('ecfg-user-title').textContent = name;
+  document.getElementById('ecfg-gmail').value   = '';
+  document.getElementById('ecfg-apppass').value = '';
+  document.getElementById('ecfg-status').textContent = 'Loading…';
+  document.getElementById('email-cfg-modal').classList.add('open');
+
+  const cfg = await api(`/api/admin/users/${uid}/email-config`);
+  if (!cfg) { document.getElementById('ecfg-status').textContent = 'Could not load.'; return; }
+  document.getElementById('ecfg-gmail').value = cfg.gmail_address || '';
+  document.getElementById('ecfg-apppass').placeholder = cfg.app_password_set ? '(saved — paste new to replace)' : 'Paste 16-char App Password';
+  document.getElementById('ecfg-status').textContent = cfg.app_password_set
+    ? 'App Password is saved. Leave blank to keep it.'
+    : 'No App Password set yet.';
+}
+function closeEmailCfgModal() {
+  document.getElementById('email-cfg-modal').classList.remove('open');
+}
+async function saveEmailCfg() {
+  const gmail = document.getElementById('ecfg-gmail').value.trim();
+  const pw    = document.getElementById('ecfg-apppass').value.trim();
+  if (!gmail) { flash('Gmail address is required.', false); return; }
+  const body = {gmail_address: gmail};
+  if (pw) body.gmail_app_password = pw;
+  const res = await api(`/api/admin/users/${_emailCfgUid}/email-config`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (!res || res.detail) { flash(res?.detail || 'Error', false); return; }
+  flash(`Email config saved for ${res.gmail_address}.`);
+  closeEmailCfgModal();
+  screenUsers();
+}
+async function clearEmailCfg() {
+  if (!confirm('Remove Gmail config for this user?')) return;
+  const res = await api(`/api/admin/users/${_emailCfgUid}/email-config`, {method:'DELETE'});
+  if (!res || res.detail) { flash(res?.detail || 'Error', false); return; }
+  flash('Email config cleared.');
+  closeEmailCfgModal();
+  screenUsers();
 }
 
 // ── SCREEN: Admin — Bot Health ────────────────────────────────────────────────
@@ -8579,13 +8724,15 @@ async function screenCVRepository() {
         </div>
       </div>
       ${stats.failed>0?`<div class="stat-box"><div class="stat-label">Enrichment Failed</div><div class="stat-value" style="color:#ef4444">${stats.failed}</div></div>`:''}
-      <div class="stat-box" style="cursor:pointer;${emailSt.configured?'':'color:var(--muted)'}"
-           title="${emailSt.configured?'Gmail ingest active — polling: '+emailSt.accounts.join(', '):'Gmail ingest idle — awaiting OAuth credentials'}">
+      <div class="stat-box" style="${emailSt.configured?'':'color:var(--muted)'}"
+           title="${emailSt.configured?'Gmail ready: '+emailSt.gmail_address:'No Gmail App Password — admin can configure in Users & Access'}">
         <div class="stat-label">Email Ingest</div>
         <div class="stat-value" style="font-size:13px">
           ${emailSt.configured
-            ? '<span class="pill" style="background:#d1fae5;color:#065f46">Active</span>'
-            : '<span class="pill" style="background:#fef3c7;color:#92400e">Awaiting OAuth</span>'}
+            ? '<span class="pill" style="background:#d1fae5;color:#065f46">Ready</span><div style="font-size:10px;color:var(--muted);margin-top:2px">'+emailSt.gmail_address+'</div>'
+            : isAdmin
+              ? '<span class="pill" style="background:#fef3c7;color:#92400e">Not configured</span><div style="font-size:10px;color:var(--muted);margin-top:2px">Set in Users &amp; Access</div>'
+              : '<span class="pill" style="background:#fef3c7;color:#92400e">Not configured</span>'}
         </div>
       </div>
     </div>
@@ -8621,6 +8768,11 @@ async function screenCVRepository() {
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
       ${isAdmin ? `<button class="btn btn-ghost" onclick="_cvScanFolder()">Scan Ingest Folder</button>` : ''}
       ${isAdmin ? `<button class="btn btn-ghost" onclick="_cvBackfillCandidates()" id="cv-backfill-btn">Sync Candidate Resumes</button>` : ''}
+      ${emailSt.configured
+        ? `<button class="btn btn-ghost" style="color:#2563eb;border-color:#2563eb" onclick="_cvScanEmail()">Scan My Email (${emailSt.gmail_address})</button>`
+        : isAdmin
+          ? `<button class="btn btn-ghost" style="color:var(--muted)" onclick="navigate('users')" title="Configure Gmail in Users &amp; Access">+ Configure Email Scan</button>`
+          : ''}
       <button class="btn btn-primary" onclick="_cvUploadClick()">Upload Resumes</button>
       <input id="cv-file-input" type="file" multiple accept=".pdf,.docx,.doc" style="display:none"
              onchange="_cvUploadFiles(this.files)">
@@ -8765,6 +8917,14 @@ async function _cvUploadFiles(fileList) {
 async function _cvScanFolder() {
   const res = await api('/api/cv/scan-folder', { method: 'POST' });
   if (!res || res.detail) { flash(res?.detail || 'Could not start scan', false); return; }
+  document.getElementById('cv-job-modal')?.classList.add('open');
+  _cvPollJob(res.job_id);
+}
+
+async function _cvScanEmail() {
+  const res = await api('/api/cv/scan-email', { method: 'POST' });
+  if (!res || res.detail) { flash(res?.detail || 'Could not start email scan', false); return; }
+  flash('Email scan started — checking your inbox for CV attachments…');
   document.getElementById('cv-job-modal')?.classList.add('open');
   _cvPollJob(res.job_id);
 }
