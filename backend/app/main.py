@@ -52,6 +52,7 @@ from .routers.vendor_api import router as _vendor_router
 from .routers.candidate_portal_api import router as _candidate_portal_router
 from .routers.gamification_api import router as _gamification_router
 from .routers.bands_api import router as _bands_router
+from .routers.org_api import router as _org_router
 from .routers.cv_api import ingest_and_link as _cv_ingest_and_link
 from .auth_utils import _decode
 
@@ -79,6 +80,7 @@ app.include_router(_vendor_router)
 app.include_router(_candidate_portal_router)
 app.include_router(_gamification_router)
 app.include_router(_bands_router)
+app.include_router(_org_router)
 
 
 @app.on_event("startup")
@@ -862,6 +864,57 @@ END $$""",
         # Migration 37: per-user Gmail App Password for individual email scanning (2026-07)
         "ALTER TABLE app_user ADD COLUMN IF NOT EXISTS gmail_address      TEXT",
         "ALTER TABLE app_user ADD COLUMN IF NOT EXISTS gmail_app_password TEXT",
+
+        # ── Migration 44: One-time production cleanup ─────────────────────────────
+        # Runs ONCE (guarded by system_settings key).
+        # • Ensures hr@amnex.com admin account exists
+        # • Deletes all other users (test/dummy accounts)
+        # • Clears admin password → forces Forgot Password on first login
+        # • Removes seeded BUs and Group Companies (managed via Settings → Organisation)
+        """DO $$
+DECLARE _admin_id UUID;
+DECLARE _dummy_ids UUID[];
+BEGIN
+    IF EXISTS (SELECT 1 FROM system_settings WHERE key = 'prod_cleanup_done') THEN
+        RETURN;
+    END IF;
+
+    INSERT INTO app_user (full_name, email, role)
+    VALUES ('TA Admin', 'hr@amnex.com', 'admin')
+    ON CONFLICT (email) DO NOTHING;
+
+    SELECT id INTO _admin_id FROM app_user WHERE email = 'hr@amnex.com';
+
+    SELECT ARRAY(SELECT id FROM app_user WHERE email != 'hr@amnex.com') INTO _dummy_ids;
+
+    IF _dummy_ids IS NOT NULL AND array_length(_dummy_ids, 1) > 0 THEN
+        UPDATE feedback_form        SET created_by = _admin_id WHERE created_by = ANY(_dummy_ids);
+        UPDATE email_template       SET created_by = _admin_id WHERE created_by = ANY(_dummy_ids);
+        UPDATE email_template       SET updated_by = _admin_id WHERE updated_by = ANY(_dummy_ids);
+        UPDATE requisition          SET created_by = _admin_id WHERE created_by = ANY(_dummy_ids);
+        UPDATE requisition          SET hiring_manager_id = NULL WHERE hiring_manager_id = ANY(_dummy_ids);
+        UPDATE offer_chain_template SET created_by = _admin_id WHERE created_by = ANY(_dummy_ids);
+        UPDATE sla_config           SET updated_by = _admin_id WHERE updated_by = ANY(_dummy_ids);
+        UPDATE system_settings      SET updated_by = _admin_id WHERE updated_by = ANY(_dummy_ids);
+        DELETE FROM offer_chain_template_step WHERE approver_id = ANY(_dummy_ids);
+        DELETE FROM req_offer_approver         WHERE approver_id = ANY(_dummy_ids);
+        DELETE FROM offer_approval_step        WHERE approver_id = ANY(_dummy_ids);
+        DELETE FROM app_user WHERE id = ANY(_dummy_ids);
+    END IF;
+
+    UPDATE app_user
+    SET password_hash = NULL, reset_token = NULL, reset_token_expires = NULL
+    WHERE email = 'hr@amnex.com';
+
+    DELETE FROM business_unit
+    WHERE id NOT IN (SELECT DISTINCT bu_id FROM requisition WHERE bu_id IS NOT NULL);
+
+    DELETE FROM group_company
+    WHERE id NOT IN (SELECT DISTINCT company_id FROM business_unit WHERE company_id IS NOT NULL);
+
+    INSERT INTO system_settings (key, value) VALUES ('prod_cleanup_done', 'true')
+    ON CONFLICT (key) DO NOTHING;
+END $$""",
     ]
     for sql in migrations:
         try:

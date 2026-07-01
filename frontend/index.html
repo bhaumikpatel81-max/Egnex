@@ -1100,6 +1100,7 @@ const NAV_DEF = {
     {id:'cv_repository', icon:'📂', label:'CV Repository'},
     {id:'sys_logs',      icon:'📋', label:'System Logs'},
     {id:'hiring_plan',   icon:'📑', label:'Hiring Plan'},
+    {id:'organisation',    icon:'🏢', label:'Organisation'},
     {id:'settings',        icon:'⚙️', label:'Settings'},
     {id:'sla_settings',    icon:'⏱', label:'SLA Settings'},
     {id:'chain_templates', icon:'⛓', label:'Chain Templates'},
@@ -1128,6 +1129,7 @@ const NAV_DEF = {
     {id:'ta_req_approvals',   icon:'📝', label:'Req Approvals'},
     {id:'proctoring_review',  icon:'🔍', label:'Proctoring'},
     {id:'appeals',            icon:'⚖️', label:'Appeals'},
+    {id:'organisation',       icon:'🏢', label:'Organisation'},
     {id:'sla_settings',       icon:'⏱', label:'SLA Settings'},
     {id:'chain_templates',    icon:'⛓', label:'Approval Chains'},
     {id:'email_templates',    icon:'✉️',  label:'Email Templates'},
@@ -1257,6 +1259,8 @@ const SCREENS = {
   raise_ticket: screenRaiseTicket,
   // nexai sessions drill-down (accessible via dashboard links only)
   nexai_sessions: screenNexAISessions,
+  // organisation management (admin + ta_manager)
+  organisation:    screenOrganisation,
   // settings (admin + ta_manager)
   settings:        screenSettings,
   // SLA / RAG tracking (ta_manager + admin + recruiter)
@@ -1334,7 +1338,15 @@ function runRoute(id, param) {
     return;
   }
   const fn = SCREENS[id];
-  if (fn) { try { fn(); } catch(e) { showErr(e.message); console.error(e); } }
+  if (fn) {
+    try {
+      const ret = fn();
+      // Catch async rejections — without this, unhandled promise errors leave "Loading..." stuck
+      if (ret && typeof ret.catch === 'function') {
+        ret.catch(e => { showErr(e.message || 'Unexpected error'); console.error('[screen]', id, e); });
+      }
+    } catch(e) { showErr(e.message); console.error(e); }
+  }
   else document.getElementById('content').innerHTML = '<p class="empty">Screen not found.</p>';
 }
 
@@ -4219,6 +4231,133 @@ async function rejectAppeal(appealId) {
     flash('Appeal rejected.', false);
     navigate('appeals');
   }
+}
+
+// ── SCREEN: Organisation (admin + ta_manager) ────────────────────────────────
+async function screenOrganisation(){
+  setTitle('Organisation');
+  document.getElementById('content').innerHTML='<p class="empty">Loading…</p>';
+  try {
+  const [gcs, bus] = await Promise.all([
+    api('/api/org/group-companies'),
+    api('/api/org/business-units'),
+  ]);
+  if(!gcs||!bus){showErr('Could not load organisation data. If this is a first run, restart the server to apply migrations.');return;}
+
+  function _gcRows(){
+    if(!gcs.length) return '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">No group companies yet. Add one below.</td></tr>';
+    return gcs.map(gc=>`<tr>
+      <td><strong>${esc(gc.name)}</strong></td>
+      <td style="color:var(--muted)">${esc(gc.domain||'—')}</td>
+      <td>${gc.is_active?'<span class="pill open">Active</span>':'<span class="pill cancelled">Inactive</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="_orgEditGC('${gc.id}','${esc(gc.name)}','${esc(gc.domain||'')}')">Rename</button>
+        ${gc.is_active
+          ?`<button class="btn btn-ghost btn-sm" style="color:#c0392b" onclick="_orgToggleGC('${gc.id}',false,'${esc(gc.name)}')">Deactivate</button>`
+          :`<button class="btn btn-ghost btn-sm" onclick="_orgToggleGC('${gc.id}',true,'${esc(gc.name)}')">Reactivate</button>`}
+      </td>
+    </tr>`).join('');
+  }
+
+  function _buRows(){
+    if(!bus.length) return '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px">No business units yet. Add one below.</td></tr>';
+    return bus.map(bu=>`<tr>
+      <td><strong>${esc(bu.name)}</strong></td>
+      <td style="color:var(--muted)">${esc(bu.company||'—')}</td>
+      <td>${bu.is_active?'<span class="pill open">Active</span>':'<span class="pill cancelled">Inactive</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="_orgEditBU('${bu.id}','${esc(bu.name)}','${bu.company_id}')">Rename</button>
+        ${bu.is_active
+          ?`<button class="btn btn-ghost btn-sm" style="color:#c0392b" onclick="_orgToggleBU('${bu.id}',false,'${esc(bu.name)}')">Deactivate</button>`
+          :`<button class="btn btn-ghost btn-sm" onclick="_orgToggleBU('${bu.id}',true,'${esc(bu.name)}')">Reactivate</button>`}
+      </td>
+    </tr>`).join('');
+  }
+
+  const activeGCs = gcs.filter(g=>g.is_active);
+  const gcOptions = activeGCs.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('');
+
+  document.getElementById('content').innerHTML=`
+    <div class="page-header">
+      <h1>Organisation</h1>
+      <p style="color:var(--muted);font-size:13px;margin-top:4px">Manage group companies and business units. These appear in requisition forms for recruiters.</p>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h2 style="font-size:16px;font-weight:700;margin:0">Group Companies</h2>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
+      <table><thead><tr><th>Company Name</th><th>Description</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="org-gc-tbody">${_gcRows()}</tbody>
+      </table>
+    </div>
+    <div class="card" style="padding:16px 20px;margin-bottom:32px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">Add group company</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="org-gc-name" class="form-control" style="width:200px" placeholder="Company name" />
+        <input id="org-gc-domain" class="form-control" style="width:260px" placeholder="Description / domain (optional)" />
+        <button class="btn btn-primary btn-sm" onclick="_orgAddGC()">Add company</button>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h2 style="font-size:16px;font-weight:700;margin:0">Business Units</h2>
+    </div>
+    <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">
+      <table><thead><tr><th>BU Name</th><th>Group Company</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="org-bu-tbody">${_buRows()}</tbody>
+      </table>
+    </div>
+    <div class="card" style="padding:16px 20px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">Add business unit</div>
+      ${!activeGCs.length
+        ? '<p style="color:var(--muted);font-size:13px">Add a group company first, then you can add business units under it.</p>'
+        : `<div style="display:flex;gap:8px;flex-wrap:wrap">
+             <select id="org-bu-company" class="form-control" style="width:210px">
+               <option value="">— Select company —</option>${gcOptions}
+             </select>
+             <input id="org-bu-name" class="form-control" style="width:200px" placeholder="BU name" />
+             <button class="btn btn-primary btn-sm" onclick="_orgAddBU()">Add BU</button>
+           </div>`}
+    </div>`;
+  } catch(e) { showErr('Organisation failed to load: ' + (e.message||e)); console.error('[org]',e); }
+}
+
+async function _orgAddGC(){
+  const name=(document.getElementById('org-gc-name').value||'').trim();
+  const domain=(document.getElementById('org-gc-domain').value||'').trim();
+  if(!name){alert('Enter a company name.');return;}
+  const r=await api('/api/org/group-companies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,domain:domain||null})});
+  if(r)screenOrganisation();
+}
+async function _orgToggleGC(id,active,name){
+  if(!confirm(`${active?'Reactivate':'Deactivate'} "${name}"?`))return;
+  const r=await api(`/api/org/group-companies/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:active})});
+  if(r)screenOrganisation();
+}
+async function _orgEditGC(id,name,domain){
+  const newName=prompt('Company name:',name); if(!newName||!newName.trim())return;
+  const newDomain=prompt('Description / domain:',domain);
+  const r=await api(`/api/org/group-companies/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName.trim(),domain:newDomain||''})});
+  if(r)screenOrganisation();
+}
+async function _orgAddBU(){
+  const company_id=(document.getElementById('org-bu-company').value||'').trim();
+  const name=(document.getElementById('org-bu-name').value||'').trim();
+  if(!company_id){alert('Select a group company.');return;}
+  if(!name){alert('Enter a BU name.');return;}
+  const r=await api('/api/org/business-units',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,company_id})});
+  if(r)screenOrganisation();
+}
+async function _orgToggleBU(id,active,name){
+  if(!confirm(`${active?'Reactivate':'Deactivate'} BU "${name}"?`))return;
+  const r=await api(`/api/org/business-units/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({is_active:active})});
+  if(r)screenOrganisation();
+}
+async function _orgEditBU(id,name,company_id){
+  const newName=prompt('BU name:',name); if(!newName||!newName.trim())return;
+  const r=await api(`/api/org/business-units/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName.trim(),company_id})});
+  if(r)screenOrganisation();
 }
 
 // ── SCREEN: Settings (TA Manager / Admin) ────────────────────────────────────

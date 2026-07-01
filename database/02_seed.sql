@@ -1,29 +1,10 @@
 -- ============================================================
 -- ONE CLICK HIRE  -  Seed data
--- Real Amnex structure: group companies, business units, bands,
--- plus starter config (approval chains, email templates, a
--- default feedback form).
+-- Bands, approval chains, default feedback form, email templates.
+-- Group Companies and Business Units are NOT seeded here — they
+-- are created by TA Admin / TA Manager via Settings → Organisation.
 -- Run AFTER 01_schema.sql.
 -- ============================================================
-
--- ---------- GROUP COMPANIES ----------
-INSERT INTO group_company (name, domain) VALUES
-  ('Amnex',        'Parent company'),
-  ('Maxsapient',   'Aviation'),
-  ('Andpayments',  'Payments'),
-  ('Immensystech', 'IOT'),
-  ('ACAI',         'AI'),
-  ('Metafusion',   'Technology');
-
--- ---------- BUSINESS UNITS (under Amnex parent) ----------
-INSERT INTO business_unit (company_id, name)
-SELECT id, bu.name
-FROM group_company gc
-CROSS JOIN (VALUES
-  ('Corporate'), ('Traffic'), ('Mobility'), ('Integrated'),
-  ('R&U'), ('Sports'), ('Agriculture'), ('Datafabrics')
-) AS bu(name)
-WHERE gc.name = 'Amnex';
 
 -- ---------- BANDS (lowest rank 1 -> highest rank 13) ----------
 INSERT INTO band (code, rank, description) VALUES

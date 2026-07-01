@@ -56,8 +56,8 @@ def create_user(body: CreateUserIn, admin=Depends(require_admin_or_manager)):
             VALUES (%s, %s, %s, %s) RETURNING {_USER_COLS}""",
         [body.full_name, body.email.lower(), body.role, pwd_hash],
     )
-    # Auto-send first-time set-password email for self-service roles
-    if body.send_setup_email and body.role in {"admin", "ta_manager", "recruiter"}:
+    # Auto-send first-time set-password email for all staff roles
+    if body.send_setup_email:
         try:
             from .password_api import _issue_token, _send_link_email
             raw = _issue_token(str(row["id"]), "invite")

@@ -9,9 +9,6 @@ ALTER TABLE app_user
   ADD COLUMN IF NOT EXISTS reset_token          TEXT,
   ADD COLUMN IF NOT EXISTS reset_token_expires  TIMESTAMPTZ;
 
--- Set default password "Egnex@2026" for all existing users.
--- crypt() with 'bf' produces a bcrypt $2a$ hash compatible with
--- Python's passlib/bcrypt verify().
-UPDATE app_user
-SET password_hash = crypt('Egnex@2026', gen_salt('bf', 10))
-WHERE password_hash IS NULL;
+-- No default password is set. All users (including TA Admin at hr@amnex.com)
+-- must use "Forgot password" to set their password on first login.
+-- The forgot-password flow sends a one-time link via hr@amnex.com SMTP.
