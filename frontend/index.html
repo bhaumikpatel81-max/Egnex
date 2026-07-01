@@ -12,8 +12,8 @@
 <meta http-equiv="Expires" content="0">
 <meta name="egnex-version" content="3.10">
 <title>Egnex — One Click Hire</title>
-<!-- Cache-bust: if query string missing, reload with ?v=60 to bypass stale cache -->
-<script>if(!location.search.includes('v=60')){var u=location.href.split('?')[0];location.replace(u+'?v=60');}</script>
+<!-- Cache-bust: if query string missing, reload with ?v=61 to bypass stale cache -->
+<script>if(!location.search.includes('v=61')){var u=location.href.split('?')[0];location.replace(u+'?v=61');}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -2068,7 +2068,7 @@ async function _dashHiringManager() {
       scales:{x:{beginAtZero:true,ticks:{stepSize:1}},y:{ticks:{font:{size:11}}}},
       onClick:function(event,elements){
         if(!elements.length)return;
-        const map=['all','screening','screen_passed','interviewing'];
+        const map=['all','screen','nexai_bot','interview'];
         const lbl=['All Applicants','Under Screening','AI Screened','Panel Interview'];
         const i=elements[0].index;
         goFiltered('candidates',map[i],lbl[i]);
@@ -2797,15 +2797,15 @@ async function screenCandidates() {
            onclick="openSendEmailModal('${r.app_id}','${safeName}',event)">✉</button>` :'';
     let actions='';
     if(canAct){
-      if(r.status==='screening'){
+      if(r.status==='screen'){
         actions=`<div style="display:flex;gap:4px;align-items:center">
           <button class="btn btn-green btn-sm" onclick="passScreening('${r.app_id}')">Pass</button>
           <button class="btn btn-ghost btn-sm" style="color:#c0392b;border-color:#e8c5c0" onclick="rejectScreening('${r.app_id}')">Reject</button>
           ${sendBtn}
         </div>`;
-      } else if(r.status==='screen_passed'){
+      } else if(r.status==='shortlisted'){
         actions=`<div style="display:flex;gap:4px;align-items:center"><button class="btn btn-primary btn-sm" onclick="sendNexAIInvite('${r.app_id}','${safeName}','${safeEmail}',event)">📧 Send AI Invite</button>${sendBtn}</div>`;
-      } else if(r.status==='selected'){
+      } else if(r.status==='documentation'){
         actions=`<div style="display:flex;gap:4px;align-items:center"><button class="btn btn-primary btn-sm" style="background:var(--green)" onclick="openCreateOfferModal('${r.app_id}','${safeName}',event,'${r.req_id||''}')">📄 Create Offer</button>${sendBtn}</div>`;
       } else if(r.req_id){
         actions=`<div style="display:flex;gap:4px;align-items:center"><button class="btn btn-ghost btn-sm" onclick="navigate('kanban','${r.req_id}')">View pipeline</button>${sendBtn}</div>`;
