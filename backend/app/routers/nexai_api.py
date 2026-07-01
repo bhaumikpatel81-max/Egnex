@@ -46,8 +46,8 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
     }}
   </style>
 </head>
-<body style="margin:0;padding:0;background-color:#f0ede8;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%">
-<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f0ede8" style="background-color:#f0ede8">
+<body style="margin:0;padding:0;background-color:#eef2ff;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%">
+<table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#eef2ff" style="background-color:#eef2ff">
   <tr><td align="center" style="padding:32px 12px">
 
     <table class="wrap" width="580" cellpadding="0" cellspacing="0" border="0" style="max-width:580px;width:100%">
@@ -58,19 +58,19 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
           <table width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td valign="middle">
-                <span style="font-size:26px;font-weight:800;color:#ffffff;font-family:Arial,Helvetica,sans-serif;letter-spacing:-0.5px;line-height:1">Egnex</span><span style="font-size:26px;font-weight:800;color:#f15a22;font-family:Arial,Helvetica,sans-serif">.</span>
+                <span style="font-size:26px;font-weight:800;color:#ffffff;font-family:Arial,Helvetica,sans-serif;letter-spacing:-0.5px;line-height:1">Egnex</span><span style="font-size:26px;font-weight:800;color:#1e63f2;font-family:Arial,Helvetica,sans-serif">.</span>
                 <span style="font-size:11px;color:#9b9893;font-family:Arial,Helvetica,sans-serif;margin-left:10px;vertical-align:middle">One Click Hire</span>
               </td>
               <td align="right" valign="middle">
-                <span style="font-size:11px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;background-color:#2d2d2d;padding:4px 10px;border-radius:20px">AI Interview</span>
+                <span style="font-size:11px;color:#1e63f2;font-family:Arial,Helvetica,sans-serif;background-color:#2d2d2d;padding:4px 10px;border-radius:20px">AI Interview</span>
               </td>
             </tr>
           </table>
         </td>
       </tr>
 
-      <!-- ── ORANGE STRIPE ── -->
-      <tr><td bgcolor="#f15a22" style="background-color:#f15a22;height:5px;font-size:0;line-height:0">&nbsp;</td></tr>
+      <!-- ── ACCENT STRIPE ── -->
+      <tr><td bgcolor="#1e63f2" style="background-color:#1e63f2;height:5px;font-size:0;line-height:0">&nbsp;</td></tr>
 
       <!-- ── BODY ── -->
       <tr>
@@ -83,42 +83,42 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
             Please review the details below and click the button to begin.
           </p>
 
-          <!-- Job card with orange left border -->
+          <!-- Job card with blue left border -->
           <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:30px">
             <tr>
-              <td width="5" bgcolor="#f15a22" style="background-color:#f15a22;border-radius:4px 0 0 4px;font-size:0">&nbsp;</td>
-              <td bgcolor="#faf9f6" style="background-color:#faf9f6;padding:16px 20px;border:1px solid #e8e5e0;border-left:none;border-radius:0 6px 6px 0">
+              <td width="5" bgcolor="#1e63f2" style="background-color:#1e63f2;border-radius:4px 0 0 4px;font-size:0">&nbsp;</td>
+              <td bgcolor="#f8faff" style="background-color:#f8faff;padding:16px 20px;border:1px solid #dbeafe;border-left:none;border-radius:0 6px 6px 0">
                 <p style="font-size:17px;font-weight:700;color:#1a1a1a;font-family:Arial,Helvetica,sans-serif;margin:0 0 4px 0">{job}</p>
-                <p style="font-size:13px;color:#f15a22;font-weight:600;font-family:Arial,Helvetica,sans-serif;margin:0">{company}</p>
+                <p style="font-size:13px;color:#1e63f2;font-weight:600;font-family:Arial,Helvetica,sans-serif;margin:0">{company}</p>
               </td>
             </tr>
           </table>
 
           <!-- What to expect heading -->
-          <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;margin:0 0 12px 0">What to Expect</p>
+          <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#1e63f2;font-family:Arial,Helvetica,sans-serif;margin:0 0 12px 0">What to Expect</p>
 
           <!-- Checklist rows -->
           <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:34px">
             <tr>
-              <td style="padding:9px 0;border-bottom:1px solid #f0ede8">
+              <td style="padding:9px 0;border-bottom:1px solid #dbeafe">
                 <table cellpadding="0" cellspacing="0" border="0"><tr>
-                  <td width="32" valign="top" style="font-size:15px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
+                  <td width="32" valign="top" style="font-size:15px;color:#1e63f2;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
                   <td style="font-size:14px;color:#444444;font-family:Arial,Helvetica,sans-serif;line-height:1.5">Up to <strong>8 spoken questions</strong> about your experience &amp; skills</td>
                 </tr></table>
               </td>
             </tr>
             <tr>
-              <td style="padding:9px 0;border-bottom:1px solid #f0ede8">
+              <td style="padding:9px 0;border-bottom:1px solid #dbeafe">
                 <table cellpadding="0" cellspacing="0" border="0"><tr>
-                  <td width="32" valign="top" style="font-size:15px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
+                  <td width="32" valign="top" style="font-size:15px;color:#1e63f2;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
                   <td style="font-size:14px;color:#444444;font-family:Arial,Helvetica,sans-serif;line-height:1.5">Takes approximately <strong>25&#8211;30 minutes</strong> to complete</td>
                 </tr></table>
               </td>
             </tr>
             <tr>
-              <td style="padding:9px 0;border-bottom:1px solid #f0ede8">
+              <td style="padding:9px 0;border-bottom:1px solid #dbeafe">
                 <table cellpadding="0" cellspacing="0" border="0"><tr>
-                  <td width="32" valign="top" style="font-size:15px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
+                  <td width="32" valign="top" style="font-size:15px;color:#1e63f2;font-family:Arial,Helvetica,sans-serif;padding-top:1px"><strong>&#9654;</strong></td>
                   <td style="font-size:14px;color:#444444;font-family:Arial,Helvetica,sans-serif;line-height:1.5">Find a <strong>quiet place</strong> with a working camera and microphone</td>
                 </tr></table>
               </td>
@@ -139,7 +139,7 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
               <!--[if mso]>
               <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
                 href="{invite_url}" style="height:54px;v-text-anchor:middle;width:290px;" arcsize="12%"
-                stroke="f" fillcolor="#f15a22">
+                stroke="f" fillcolor="#1e63f2">
                 <w:anchorlock/>
                 <center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:17px;font-weight:bold;">
                   Start My AI Interview
@@ -149,7 +149,7 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
               <!--[if !mso]><!-->
               <table cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  <td bgcolor="#f15a22" style="background-color:#f15a22;border-radius:8px">
+                  <td bgcolor="#1e63f2" style="background-color:#1e63f2;border-radius:8px">
                     <a href="{invite_url}" style="display:block;color:#ffffff;padding:16px 52px;text-decoration:none;font-size:17px;font-weight:700;font-family:Arial,Helvetica,sans-serif;letter-spacing:0.3px;text-align:center;border-radius:8px">
                       Start My AI Interview
                     </a>
@@ -160,7 +160,7 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
             </td></tr>
             <tr><td align="center" style="padding-top:14px">
               <p style="font-size:12px;color:#9b9893;font-family:Arial,Helvetica,sans-serif;margin:0 0 5px 0">Or copy and paste this link in your browser:</p>
-              <a href="{invite_url}" style="font-size:11px;color:#f15a22;font-family:Arial,Helvetica,sans-serif;word-break:break-all;text-decoration:underline">{invite_url}</a>
+              <a href="{invite_url}" style="font-size:11px;color:#1e63f2;font-family:Arial,Helvetica,sans-serif;word-break:break-all;text-decoration:underline">{invite_url}</a>
             </td></tr>
           </table>
 
@@ -169,7 +169,7 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
 
       <!-- ── INFO BAR ── -->
       <tr>
-        <td bgcolor="#faf9f6" style="background-color:#faf9f6;padding:18px 36px;border-top:2px solid #f0ede8">
+        <td bgcolor="#f8faff" style="background-color:#f8faff;padding:18px 36px;border-top:2px solid #dbeafe">
           <table width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td style="padding:4px 0;font-size:12px;color:#6b6760;font-family:Arial,Helvetica,sans-serif;line-height:1.6">
@@ -189,7 +189,7 @@ def _build_invite_html(name: str, job: str, company: str, invite_url: str) -> st
       <tr>
         <td bgcolor="#1a1a1a" style="background-color:#1a1a1a;padding:18px 36px;border-radius:0 0 12px 12px;text-align:center">
           <p style="font-size:11px;color:#9b9893;font-family:Arial,Helvetica,sans-serif;margin:0;line-height:1.7">
-            Powered by <strong style="color:#f15a22">Egnex</strong> One Click Hire &nbsp;&#183;&nbsp; {company}<br>
+            Powered by <strong style="color:#1e63f2">Egnex</strong> One Click Hire &nbsp;&#183;&nbsp; {company}<br>
             This is an automated message &#8212; please do not reply directly to this address.
           </p>
         </td>

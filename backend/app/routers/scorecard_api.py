@@ -10,6 +10,7 @@ GET  /api/applications/{app_id}/panel-feedback       same, across all rounds for
 """
 import json
 from typing import Optional
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -17,6 +18,34 @@ from ..db import query, query_one
 from ..auth_utils import get_current_user
 
 router = APIRouter(prefix="/api", tags=["scorecard"])
+
+
+def _feedback_is_on_time(scheduled_at) -> bool:
+    """
+    True if panel feedback is submitted within the configured window
+    (gamification_config 'sla.feedback_hours', default 48h) after the interview's
+    scheduled time. If no scheduled time is on record, fall back to True so we
+    never penalise on missing data.
+    """
+    if not scheduled_at:
+        return True
+    try:
+        row = query_one(
+            "SELECT value FROM gamification_config WHERE key='sla.feedback_hours'"
+        )
+        hours = float(row["value"]) if row and row.get("value") else 48.0
+    except Exception:
+        hours = 48.0
+    try:
+        sched = scheduled_at
+        if isinstance(sched, str):
+            sched = datetime.fromisoformat(sched)
+        if sched.tzinfo is None:
+            sched = sched.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) <= sched + timedelta(hours=hours)
+    except Exception:
+        return True
+
 
 # ── Default feedback form ─────────────────────────────────────────────────────
 
@@ -409,7 +438,7 @@ def save_scorecard(
     # Improvement 5: recompute panel consensus + combined score on every submit
     if action == "submit":
         iv_row = query_one(
-            """SELECT i.application_id, a.requisition_id
+            """SELECT i.application_id, a.requisition_id, i.scheduled_at
                FROM interview i
                JOIN application a ON a.id = i.application_id
                WHERE i.id = %s""",
@@ -427,7 +456,10 @@ def save_scorecard(
                 app_id_str = str(iv_row["application_id"])
                 if verdict in ("strong_yes", "yes"):
                     _gam_award("recruiter", uid, "panel_pass", req_id_str, app_id_str)
-                _gam_award("recruiter", uid, "feedback_on_time", req_id_str, app_id_str)
+                # feedback_on_time only if submitted within the configured window
+                # (default 48h) after the interview's scheduled time.
+                if _feedback_is_on_time(iv_row.get("scheduled_at")):
+                    _gam_award("recruiter", uid, "feedback_on_time", req_id_str, app_id_str)
             except Exception as _ge_exc:
                 print(f"[scorecard] gamification award failed: {_ge_exc}")
 

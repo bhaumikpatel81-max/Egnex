@@ -22,9 +22,9 @@
 :root{--accent:#1e63f2;--blue:#1e63f2;--navy:#0a1628;--purple:#7c3aed;--sidebar:#0a1628;--page:#f5f7fc;--card:#fff;--green:#1d6e56;--border:#e2e8f0;--text:#1a1d24;--muted:#64748b;--gold:#b08423;}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Hanken Grotesk',system-ui,-apple-system,sans-serif;background:var(--page);color:var(--text);display:flex;height:100vh;overflow:hidden;font-size:14px}
-#sidebar{width:200px;min-width:200px;background:var(--sidebar);display:flex;flex-direction:column;overflow-y:auto}
-#sidebar .logo-area{padding:20px 16px 14px;border-bottom:1px solid rgba(255,255,255,.07)}
-#sidebar .logo-area img{height:36px;width:auto;display:block}
+#sidebar{width:200px;min-width:200px;background:var(--sidebar);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}
+#sidebar .logo-area{height:80px;padding:0 10px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;background:#f5f7fc;overflow:hidden;flex-shrink:0}
+#sidebar .logo-area img{height:120px;width:auto;max-width:100%;display:block}
 #sidebar nav{padding:8px 0;flex:1;display:flex;flex-direction:column}
 .nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:#c0bfbd;cursor:pointer;border-left:3px solid transparent;font-size:13px;transition:background .12s,color .12s;white-space:nowrap}
 .nav-item:hover{background:rgba(255,255,255,.08);color:#fff}
@@ -85,7 +85,7 @@ tr:hover td{background:#faf8f5}
 .pill.fetching{background:#ede9e2;color:#888}
 .pill.done{background:#dff0eb;color:var(--green);font-weight:600}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border:none;border-radius:4px;font-family:inherit;font-size:13px;cursor:pointer;font-weight:500;transition:background .12s}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#d14d1e}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#1750c9}
 .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border)}.btn-ghost:hover{background:var(--border)}
 .btn-danger{background:transparent;color:#c0392b;border:1px solid #c0392b}.btn-danger:hover{background:#c0392b;color:#fff}
 .btn-green{background:var(--green);color:#fff}.btn-green:hover{background:#155a47}
@@ -102,7 +102,7 @@ tr:hover td{background:#faf8f5}
 .kb-col-head{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:600;padding:6px 4px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--border);margin-bottom:8px}
 .kb-col-head .cnt{background:var(--border);border-radius:10px;padding:1px 7px;font-size:11px}
 .kb-col-body{flex:1;min-height:80px;border-radius:4px;padding:4px;transition:background .12s}
-.kb-col-body.drag-over{background:rgba(241,90,34,.06);border:1px dashed var(--accent)}
+.kb-col-body.drag-over{background:rgba(30,99,242,.06);border:1px dashed var(--accent)}
 .kb-card{background:#fff;border:1px solid var(--border);border-radius:5px;padding:10px 12px;margin-bottom:8px;cursor:grab;-webkit-user-select:none;user-select:none;transition:box-shadow .12s}
 .kb-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}
 .kb-card.dragging{opacity:.4}
@@ -322,9 +322,9 @@ select{background-image:none}
 /* ── Grouped nav labels ── */
 .nav-group-label{font-size:9px;text-transform:uppercase;letter-spacing:1.2px;color:rgba(255,255,255,.35);padding:16px 20px 4px;font-weight:600}
 /* ── Sidebar footer: Powered by Amnex ── */
-.sidebar-powered{padding:14px 16px 18px;display:flex;flex-direction:column;align-items:center;gap:6px;border-top:1px solid rgba(255,255,255,.07)}
-.sidebar-powered .pw-label{font-size:9px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:1px}
-.sidebar-powered img{height:20px;width:auto;opacity:.55;filter:brightness(0) invert(1)}
+.sidebar-powered{padding:14px 16px 18px;display:flex;flex-direction:column;align-items:center;gap:7px;border-top:1px solid rgba(255,255,255,.1)}
+.sidebar-powered .pw-label{font-size:9px;color:rgba(255,255,255,.45);text-transform:uppercase;letter-spacing:1.2px;font-weight:600}
+.sidebar-powered img{height:32px;width:auto;filter:brightness(0) invert(1);opacity:.85}
 /* ── Gamification widget ── */
 .gam-widget{background:linear-gradient(135deg,#3b1a6e 0%,#5b21b6 60%,#7c3aed 100%);border-radius:8px;padding:16px 18px;color:#fff;margin-bottom:20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .gam-widget .gw-tier{font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;opacity:.75;margin-bottom:2px}
@@ -404,11 +404,13 @@ select{background-image:none}
 
 <div id="sidebar-overlay" aria-hidden="true"></div>
 <div id="sidebar">
-  <div class="logo-area"><img src="/assets/egnex-logo.png" alt="Egnex"></div>
+  <div class="logo-area">
+    <img src="/assets/egnex-logo.png" alt="Egnex">
+  </div>
   <nav id="sidenav"></nav>
   <div class="sidebar-powered">
     <span class="pw-label">Powered by</span>
-    <img src="/assets/Amnex Logo.png" alt="Amnex">
+    <img src="/assets/amnex-logo.png" alt="Amnex">
   </div>
 </div>
 
@@ -1294,7 +1296,7 @@ function mkChart(id, cfg) {
   _charts[id] = new Chart(el.getContext('2d'), cfg);
 }
 
-const C_COLORS = ['#f15a22','#2563eb','#1d6e56','#b08423','#7c3aed','#0891b2','#db2777','#65a30d'];
+const C_COLORS = ['#1e63f2','#2563eb','#1d6e56','#b08423','#7c3aed','#0891b2','#db2777','#65a30d'];
 
 // ── SCREEN: Dashboard (routes to role-specific view) ──────────────────────────
 // ── Gamification Screen ──────────────────────────────────────────────────────
@@ -1353,7 +1355,7 @@ function _pipeData(d) {
   const vals   = keys.map(k=>parseInt(d[k]||0));
   const base   = vals[0]||1;
   const rates  = vals.map(v=>Math.round(v/base*100));
-  const colors = keys.map((_,i)=>i===keys.length-1?'#1d6e56':i===0?'#2563eb':'#f15a22');
+  const colors = keys.map((_,i)=>i===keys.length-1?'#1d6e56':i===0?'#2563eb':'#1e63f2');
   return {keys,labels,vals,rates,colors};
 }
 // Stage status mapping for funnel click (index → status)
@@ -1374,7 +1376,7 @@ function _mkFunnel(canvasId, labels, vals, colors, withClick) {
 function _mkCohort(canvasId, labels, rates, withClick) {
   const opts = {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return ctx.raw+'% of applications';}}}},scales:{y:{beginAtZero:true,max:100,ticks:{callback:function(v){return v+'%';}}},x:{ticks:{font:{size:10},maxRotation:30}}}};
   if (withClick) { opts.onClick = _funnelClickFn; document.getElementById(canvasId).style.cursor='pointer'; }
-  mkChart(canvasId,{type:'line',data:{labels,datasets:[{label:'Conversion %',data:rates,fill:true,tension:0.35,borderColor:'#f15a22',backgroundColor:'rgba(241,90,34,0.08)',pointBackgroundColor:'#f15a22',pointRadius:4,pointHoverRadius:6,borderWidth:2}]},options:opts});
+  mkChart(canvasId,{type:'line',data:{labels,datasets:[{label:'Conversion %',data:rates,fill:true,tension:0.35,borderColor:'#1e63f2',backgroundColor:'rgba(30,99,242,0.08)',pointBackgroundColor:'#1e63f2',pointRadius:4,pointHoverRadius:6,borderWidth:2}]},options:opts});
 }
 function _mkDiversityDonut(canvasId, fn, mn, un) {
   const tot=fn+mn+un;
@@ -1837,7 +1839,7 @@ async function _dashTAManager() {
   _mkCohort('dash-cohort',labels,rates,true);
   _mkDiversityDonut('dash-div-donut',fn,mn,un);
   if (recLoad.length) {
-    mkChart('dash-rec-bar',{type:'bar',data:{labels:recLoad.map(r=>r.full_name),datasets:[{label:'Open Reqs',data:recLoad.map(r=>r.open_reqs||0),backgroundColor:'#f15a22',borderRadius:3},{label:'Applications',data:recLoad.map(r=>r.total_applications||0),backgroundColor:'#2563eb',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{ticks:{font:{size:11}}}}}});
+    mkChart('dash-rec-bar',{type:'bar',data:{labels:recLoad.map(r=>r.full_name),datasets:[{label:'Open Reqs',data:recLoad.map(r=>r.open_reqs||0),backgroundColor:'#7c3aed',borderRadius:3},{label:'Applications',data:recLoad.map(r=>r.total_applications||0),backgroundColor:'#2563eb',borderRadius:3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{ticks:{font:{size:11}}}}}});
   }
   _renderNexAICharts(d.nexai_summary, d.nexai_score_dist, d.nexai_recent, d.nexai_by_recruiter);
   _maybeInjectBaseUrlBanner();
@@ -2023,7 +2025,7 @@ async function _dashHiringManager() {
 
   // HM cohort (4 stages)
   mkChart('dash-hm-cohort',{type:'line',
-    data:{labels:hmFunnelLabels,datasets:[{label:'Conversion %',data:hmFunnelRates,fill:true,tension:0.35,borderColor:'#f15a22',backgroundColor:'rgba(241,90,34,0.08)',pointBackgroundColor:'#f15a22',pointRadius:4,borderWidth:2}]},
+    data:{labels:hmFunnelLabels,datasets:[{label:'Conversion %',data:hmFunnelRates,fill:true,tension:0.35,borderColor:'#1e63f2',backgroundColor:'rgba(30,99,242,0.08)',pointBackgroundColor:'#1e63f2',pointRadius:4,borderWidth:2}]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+'% of applicants'}}},
       scales:{y:{beginAtZero:true,max:100,ticks:{callback:v=>v+'%'}},x:{ticks:{font:{size:10}}}}}
@@ -4714,7 +4716,7 @@ async function loadAllPivots(scope, yr){
     const order=['Sourcing','Screening','Interview','Selected'];
     const labels=order.filter(s=>p4.find(r=>r.stage===s));
     const vals=labels.map(s=>{const r=p4.find(x=>x.stage===s);return r?.n||0;});
-    mkChart('c4',{type:'bar',data:{labels,datasets:[{label:'Candidates',data:vals,backgroundColor:'#f15a22'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+    mkChart('c4',{type:'bar',data:{labels,datasets:[{label:'Candidates',data:vals,backgroundColor:'#1e63f2'}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
   }
 
   // Chart 5: Internal Movement — bar with rate
@@ -4731,7 +4733,7 @@ async function loadAllPivots(scope, yr){
 
   // Chart 7: Recruiter Productivity — bar
   if(p7?.length){
-    mkChart('c7',{type:'bar',data:{labels:p7.map(r=>r.recruiter),datasets:[{label:'Total handled',data:p7.map(r=>r.total_handled||0),backgroundColor:'#e5e3df'},{label:'Converted',data:p7.map(r=>r.converted||0),backgroundColor:'#f15a22'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+    mkChart('c7',{type:'bar',data:{labels:p7.map(r=>r.recruiter),datasets:[{label:'Total handled',data:p7.map(r=>r.total_handled||0),backgroundColor:'#e5e3df'},{label:'Converted',data:p7.map(r=>r.converted||0),backgroundColor:'#1e63f2'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
 
   // Chart 8: Joined/Offered/Selected
@@ -5356,7 +5358,7 @@ async function screenKPIDashboard(){
       data:{
         labels:recLoad.map(r=>r.recruiter),
         datasets:[
-          {label:'Open Reqs',          data:recLoad.map(r=>r.open_reqs),         backgroundColor:'#f15a22'},
+          {label:'Open Reqs',          data:recLoad.map(r=>r.open_reqs),         backgroundColor:'#7c3aed'},
           {label:'Active Candidates',  data:recLoad.map(r=>r.active_candidates), backgroundColor:'#2563eb'}
         ]
       },
@@ -6439,8 +6441,8 @@ function _orbFrame() {
   for (let i = 3; i >= 1; i--) {
     const gr = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, r * (1.2 + i * 0.55));
     const alpha = (0.18 - i * 0.04) * amp;
-    gr.addColorStop(0, `rgba(241,90,34,${alpha})`);
-    gr.addColorStop(1, 'rgba(241,90,34,0)');
+    gr.addColorStop(0, `rgba(30,99,242,${alpha})`);
+    gr.addColorStop(1, 'rgba(30,99,242,0)');
     ctx.fillStyle = gr;
     ctx.beginPath();
     ctx.arc(cx, cy, r * (1.2 + i * 0.55), 0, Math.PI * 2);
@@ -6459,7 +6461,7 @@ function _orbFrame() {
     coreGr.addColorStop(1, '#1e40af');
   } else {
     coreGr.addColorStop(0, '#ff9a6c');
-    coreGr.addColorStop(0.55, '#f15a22');
+    coreGr.addColorStop(0.55, '#1e63f2');
     coreGr.addColorStop(1, '#9c3a0e');
   }
   ctx.fillStyle = coreGr;
@@ -6562,7 +6564,7 @@ function _showFaceSelector() {
         <label style="cursor:pointer;text-align:center">
           <img src="/assets/avatars/${fid}.png" style="width:80px;height:80px;border-radius:50%;border:3px solid transparent;display:block"
             onerror="this.src='/assets/egnex-logo.png'"
-            onclick="document.querySelectorAll('#face-options img').forEach(i=>i.style.borderColor='transparent');this.style.borderColor='#f15a22';_selectedFaceId='${fid}'">
+            onclick="document.querySelectorAll('#face-options img').forEach(i=>i.style.borderColor='transparent');this.style.borderColor='#1e63f2';_selectedFaceId='${fid}'">
           <span style="font-size:11px">${fid.replace('nexai-','')}</span>
         </label>`).join('');
       document.getElementById('face-select-modal').classList.add('open');
@@ -7327,10 +7329,10 @@ async function screenSysHealth() {
     </div>`;
 
   if (uCounts.length) {
-    mkChart('sh-users-bar',{type:'bar',data:{labels:uCounts.map(u=>u.role.replace(/_/g,' ')),datasets:[{label:'Users',data:uCounts.map(u=>parseInt(u.n||0)),backgroundColor:'#f15a22',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+    mkChart('sh-users-bar',{type:'bar',data:{labels:uCounts.map(u=>u.role.replace(/_/g,' ')),datasets:[{label:'Users',data:uCounts.map(u=>parseInt(u.n||0)),backgroundColor:'#1e63f2',borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
   }
   if (tStats.length) {
-    const TC={'open':'#f15a22','in_progress':'#2563eb','resolved':'#1d6e56'};
+    const TC={'open':'#1e63f2','in_progress':'#7c3aed','resolved':'#1d6e56'};
     mkChart('sh-tickets-pie',{type:'doughnut',data:{labels:tStats.map(t=>t.status.replace(/_/g,' ')),datasets:[{data:tStats.map(t=>parseInt(t.n||0)),backgroundColor:tStats.map(t=>TC[t.status]||'#6b6760'),borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
   }
   _maybeInjectBaseUrlBanner();

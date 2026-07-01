@@ -81,6 +81,27 @@ def _require_internal(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+def _ensure_candidate_portal_invite(cand_id: str, email: str, full_name: str) -> None:
+    """
+    Give a vendor-sourced candidate access to the candidate portal.
+    Mirrors main._maybe_issue_candidate_invite but defined locally to avoid a
+    circular import (main.py imports this router at load time). Idempotent:
+    if a candidate_user already exists, does nothing.
+    """
+    try:
+        if query_one("SELECT id FROM candidate_user WHERE candidate_id=%s", [cand_id]):
+            return
+        cu = query_one(
+            """INSERT INTO candidate_user (candidate_id, email)
+               VALUES (%s, %s) ON CONFLICT (email) DO NOTHING RETURNING id""",
+            [cand_id, email.lower().strip()],
+        )
+        if cu:
+            issue_invite_for_external_user(str(cu["id"]), email, full_name, "candidate")
+    except Exception as exc:
+        print(f"[vendor-submit] Candidate portal invite failed for {email}: {exc}")
+
+
 # ── Vendor login (public endpoint) ───────────────────────────────────────────
 
 class VendorLoginIn(BaseModel):
@@ -393,6 +414,9 @@ async def portal_submit_cv(
         "UPDATE application SET source=%s WHERE id=%s",
         [source_tag, str(app_row["id"])], fetch=False,
     )
+
+    # Vendor-sourced candidates get portal access too (idempotent — safe if one exists)
+    _ensure_candidate_portal_invite(cand_id, email, full_name)
 
     # Ingest into CV repository (non-blocking on failure)
     try:

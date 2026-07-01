@@ -799,7 +799,7 @@ END $$""",
         "CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_token(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_token(token_hash)",
 
-        # ── Migration 43: Gamification — criticality flag + ledger + config ──
+        # ── Migration 33: Gamification — criticality flag + ledger + config ──
         # Criticality on requisition (multiplies gamification points)
         "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS criticality TEXT NOT NULL DEFAULT 'Medium' CHECK (criticality IN ('Low','Medium','High','Critical'))",
         # Append-only gamification ledger
@@ -835,6 +835,7 @@ END $$""",
              ('points.offer_joined',       '100'),
              ('points.panel_pass',         '30'),
              ('points.feedback_on_time',   '25'),
+             ('sla.feedback_hours',        '48'),
              ('points.sla_met_stage',      '15'),
              ('points.submission',         '5'),
              ('points.candidate_advanced', '10'),
