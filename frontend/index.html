@@ -1090,6 +1090,9 @@ function flash(msg, ok = true) {
 
 function logout() { localStorage.removeItem('egnex_token'); window.location.replace('/login'); }
 
+// Global HTML-escape utility used across all screens
+function esc(v) { return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
 // ── Shell ─────────────────────────────────────────────────────────────────────
 const NAV_DEF = {
   admin: [
