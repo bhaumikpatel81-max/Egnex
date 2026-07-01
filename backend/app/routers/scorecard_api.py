@@ -409,13 +409,27 @@ def save_scorecard(
     # Improvement 5: recompute panel consensus + combined score on every submit
     if action == "submit":
         iv_row = query_one(
-            "SELECT application_id FROM interview WHERE id = %s", [interview_id]
+            """SELECT i.application_id, a.requisition_id
+               FROM interview i
+               JOIN application a ON a.id = i.application_id
+               WHERE i.id = %s""",
+            [interview_id],
         )
         if iv_row and iv_row.get("application_id"):
             try:
                 _recompute_panel_combined(str(iv_row["application_id"]))
             except Exception as _pc_exc:
                 print(f"[scorecard] panel combined recompute failed: {_pc_exc}")
+            # Gamification: panel_pass when positive recommendation
+            try:
+                from ..services.gamification import award as _gam_award
+                req_id_str = str(iv_row["requisition_id"]) if iv_row.get("requisition_id") else None
+                app_id_str = str(iv_row["application_id"])
+                if verdict in ("strong_yes", "yes"):
+                    _gam_award("recruiter", uid, "panel_pass", req_id_str, app_id_str)
+                _gam_award("recruiter", uid, "feedback_on_time", req_id_str, app_id_str)
+            except Exception as _ge_exc:
+                print(f"[scorecard] gamification award failed: {_ge_exc}")
 
     return {
         "ok": True,

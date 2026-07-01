@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from ..db import query, query_one
 from ..auth_utils import get_current_user
+from ..services.gamification import award as _gam_award
 
 router = APIRouter(prefix="/api", tags=["pipeline"])
 
@@ -1234,7 +1235,7 @@ def advance_application(
         raise HTTPException(403, "Not authorised to advance candidates")
 
     app = query_one(
-        "SELECT id, status, requisition_id, current_round FROM application WHERE id=%s", [app_id]
+        "SELECT id, status, requisition_id, current_round, applied_at FROM application WHERE id=%s", [app_id]
     )
     if not app:
         raise HTTPException(404, "Application not found")
@@ -1264,6 +1265,10 @@ def advance_application(
             [app_id, current, body.target, user["sub"]], fetch=False,
         )
         sync_plan_on_advance(app_id, body.target, current, req_id)
+        # Gamification: quality event when candidate joins; volume for every advance
+        if body.target == "hired":
+            _gam_award("recruiter", user["sub"], "offer_joined", req_id, app_id)
+        _gam_award("recruiter", user["sub"], "candidate_advanced", req_id, app_id)
         return {"ok": True, "prev_stage": current, "new_stage": body.target}
 
     # Auto advance
@@ -1296,6 +1301,7 @@ def advance_application(
                 [app_id, current, current, user["sub"], f"Interview level {new_round}: {round_label}"],
                 fetch=False,
             )
+            _gam_award("recruiter", user["sub"], "candidate_advanced", req_id, app_id)
             return {
                 "ok":         True,
                 "prev_stage": "interview",
@@ -1313,6 +1319,7 @@ def advance_application(
                 "INSERT INTO stage_event (application_id, from_status, to_status, actor_id) VALUES (%s,%s,%s,%s)",
                 [app_id, "interview", "documentation", user["sub"]], fetch=False,
             )
+            _gam_award("recruiter", user["sub"], "candidate_advanced", req_id, app_id)
             return {
                 "ok":         True,
                 "prev_stage": "interview",
@@ -1356,6 +1363,19 @@ def advance_application(
         flags["needs_offer"] = True
 
     sync_plan_on_advance(app_id, next_stage, current, req_id)
+
+    # Gamification: volume point for every pipeline advance
+    _gam_award("recruiter", user["sub"], "candidate_advanced", req_id, app_id)
+    # Speed bonus: screen completed within 24 h of application submission
+    if current == "applied":
+        applied_at = app.get("applied_at")
+        if applied_at:
+            from datetime import datetime, timezone
+            _now = datetime.now(timezone.utc)
+            _aa = applied_at if applied_at.tzinfo else applied_at.replace(tzinfo=timezone.utc)
+            if (_now - _aa).total_seconds() < 86400:
+                _gam_award("recruiter", user["sub"], "fast_screen", req_id, app_id)
+
     return {"ok": True, "prev_stage": current, "new_stage": next_stage, **flags}
 
 
@@ -1445,3 +1465,25 @@ def stage_report(req_id: str, stage: str, user: dict = Depends(get_current_user)
         "count": len(rows),
         "rows": [dict(r) for r in rows],
     }
+
+
+# ── Requisition criticality (TA admin) ───────────────────────────────────────
+
+_CRITICALITY_VALUES = {"Low", "Medium", "High", "Critical"}
+
+
+class CriticalityIn(BaseModel):
+    criticality: str
+
+
+@router.patch("/requisitions/{req_id}/criticality")
+def patch_criticality(req_id: str, body: CriticalityIn, user: dict = Depends(get_current_user)):
+    """Set the criticality flag on a requisition. Controls gamification score multipliers."""
+    if user.get("role") not in ("ta_manager", "admin"):
+        raise HTTPException(403, "ta_manager / admin only")
+    if body.criticality not in _CRITICALITY_VALUES:
+        raise HTTPException(400, "criticality must be Low | Medium | High | Critical")
+    if not query_one("SELECT id FROM requisition WHERE id=%s", [req_id]):
+        raise HTTPException(404, "Requisition not found")
+    query("UPDATE requisition SET criticality=%s WHERE id=%s", [body.criticality, req_id], fetch=False)
+    return {"ok": True, "req_id": req_id, "criticality": body.criticality}

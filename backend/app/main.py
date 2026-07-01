@@ -48,6 +48,10 @@ from .routers.cv_api import router as _cv_router
 from .routers.hm_api import router as _hm_router
 from .routers.campus_bulk_api import router as _campus_router
 from .routers.password_api import router as _password_router
+from .routers.vendor_api import router as _vendor_router
+from .routers.candidate_portal_api import router as _candidate_portal_router
+from .routers.gamification_api import router as _gamification_router
+from .routers.bands_api import router as _bands_router
 from .routers.cv_api import ingest_and_link as _cv_ingest_and_link
 from .auth_utils import _decode
 
@@ -71,6 +75,10 @@ app.include_router(_hiring_plan_router)
 app.include_router(_cv_router)
 app.include_router(_hm_router)
 app.include_router(_campus_router)
+app.include_router(_vendor_router)
+app.include_router(_candidate_portal_router)
+app.include_router(_gamification_router)
+app.include_router(_bands_router)
 
 
 @app.on_event("startup")
@@ -693,6 +701,90 @@ END $$""",
         "CREATE INDEX IF NOT EXISTS idx_campus_cand_batch ON campus_candidate(batch_id)",
         "CREATE INDEX IF NOT EXISTS idx_campus_cand_app   ON campus_candidate(application_id)",
 
+        # ── Migration 41: Vendor Management ──────────────────────────────────────────
+        # Extend password_reset_token with account_type so one token table serves
+        # staff, vendor, and candidate logins.  The FK on user_id is dropped so
+        # vendor_user / candidate_user IDs can be stored in the same column.
+        # Approach chosen: minimal change — no extra columns, no new token tables.
+        """DO $$
+DECLARE r RECORD;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'password_reset_token' AND column_name = 'account_type'
+    ) THEN
+        FOR r IN SELECT conname FROM pg_constraint
+                 WHERE conrelid = 'password_reset_token'::regclass AND contype = 'f'
+        LOOP
+            EXECUTE 'ALTER TABLE password_reset_token DROP CONSTRAINT ' || quote_ident(r.conname);
+        END LOOP;
+        ALTER TABLE password_reset_token ALTER COLUMN user_id DROP NOT NULL;
+        ALTER TABLE password_reset_token
+            ADD COLUMN account_type TEXT NOT NULL DEFAULT 'staff'
+            CHECK (account_type IN ('staff','vendor','candidate'));
+    END IF;
+END $$""",
+        # Vendor (partner / sourcing company)
+        """CREATE TABLE IF NOT EXISTS vendor (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name           TEXT NOT NULL,
+            contact_email  TEXT,
+            contact_phone  TEXT,
+            status         TEXT NOT NULL DEFAULT 'active'
+                           CHECK (status IN ('active','suspended')),
+            created_by     UUID REFERENCES app_user(id),
+            created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        # Vendor user accounts (mirrors app_user auth columns)
+        """CREATE TABLE IF NOT EXISTS vendor_user (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            vendor_id      UUID NOT NULL REFERENCES vendor(id) ON DELETE CASCADE,
+            full_name      TEXT NOT NULL,
+            email          TEXT NOT NULL UNIQUE,
+            password_hash  TEXT,
+            is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_vendor_user_vendor ON vendor_user(vendor_id)",
+        "CREATE INDEX IF NOT EXISTS idx_vendor_user_email  ON vendor_user(LOWER(email))",
+        # Requisition ↔ vendor access
+        """CREATE TABLE IF NOT EXISTS requisition_vendor (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            requisition_id  UUID NOT NULL REFERENCES requisition(id) ON DELETE CASCADE,
+            vendor_id       UUID NOT NULL REFERENCES vendor(id) ON DELETE CASCADE,
+            opened_by       UUID REFERENCES app_user(id),
+            opened_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (requisition_id, vendor_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_req_vendor_req    ON requisition_vendor(requisition_id)",
+        "CREATE INDEX IF NOT EXISTS idx_req_vendor_vendor ON requisition_vendor(vendor_id)",
+        # application.source — 'vendor:<uuid>' for vendor submissions
+        "ALTER TABLE application ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'direct'",
+
+        # ── Migration 42: Candidate Portal ───────────────────────────────────────
+        """CREATE TABLE IF NOT EXISTS candidate_user (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            candidate_id   UUID NOT NULL UNIQUE REFERENCES candidate(id) ON DELETE CASCADE,
+            email          TEXT NOT NULL UNIQUE,
+            password_hash  TEXT,
+            is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cu_candidate ON candidate_user(candidate_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cu_email     ON candidate_user(LOWER(email))",
+        """CREATE TABLE IF NOT EXISTS candidate_feedback (
+            id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            candidate_id     UUID NOT NULL REFERENCES candidate(id) ON DELETE CASCADE,
+            application_id   UUID REFERENCES application(id) ON DELETE SET NULL,
+            company_rating   SMALLINT NOT NULL CHECK (company_rating  BETWEEN 1 AND 5),
+            interview_rating SMALLINT NOT NULL CHECK (interview_rating BETWEEN 1 AND 5),
+            comments         TEXT,
+            visible_to_ta    BOOLEAN NOT NULL DEFAULT TRUE,
+            submitted_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cfb_candidate   ON candidate_feedback(candidate_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cfb_application ON candidate_feedback(application_id)",
+
         # ── Password reset / first-time set-password tokens ─────────────
         """CREATE TABLE IF NOT EXISTS password_reset_token (
             id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -706,6 +798,65 @@ END $$""",
         )""",
         "CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_token(user_id)",
         "CREATE INDEX IF NOT EXISTS idx_prt_hash ON password_reset_token(token_hash)",
+
+        # ── Migration 43: Gamification — criticality flag + ledger + config ──
+        # Criticality on requisition (multiplies gamification points)
+        "ALTER TABLE requisition ADD COLUMN IF NOT EXISTS criticality TEXT NOT NULL DEFAULT 'Medium' CHECK (criticality IN ('Low','Medium','High','Critical'))",
+        # Append-only gamification ledger
+        """CREATE TABLE IF NOT EXISTS gamification_event (
+            id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            subject_type   TEXT NOT NULL CHECK (subject_type IN ('recruiter','vendor','candidate','hm')),
+            subject_id     UUID NOT NULL,
+            event_type     TEXT NOT NULL,
+            base_points    NUMERIC NOT NULL,
+            criticality    TEXT NOT NULL DEFAULT 'Medium',
+            multiplier     NUMERIC NOT NULL DEFAULT 1.0,
+            points_awarded NUMERIC NOT NULL,
+            requisition_id UUID REFERENCES requisition(id) ON DELETE SET NULL,
+            application_id UUID REFERENCES application(id) ON DELETE SET NULL,
+            created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_gev_subject ON gamification_event(subject_type, subject_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gev_req     ON gamification_event(requisition_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gev_app     ON gamification_event(application_id)",
+        "CREATE INDEX IF NOT EXISTS idx_gev_created ON gamification_event(created_at)",
+        # Config table — editable by TA admin
+        """CREATE TABLE IF NOT EXISTS gamification_config (
+            key        TEXT PRIMARY KEY,
+            value      TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_by UUID REFERENCES app_user(id)
+        )""",
+        # Seed base event points and multipliers (ON CONFLICT preserves existing tuned values)
+        """INSERT INTO gamification_config (key, value) VALUES
+             ('points.offer_within_sla',   '50'),
+             ('points.fast_screen',        '20'),
+             ('points.offer_accepted',     '80'),
+             ('points.offer_joined',       '100'),
+             ('points.panel_pass',         '30'),
+             ('points.feedback_on_time',   '25'),
+             ('points.sla_met_stage',      '15'),
+             ('points.submission',         '5'),
+             ('points.candidate_advanced', '10'),
+             ('multiplier.Low',            '1.0'),
+             ('multiplier.Medium',         '1.5'),
+             ('multiplier.High',           '2.5'),
+             ('multiplier.Critical',       '4.0'),
+             ('tier.bronze',               '0'),
+             ('tier.silver',               '200'),
+             ('tier.gold',                 '600'),
+             ('tier.platinum',             '1500')
+           ON CONFLICT (key) DO NOTHING""",
+        # Named achievements
+        """CREATE TABLE IF NOT EXISTS gamification_badge (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            subject_type TEXT NOT NULL CHECK (subject_type IN ('recruiter','vendor','candidate','hm')),
+            subject_id   UUID NOT NULL,
+            badge_key    TEXT NOT NULL,
+            earned_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (subject_type, subject_id, badge_key)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_gbadge_subject ON gamification_badge(subject_type, subject_id)",
     ]
     for sql in migrations:
         try:
@@ -789,6 +940,10 @@ _PUBLIC = {
     # Candidate-facing NexAI interview endpoints — token-based, no JWT
     "/api/nexai/invite/validate",
     "/api/nexai/invite/begin",
+    # Vendor portal login — vendor receives JWT after this call
+    "/api/vendors/portal/login",
+    # Candidate portal login
+    "/api/candidate/portal/login",
 }
 _PUBLIC_PREFIXES = (
     "/assets/",
@@ -1035,6 +1190,30 @@ def _parse_relocate(val) -> bool | None:
     return None
 
 
+def _maybe_issue_candidate_invite(cand_id: str, email: str, full_name: str) -> None:
+    """
+    If a candidate_user does not yet exist for this candidate, create one and
+    send a set-password invite so they can access the portal.
+    Safe to call multiple times — idempotent.
+    """
+    try:
+        existing = query_one(
+            "SELECT id FROM candidate_user WHERE candidate_id=%s", [cand_id]
+        )
+        if existing:
+            return
+        cu = query_one(
+            """INSERT INTO candidate_user (candidate_id, email)
+               VALUES (%s, %s) ON CONFLICT (email) DO NOTHING RETURNING id""",
+            [cand_id, email.lower().strip()],
+        )
+        if cu:
+            from .routers.password_api import issue_invite_for_external_user
+            issue_invite_for_external_user(str(cu["id"]), email, full_name, "candidate")
+    except Exception as exc:
+        print(f"[candidate-portal] Auto-invite failed for {email}: {exc}")
+
+
 def _send_jd_email(candidate_name: str, candidate_email: str, req_id: str) -> None:
     """
     Send the application_received_jd confirmation email.
@@ -1190,6 +1369,7 @@ def apply(payload: ApplyIn):
         willing_to_relocate=payload.willing_to_relocate,
     )
     _send_jd_email(payload.full_name, payload.email, payload.requisition_id)
+    _maybe_issue_candidate_invite(cand_id, payload.email, payload.full_name)
     return {"application_id": app_row["id"], "match_score": app_row["match_score"],
             "breakdown": app_row["score_breakdown"]}
 
@@ -1307,6 +1487,7 @@ async def apply_upload(
     except Exception as _cv_exc:
         print(f"[cv-ingest] Failed to link resume for candidate {cand_id}: {_cv_exc}")
     _send_jd_email(full_name, email, requisition_id)
+    _maybe_issue_candidate_invite(cand_id, email, full_name)
     return {
         "application_id": app_row["id"],
         "match_score": app_row["match_score"],
